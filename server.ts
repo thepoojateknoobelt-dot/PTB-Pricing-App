@@ -24,7 +24,7 @@ export const pool = new Pool({
   ssl: isLocal ? false : { rejectUnauthorized: false },
   max: 10, // Ek sath 10 active connections khule rahenge
   idleTimeoutMillis: 30000, // 30 seconds tak idle rha toh hi band hoga
-  connectionTimeoutMillis: 2000, // 2 second mein connect nahi hua toh retry karega
+  connectionTimeoutMillis: 15000, // 15 seconds tak wait karega connect hone ke liye
 });
 
 // Handle pool errors to prevent application crash
