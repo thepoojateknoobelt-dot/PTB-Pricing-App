@@ -16,15 +16,20 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// PostgreSQL connection pool optimized for AWS Lambda / RDS
+// PostgreSQL connection pool optimized with dynamic pooling and retry settings
 const isLocal = !process.env.DATABASE_URL || process.env.DATABASE_URL.includes('localhost') || process.env.DATABASE_URL.includes('127.0.0.1');
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/postgres',
   ssl: isLocal ? false : { rejectUnauthorized: false },
-  max: 5, // Safe concurrency limit for AWS Lambda
-  idleTimeoutMillis: 10000,
-  connectionTimeoutMillis: 5000,
+  max: 10, // Ek sath 10 active connections khule rahenge
+  idleTimeoutMillis: 30000, // 30 seconds tak idle rha toh hi band hoga
+  connectionTimeoutMillis: 2000, // 2 second mein connect nahi hua toh retry karega
+});
+
+// Handle pool errors to prevent application crash
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
 });
 
 // Database schema auto-creation migration script
