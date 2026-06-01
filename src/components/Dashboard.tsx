@@ -256,10 +256,8 @@ export const Dashboard = () => {
 
   if (activeModule === 'production') {
     return (
-      <div className="min-h-screen bg-zinc-50 p-8 overflow-y-auto">
-        <div className="max-w-7xl mx-auto">
-          <BeltcutPro onBackToMaster={() => handleModuleChange('master')} />
-        </div>
+      <div className="min-h-screen bg-zinc-50 overflow-hidden">
+        <BeltcutPro onBackToMaster={() => handleModuleChange('master')} />
       </div>
     );
   }
