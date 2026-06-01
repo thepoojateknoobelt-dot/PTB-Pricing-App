@@ -7,6 +7,7 @@ export interface User {
   role: UserRole;
   password?: string;
   permission?: 'read' | 'write';
+  allowedPages?: string[];
 }
 
 export interface Rates {

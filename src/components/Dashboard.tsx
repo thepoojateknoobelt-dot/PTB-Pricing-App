@@ -11,6 +11,7 @@ import { QuotationsList } from './QuotationsList';
 import { Reports } from './Reports';
 import { ActivityLog } from './ActivityLog';
 import { Config, Client } from '../types';
+import { cn } from '../lib/utils';
 import { Loader2, Factory, Calculator as CalcIcon, Scissors, ArrowRight, ArrowLeft, Menu } from 'lucide-react';
 
 export const Dashboard = () => {
@@ -242,65 +243,115 @@ export const Dashboard = () => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 w-full max-w-4xl">
-            {/* PTB Pricing Portal Button Card */}
-            <button
-              onClick={() => handleModuleChange('pricing')}
-              className="group text-left p-6 sm:p-8 glass-panel rounded-3xl transition-all duration-500 ease-out shadow-[0_20px_50px_rgba(0,0,0,0.03)] hover:shadow-[0_30px_60px_rgba(99,102,241,0.14)] relative overflow-hidden flex flex-col justify-between min-h-[260px] sm:min-h-[300px] cursor-pointer hover:-translate-y-2 transform"
-            >
-              {/* Radial Hover Glow */}
-              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-indigo-500/10 to-transparent rounded-bl-[120px] transition-transform duration-500 group-hover:scale-110" />
-              
-              <div className="space-y-5 relative z-10">
-                <div className="p-4 bg-indigo-500/10 text-indigo-600 rounded-2xl w-fit group-hover:scale-110 group-hover:bg-indigo-500 group-hover:text-white transition-all duration-500 shadow-md shadow-indigo-500/5">
-                  <CalcIcon className="h-7 w-7" />
-                </div>
-                <div>
-                  <h3 className="text-xl sm:text-2xl font-bold text-zinc-950 group-hover:text-indigo-600 transition-colors tracking-tight">
-                    PTB Pricing & Costing
-                  </h3>
-                  <p className="text-zinc-600 text-xs mt-2.5 leading-relaxed font-medium">
-                    Calculate conveyor belt costing, manage client-specific profit margins, create quotations/drafts, and manage system configurations.
-                  </p>
-                </div>
-              </div>
+          {(() => {
+            const hasPricingAccess = user?.role === 'admin' || user?.allowedPages?.some(p => p !== 'production');
+            const hasProductionAccess = user?.role === 'admin' || user?.allowedPages?.includes('production');
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 w-full max-w-4xl">
+                {/* PTB Pricing Portal Button Card */}
+                <button
+                  onClick={() => hasPricingAccess && handleModuleChange('pricing')}
+                  disabled={!hasPricingAccess}
+                  className={cn(
+                    "group text-left p-6 sm:p-8 glass-panel rounded-3xl transition-all duration-500 ease-out shadow-[0_20px_50px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between min-h-[260px] sm:min-h-[300px] transform",
+                    hasPricingAccess 
+                      ? "hover:shadow-[0_30px_60px_rgba(99,102,241,0.14)] cursor-pointer hover:-translate-y-2" 
+                      : "opacity-45 cursor-not-allowed"
+                  )}
+                >
+                  {/* Radial Hover Glow */}
+                  {hasPricingAccess && (
+                    <>
+                      <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-indigo-500/10 to-transparent rounded-bl-[120px] transition-transform duration-500 group-hover:scale-110" />
+                    </>
+                  )}
+                  
+                  <div className="space-y-5 relative z-10 w-full">
+                    <div className="flex justify-between items-start w-full">
+                      <div className={cn(
+                        "p-4 rounded-2xl w-fit transition-all duration-500 shadow-md",
+                        hasPricingAccess 
+                          ? "bg-indigo-500/10 text-indigo-600 group-hover:scale-110 group-hover:bg-indigo-500 group-hover:text-white shadow-indigo-500/5" 
+                          : "bg-zinc-200 text-zinc-400"
+                      )}>
+                        <CalcIcon className="h-7 w-7" />
+                      </div>
+                      {!hasPricingAccess && (
+                        <span className="text-[9px] font-black uppercase bg-zinc-200 text-zinc-500 px-2.5 py-1 rounded-lg border border-zinc-300 tracking-wider">
+                          No Access
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-xl sm:text-2xl font-bold text-zinc-950 group-hover:text-indigo-600 transition-colors tracking-tight">
+                        PTB Pricing & Costing
+                      </h3>
+                      <p className="text-zinc-600 text-xs mt-2.5 leading-relaxed font-medium">
+                        Calculate conveyor belt costing, manage client-specific profit margins, create quotations/drafts, and manage system configurations.
+                      </p>
+                    </div>
+                  </div>
 
-              <div className="mt-8 flex items-center gap-2 text-xs font-black text-zinc-700 group-hover:text-indigo-600 transition-colors uppercase tracking-wider relative z-10">
-                <span>Access Pricing Portal</span>
-                <ArrowRight className="h-4 w-4 group-hover:translate-x-1.5 transition-transform duration-300" />
-              </div>
-            </button>
+                  <div className="mt-8 flex items-center gap-2 text-xs font-black text-zinc-700 group-hover:text-indigo-600 transition-colors uppercase tracking-wider relative z-10">
+                    <span>{hasPricingAccess ? 'Access Pricing Portal' : 'Access Restricted'}</span>
+                    {hasPricingAccess && <ArrowRight className="h-4 w-4 group-hover:translate-x-1.5 transition-transform duration-300" />}
+                  </div>
+                </button>
 
-            {/* Production Portal Button Card */}
-            <button
-              onClick={() => handleModuleChange('production')}
-              className="group text-left p-6 sm:p-8 glass-panel rounded-3xl transition-all duration-500 ease-out shadow-[0_20px_50px_rgba(0,0,0,0.03)] hover:shadow-[0_30px_60px_rgba(16,185,129,0.14)] relative overflow-hidden flex flex-col justify-between min-h-[260px] sm:min-h-[300px] cursor-pointer hover:-translate-y-2 transform"
-            >
-              {/* Radial Hover Glow */}
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-bl-[120px] transition-transform duration-500 group-hover:scale-110" />
-              
-              <div className="space-y-5 relative z-10">
-                <div className="p-4 bg-emerald-500/10 text-emerald-600 rounded-2xl w-fit group-hover:scale-110 group-hover:bg-emerald-500 group-hover:text-white transition-all duration-500 shadow-md shadow-emerald-500/5">
-                  <Scissors className="h-7 w-7" />
-                </div>
-                <div>
-                  <h3 className="text-xl sm:text-2xl font-bold text-zinc-950 group-hover:text-emerald-600 transition-colors tracking-tight">
-                    Production & Nesting
-                  </h3>
-                  <p className="text-zinc-600 text-xs mt-2.5 leading-relaxed font-medium">
-                    Access Beltcut Pro. Optimize remnant utilization, perform 2D nesting on master rolls, calculate coordinates, and manage inventory cuts.
-                  </p>
-                </div>
-              </div>
+                {/* Production Portal Button Card */}
+                <button
+                  onClick={() => hasProductionAccess && handleModuleChange('production')}
+                  disabled={!hasProductionAccess}
+                  className={cn(
+                    "group text-left p-6 sm:p-8 glass-panel rounded-3xl transition-all duration-500 ease-out shadow-[0_20px_50px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between min-h-[260px] sm:min-h-[300px] transform",
+                    hasProductionAccess 
+                      ? "hover:shadow-[0_30px_60px_rgba(16,185,129,0.14)] cursor-pointer hover:-translate-y-2" 
+                      : "opacity-45 cursor-not-allowed"
+                  )}
+                >
+                  {/* Radial Hover Glow */}
+                  {hasProductionAccess && (
+                    <>
+                      <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-bl-[120px] transition-transform duration-500 group-hover:scale-110" />
+                    </>
+                  )}
+                  
+                  <div className="space-y-5 relative z-10 w-full">
+                    <div className="flex justify-between items-start w-full">
+                      <div className={cn(
+                        "p-4 rounded-2xl w-fit transition-all duration-500 shadow-md",
+                        hasProductionAccess 
+                          ? "bg-emerald-500/10 text-emerald-600 group-hover:scale-110 group-hover:bg-emerald-500 group-hover:text-white shadow-emerald-500/5" 
+                          : "bg-zinc-200 text-zinc-400"
+                      )}>
+                        <Scissors className="h-7 w-7" />
+                      </div>
+                      {!hasProductionAccess && (
+                        <span className="text-[9px] font-black uppercase bg-zinc-200 text-zinc-500 px-2.5 py-1 rounded-lg border border-zinc-300 tracking-wider">
+                          No Access
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-xl sm:text-2xl font-bold text-zinc-950 group-hover:text-emerald-600 transition-colors tracking-tight">
+                        Production & Nesting
+                      </h3>
+                      <p className="text-zinc-600 text-xs mt-2.5 leading-relaxed font-medium">
+                        Access Beltcut Pro. Optimize remnant utilization, perform 2D nesting on master rolls, calculate coordinates, and manage inventory cuts.
+                      </p>
+                    </div>
+                  </div>
 
-              <div className="mt-8 flex items-center gap-2 text-xs font-black text-zinc-700 group-hover:text-emerald-600 transition-colors uppercase tracking-wider relative z-10">
-                <span>Access Production Portal</span>
-                <ArrowRight className="h-4 w-4 group-hover:translate-x-1.5 transition-transform duration-300" />
+                  <div className="mt-8 flex items-center gap-2 text-xs font-black text-zinc-700 group-hover:text-emerald-600 transition-colors uppercase tracking-wider relative z-10">
+                    <span>{hasProductionAccess ? 'Access Production Portal' : 'Access Restricted'}</span>
+                    {hasProductionAccess && <ArrowRight className="h-4 w-4 group-hover:translate-x-1.5 transition-transform duration-300" />}
+                  </div>
+                </button>
               </div>
-            </button>
-          </div>
+            );
+          })()}
         </main>
 
         {/* Footer */}

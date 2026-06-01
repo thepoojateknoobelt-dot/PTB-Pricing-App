@@ -50,6 +50,12 @@ async function initializeDatabase() {
       console.warn('Failed to add permission column to users table:', alterErr);
     }
 
+    try {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_pages TEXT DEFAULT 'dashboard,calculator,quotations,clients' NOT NULL`);
+    } catch (alterErr) {
+      console.warn('Failed to add allowed_pages column to users table:', alterErr);
+    }
+
     // Create Clients table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS clients (
@@ -347,9 +353,23 @@ app.post('/api/auth/login', async (req, res) => {
   // Direct bypass check for admin/admin
   if (username === 'admin' && password === 'admin') {
     console.log('Login bypassed for admin/admin');
-    const token = jwt.sign({ id: 'admin_user', username: 'admin', role: 'admin', name: 'System Admin', permission: 'write' }, JWT_SECRET);
+    const token = jwt.sign({ 
+      id: 'admin_user', 
+      username: 'admin', 
+      role: 'admin', 
+      name: 'System Admin', 
+      permission: 'write',
+      allowedPages: ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production']
+    }, JWT_SECRET);
     return res.cookie('token', token, { httpOnly: true }).json({ 
-      user: { id: 'admin_user', username: 'admin', role: 'admin', name: 'System Admin', permission: 'write' } 
+      user: { 
+        id: 'admin_user', 
+        username: 'admin', 
+        role: 'admin', 
+        name: 'System Admin', 
+        permission: 'write',
+        allowedPages: ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production']
+      } 
     });
   }
 
@@ -383,8 +403,28 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     console.log('Login successful for:', username);
-    const token = jwt.sign({ id: user.id, username: user.username, role: user.role, name: user.name, permission: user.permission || 'write' }, JWT_SECRET);
-    res.cookie('token', token, { httpOnly: true }).json({ user: { id: user.id, username: user.username, role: user.role, name: user.name, permission: user.permission || 'write' } });
+    const userPages = user.role === 'admin'
+      ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production']
+      : (user.allowed_pages || 'dashboard,calculator,quotations,clients').split(',');
+    
+    const token = jwt.sign({ 
+      id: user.id, 
+      username: user.username, 
+      role: user.role, 
+      name: user.name, 
+      permission: user.permission || 'write',
+      allowedPages: userPages
+    }, JWT_SECRET);
+    res.cookie('token', token, { httpOnly: true }).json({ 
+      user: { 
+        id: user.id, 
+        username: user.username, 
+        role: user.role, 
+        name: user.name, 
+        permission: user.permission || 'write',
+        allowedPages: userPages
+      } 
+    });
   } catch (error) {
     console.error('Login error on server:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -724,14 +764,17 @@ app.put('/api/quotations/:id', authenticate, async (req, res) => {
 app.get('/api/users', authenticate, async (req: any, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
   try {
-    const result = await pool.query('SELECT id, username, name, role, username_lower, permission FROM users');
+    const result = await pool.query('SELECT id, username, name, role, username_lower, permission, allowed_pages FROM users');
     res.json(result.rows.map(row => ({
       id: row.id,
       username: row.username,
       name: row.name,
       role: row.role,
       usernameLower: row.username_lower,
-      permission: row.permission || 'write'
+      permission: row.permission || 'write',
+      allowedPages: row.role === 'admin'
+        ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production']
+        : (row.allowed_pages || 'dashboard,calculator,quotations,clients').split(',')
     })));
   } catch (err) {
     console.error('Failed to get users', err);
@@ -741,7 +784,7 @@ app.get('/api/users', authenticate, async (req: any, res) => {
 
 app.post('/api/users', authenticate, async (req: any, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-  const { username, name, role, password, permission = 'write' } = req.body;
+  const { username, name, role, password, permission = 'write', allowedPages = ['dashboard', 'calculator', 'quotations', 'clients'] } = req.body;
   
   try {
     const normalizedUsername = username.toLowerCase().trim().replace(/\s+/g, '_');
@@ -752,9 +795,10 @@ app.post('/api/users', authenticate, async (req: any, res) => {
     }
   
     const passwordHash = bcrypt.hashSync(password, 10);
+    const allowedPagesStr = Array.isArray(allowedPages) ? allowedPages.join(',') : 'dashboard,calculator,quotations,clients';
     await pool.query(
-      'INSERT INTO users (id, username, name, role, password, username_lower, permission) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [normalizedUsername, username, name, role, passwordHash, normalizedUsername, permission]
+      'INSERT INTO users (id, username, name, role, password, username_lower, permission, allowed_pages) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [normalizedUsername, username, name, role, passwordHash, normalizedUsername, permission, allowedPagesStr]
     );
     res.json({
       id: normalizedUsername,
@@ -762,11 +806,43 @@ app.post('/api/users', authenticate, async (req: any, res) => {
       name,
       role,
       usernameLower: normalizedUsername,
-      permission
+      permission,
+      allowedPages: role === 'admin'
+        ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production']
+        : allowedPages
     });
   } catch (err) {
     console.error('Failed to create user', err);
     res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+app.put('/api/users/:id', authenticate, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+  const { name, role, permission, allowedPages } = req.body;
+  try {
+    const allowedPagesStr = Array.isArray(allowedPages) ? allowedPages.join(',') : 'dashboard,calculator,quotations,clients';
+    const result = await pool.query(
+      'UPDATE users SET name = $1, role = $2, permission = $3, allowed_pages = $4 WHERE id = $5 RETURNING id, username, name, role, permission, allowed_pages',
+      [name, role, permission, allowedPagesStr, req.params.id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const row = result.rows[0];
+    res.json({
+      id: row.id,
+      username: row.username,
+      name: row.name,
+      role: row.role,
+      permission: row.permission,
+      allowedPages: row.role === 'admin'
+        ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production']
+        : (row.allowed_pages || '').split(',')
+    });
+  } catch (err) {
+    console.error('Failed to update user', err);
+    res.status(500).json({ error: 'Failed to update user' });
   }
 });
 

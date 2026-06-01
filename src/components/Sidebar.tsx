@@ -83,7 +83,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpe
       )}
 
       <nav className="flex-1 px-4 space-y-1 mt-4">
-        {menuItems.filter(item => item.roles.includes(user?.role || '')).map((item) => (
+        {menuItems.filter(item => {
+          if (user?.role === 'admin') return true;
+          return user?.allowedPages?.includes(item.id);
+        }).map((item) => (
           <button
             type="button"
             key={item.id}
