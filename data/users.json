@@ -1,0 +1,18 @@
+[
+  {
+    "id": "admin_user",
+    "name": "Administrator",
+    "username": "admin",
+    "role": "admin",
+    "password": "$2b$10$Ul8pZltpBh1iR/rHM5M27OhpBB.j62Uwfj9Tp6p.hNmgGM7Np2VDW"
+  },
+  {
+    "id": "bhumi",
+    "role": "sales",
+    "usernameLower": "bhumi",
+    "password": "$2b$10$C3js0IsW/cWYb2GSVzAtS.TfVlSN.sjlS4kzq4GwoEo9tNKxPo37q",
+    "name": "bhumi tandel",
+    "createdAt": "2026-05-01T06:18:44.000Z",
+    "username": "bhumi"
+  }
+]

@@ -1,0 +1,810 @@
+[
+  {
+    "id": "0FhCzsMrDE3SfJwezEbV",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 4500mm x W 4200mm, Price: ₹17,526",
+    "userName": "Administrator",
+    "timestamp": "2026-05-05T06:36:34.000Z",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "0RX2BCVGafLDsE5LWyf1",
+    "userName": "Administrator",
+    "timestamp": "2026-05-12T11:04:14.000Z",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 2500mm x W 1200mm, Price: ₹79,60,70,395"
+  },
+  {
+    "id": "25mm1SG5qPQsu0jBAV9V",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-04-30T15:45:56.000Z",
+    "userName": "Administrator",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 2500mm x W 3300mm, Price: ₹12,091"
+  },
+  {
+    "id": "2oOHyppmRHvAsK8qoKxO",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-04-20T15:16:50.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 1200mm x W 10000mm, Price: ₹9,879"
+  },
+  {
+    "id": "2tVs8mrA9Q8n8WYFWI6a",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 1650mm x W 475mm, Price: ₹832",
+    "action": "PRICE_CALCULATION",
+    "userName": "Administrator",
+    "timestamp": "2026-05-18T08:38:52.000Z",
+    "userId": "admin_user"
+  },
+  {
+    "id": "3Nu1rMqLL85D06lHpdn0",
+    "timestamp": "2026-05-14T05:30:53.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: Narendra, Belt: PTFE (Style 4X4), Dim: L 2000mm x W 2000mm, Price: ₹7,502"
+  },
+  {
+    "id": "3c70hZngolKasWkCxrx2",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-04-17T17:12:09.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 2256mm x W 1.5ft, Price: ₹5,259"
+  },
+  {
+    "id": "3mnMQiduU99fj0oj8396",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 1200mm x W 1200mm, Price: ₹80,967",
+    "userId": "admin_user",
+    "timestamp": "2026-05-12T10:38:10.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "5780isVHmuAo88x2lB6q",
+    "userId": "admin_user",
+    "timestamp": "2026-05-01T09:41:07.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹663"
+  },
+  {
+    "id": "5TvstcTX1GJlrHaIYCC9",
+    "userName": "Administrator",
+    "timestamp": "2026-05-14T05:14:36.000Z",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 2000mm x W 2000mm, Price: ₹7,502"
+  },
+  {
+    "id": "5gh7BcN6CET9rZAArTmf",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 44mtr x W 55mtr, Price: ₹15,68,761",
+    "userId": "admin_user",
+    "timestamp": "2026-05-14T05:02:17.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "70Tm2KdvMMb78N2bB8XO",
+    "userId": "admin_user",
+    "timestamp": "2026-05-12T11:08:27.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 8.20ft x W 3.94ft, Price: ₹2,475"
+  },
+  {
+    "id": "79G5BSvuYZrTdib6Cglw",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,06,59,55,86,780",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-01T09:39:02.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "7a43z2LSxRnBsQVV5EMl",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 256mm x W 3223mm, Price: ₹9,124",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-04-17T17:13:12.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "8dDkrZORfGZQ85EQ9dSM",
+    "userId": "admin_user",
+    "userName": "Administrator",
+    "timestamp": "2026-05-14T05:30:06.000Z",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: Narendra, Belt: PTFE (Style 4X4), Dim: L 2000mm x W 2000mm, Price: ₹8,124"
+  },
+  {
+    "id": "A1Nn45kAaqnjpsCGJeKA",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,715",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-01T09:11:59.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "B8arFiF372ekLlR6atfT",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-05T12:40:06.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,477"
+  },
+  {
+    "id": "BMUFwORXhdjVQdOp2qfQ",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-04-25T09:20:26.000Z",
+    "userName": "Administrator",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 25mtr x W 1.32mtr, Price: ₹28,654"
+  },
+  {
+    "id": "BTF7GvVHalHvUx87JbbH",
+    "timestamp": "2026-05-18T12:34:24.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PTFE (4X4 MESH BELT), Dim: L 2200mm x W 1000mm, Price: ₹3,500"
+  },
+  {
+    "id": "C46LAObx4lTBWw1Q8Ygr",
+    "details": "Updated system rates and constants",
+    "action": "UPDATE_CONFIG",
+    "userId": "admin_user",
+    "timestamp": "2026-04-13T16:15:55.000Z",
+    "userName": "admin"
+  },
+  {
+    "id": "CACu7gagzgH9Jl2gqOAm",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-04-22T10:09:10.000Z",
+    "userName": "Administrator",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1199mm, Price: ₹1,07,155"
+  },
+  {
+    "id": "DU56syzjbdNMJEEbQLNq",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-05-13T05:19:23.000Z",
+    "userName": "Administrator",
+    "details": "Client: asif , Belt: PVC (PVC 2MM GREEN), Dim: L 2500mm x W 1000mm, Price: ₹9,07,004"
+  },
+  {
+    "id": "DoSkWKqkcnH4b5qEAmku",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 2500mm x W 1200mm, Price: ₹8,15,96,97,00,406",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-12T11:02:13.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "E85ZIi5u0bAsgRUfzUIJ",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 2000mm x W 2000mm, Price: ₹7,817",
+    "timestamp": "2026-05-14T05:12:29.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "Ey6tmhC1JJCUW6dPU520",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-14T05:29:51.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "details": "Client: Narendra, Belt: PTFE (Style 4X4), Dim: L 2000mm x W 2000mm, Price: ₹7,502"
+  },
+  {
+    "id": "FqCtAGrPUyqUzyf3KmyA",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-13T06:23:19.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: PVC (PVC 2MM GREEN), Dim: L 2500mm x W 500mm, Price: ₹4,53,603"
+  },
+  {
+    "id": "Gc2roiKlTFn2tcM3gOZZ",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-04T07:26:09.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1mm x W 1mm, Price: ₹295"
+  },
+  {
+    "id": "IsQ1VVNBbSYkyEQON27v",
+    "details": "Created quotation for Walk-in Customer",
+    "action": "CREATE_QUOTATION",
+    "timestamp": "2026-04-13T16:14:18.000Z",
+    "userName": "admin",
+    "userId": "admin_user"
+  },
+  {
+    "id": "JdLhDhXkwZ5NHIsiIhUT",
+    "action": "PRICE_CALCULATION",
+    "userName": "Administrator",
+    "timestamp": "2026-05-12T10:46:18.000Z",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 2500mm x W 1200mm, Price: ₹81,59,70,106"
+  },
+  {
+    "id": "JhnJrZPVO3pNAq4cf9Ls",
+    "action": "PRICE_CALCULATION",
+    "userName": "Administrator",
+    "timestamp": "2026-05-01T09:41:12.000Z",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹690"
+  },
+  {
+    "id": "JuDC9t802LFSmQ5aC84l",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 2001mm x W 2001mm, Price: ₹7,823",
+    "userId": "admin_user",
+    "timestamp": "2026-05-14T05:34:46.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "KN0X57bmAGcEQOy5ZF0t",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹2,102",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-05-01T09:45:15.000Z",
+    "userName": "Administrator"
+  },
+  {
+    "id": "MCH4hVug73pvcxv8XgN7",
+    "userName": "Administrator",
+    "timestamp": "2026-04-20T15:14:03.000Z",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 12mm x W 10mm, Price: ₹392"
+  },
+  {
+    "id": "N5ulihTxLkFURGK7QTby",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 4566mm x W 5455mm, Price: ₹22,894",
+    "userName": "Administrator",
+    "timestamp": "2026-05-05T18:43:09.000Z",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "P6IKQOwpWULBj3zQ5t76",
+    "timestamp": "2026-05-13T06:22:50.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PVC (PVC 2MM GREEN), Dim: L 2500mm x W 500mm, Price: ₹4,53,31,65,00,286"
+  },
+  {
+    "id": "PPMpVqBjIz9eq6w9Cm0C",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,715",
+    "userId": "admin_user",
+    "timestamp": "2026-05-01T09:08:46.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "RQG7ebN6v1h6iQmsF87r",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 2001mm x W 2001mm, Price: ₹8,341",
+    "userId": "admin_user",
+    "timestamp": "2026-05-14T05:34:57.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "Sa97yeI98BROvXLstO2B",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 2000mm x W 2000mm, Price: ₹7,502",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-05-14T05:17:20.000Z",
+    "userName": "Administrator"
+  },
+  {
+    "id": "SbadWCKyKFok4oHpjcBj",
+    "details": "Client: asif , Belt: PVC (PVC 2MM GREEN), Dim: L 2500mm x W 1000mm, Price: ₹9,06,63,30,00,371",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-13T05:21:59.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "Svobce6CkxcgAUiny31i",
+    "userId": "admin_user",
+    "timestamp": "2026-05-14T05:30:01.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: Narendra, Belt: PTFE (Style 4X4), Dim: L 2000mm x W 2000mm, Price: ₹8,002"
+  },
+  {
+    "id": "SwDvrQQhAbtmcW0zNnqT",
+    "action": "PRICE_CALCULATION",
+    "userName": "Administrator",
+    "timestamp": "2026-05-05T12:40:01.000Z",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,426"
+  },
+  {
+    "id": "TggtAiKvjmVcvawzeOUU",
+    "timestamp": "2026-04-21T10:04:41.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 20000mm x W 500mm, Price: ₹9,536"
+  },
+  {
+    "id": "UaC9IjO4kn2VEJ7ISOrP",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 12mm x W 10mm, Price: ₹406",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-04-20T15:05:48.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "V9QCw2eTq0hs8H4pYoHx",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-05-01T09:49:02.000Z",
+    "userName": "Administrator",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,520"
+  },
+  {
+    "id": "VRrlrBiMh32QONArNoDy",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 2500mm x W 1200mm, Price: ₹82,001",
+    "userId": "admin_user",
+    "userName": "Administrator",
+    "timestamp": "2026-05-12T10:47:53.000Z",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "VYBzS6XqqveGyCCM6SVB",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 3500mm x W 200mm, Price: ₹4,311",
+    "userId": "admin_user",
+    "timestamp": "2026-04-18T08:39:28.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "VgexIsK6WGYaVw1YgYAV",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-05T06:42:15.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "details": "Client: Narendra, Belt: PTFE (Style 4X4), Dim: L 4562mm x W 4854mm, Price: ₹22,227"
+  },
+  {
+    "id": "VwknZ3qtqRD6n6LCXkdH",
+    "userId": "admin_user",
+    "timestamp": "2026-05-12T10:39:34.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 2500mm x W 1200mm, Price: ₹82,001"
+  },
+  {
+    "id": "W5TbeQdFQHTKaqFuu3Ii",
+    "userId": "admin_user",
+    "userName": "Administrator",
+    "timestamp": "2026-05-13T05:20:19.000Z",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PVC (PVC 2MM GREEN), Dim: L 2500mm x W 1000mm, Price: ₹91,034"
+  },
+  {
+    "id": "WGI6Zqh7mY6I0Z29QOkk",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 2000mm x W 2000mm, Price: ₹7,817",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-14T05:04:56.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "WH3ILC1Pzy5JICvF6vKL",
+    "userId": "admin_user",
+    "userName": "Administrator",
+    "timestamp": "2026-04-18T08:39:21.000Z",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 3500mm x W 200mm, Price: ₹4,567"
+  },
+  {
+    "id": "WPS9VgYJ1l8b0Z1ISeGh",
+    "timestamp": "2026-05-12T10:17:28.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,426"
+  },
+  {
+    "id": "XiSNIAkH0fRDdBpiw4w1",
+    "timestamp": "2026-05-05T05:02:46.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: Narendra, Belt: PTFE (Style 4X4), Dim: L 45000mm x W 32110mm, Price: ₹9,00,883"
+  },
+  {
+    "id": "Y33W6MqzOaY7zU5NW0xB",
+    "userId": "admin_user",
+    "timestamp": "2026-05-18T08:37:57.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 1650mm x W 475mm, Price: ₹3,20,30,95,69,406"
+  },
+  {
+    "id": "YRD7QtZD4XrPTZiaTDXI",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 2500mm x W 1200mm, Price: ₹2,474",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-05-12T11:05:16.000Z",
+    "userName": "Administrator"
+  },
+  {
+    "id": "YyOfzojCg8qISnfonEeq",
+    "details": "Client: asif , Belt: PTFE (4X4 MESH BELT), Dim: L 20mtr x W 2mtr, Price: ₹27,865",
+    "timestamp": "2026-05-25T09:06:54.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "ZinhWH3zud54u2AYurJJ",
+    "userId": "admin_user",
+    "timestamp": "2026-04-18T08:39:12.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 3500mm x W 200mm, Price: ₹4,384"
+  },
+  {
+    "id": "dI3KoASKcehvIiR5eG2y",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-05-01T11:47:09.000Z",
+    "userName": "Administrator",
+    "details": "Client: asif , Belt: PUPVC (), Dim: L 1200mm x W 1200mm, Price: ₹1,745"
+  },
+  {
+    "id": "dWW1P0K3QQWsN0g2APZs",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,584",
+    "action": "PRICE_CALCULATION",
+    "userName": "Administrator",
+    "timestamp": "2026-05-01T09:49:23.000Z",
+    "userId": "admin_user"
+  },
+  {
+    "id": "dpQE3mDwAWsI6BFgfh9g",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 2500mm x W 1200mm, Price: ₹1,222",
+    "action": "PRICE_CALCULATION",
+    "userName": "Administrator",
+    "timestamp": "2026-05-12T10:41:10.000Z",
+    "userId": "admin_user"
+  },
+  {
+    "id": "dpUIkn9tPpPUhrWE0E2Q",
+    "userId": "admin_user",
+    "timestamp": "2026-04-20T15:17:07.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 3300mm x W 5576mm, Price: ₹15,064"
+  },
+  {
+    "id": "drDEXpoaX5fQONSLe2L8",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 12mm x W 10mm, Price: ₹406",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-04-20T15:12:04.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "hGk34gnHnEKfcFw1I7wl",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 2500mm x W 1200mm, Price: ₹81,59,69,70,406",
+    "userId": "admin_user",
+    "timestamp": "2026-05-12T10:46:55.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "hlOqxGSLrHyqGfCs0cKh",
+    "userId": "admin_user",
+    "timestamp": "2026-04-17T10:40:31.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: Style 4x4, Dim: L 5ft x W 10ft, Price: ₹8,812"
+  },
+  {
+    "id": "iC9IJlQOIJIQJ4oBpjBM",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,787",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-01T09:10:46.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "iIr5KpqP5x4G80DqAaGG",
+    "action": "PRICE_CALCULATION",
+    "userName": "Administrator",
+    "timestamp": "2026-04-17T11:28:09.000Z",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: Style 4x4, Dim: L 15000mm x W 15224mm, Price: ₹1,94,787"
+  },
+  {
+    "id": "iuTl9rzVgbTao6DykNpW",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 10mm x W 10mm, Price: ₹391",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-04-20T16:54:29.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "j9Rvv2lq8vYoB6JU4xtn",
+    "details": "Client: asif , Belt: PVC (PVC 2MM GREEN), Dim: L 2500mm x W 500mm, Price: ₹1,435",
+    "timestamp": "2026-05-13T06:24:22.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "kHdlH5PeRiFQg3uMdgCr",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 4520mm x W 3500mm, Price: ₹14,819",
+    "userName": "Administrator",
+    "timestamp": "2026-05-05T05:36:04.000Z",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "kxdMvWdq7cDtEGQJXAda",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 2001mm x W 2001mm, Price: ₹8,341",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-14T05:34:55.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "lH7rHXZlpGGiEpsueHdx",
+    "action": "PRICE_CALCULATION",
+    "userName": "Administrator",
+    "timestamp": "2026-05-27T11:34:46.000Z",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: PTFE (4X4 MESH BELT), Dim: L 3000mm x W 1000mm, Price: ₹4,063"
+  },
+  {
+    "id": "luLUkcdsZQQr09nLZ8l4",
+    "timestamp": "2026-05-12T11:08:16.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 8.20ft x W 3.94mm, Price: ₹207"
+  },
+  {
+    "id": "mXMXPEvbX7VQByfga9vi",
+    "userId": "admin_user",
+    "timestamp": "2026-05-05T06:41:59.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: Narendra, Belt: PTFE (Style 4X4), Dim: L 4562mm x W 4854mm, Price: ₹21,927"
+  },
+  {
+    "id": "meJ1KmutwNGWiTNRVXJH",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-05-01T09:12:04.000Z",
+    "userName": "Administrator",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,787"
+  },
+  {
+    "id": "msAY5w65DQG9J4layiig",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 2000mm x W 2000mm, Price: ₹5,297",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "userName": "Administrator",
+    "timestamp": "2026-05-14T05:04:14.000Z"
+  },
+  {
+    "id": "neEfikZAuwmbBib6Lhx0",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,11,03,70,69,563",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-01T09:39:06.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "nitEFGp9yXOTGNPERH1g",
+    "action": "PRICE_CALCULATION",
+    "userName": "Administrator",
+    "timestamp": "2026-05-01T09:43:04.000Z",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹2,024"
+  },
+  {
+    "id": "oQM7qGpUKLEhFQxn5uf2",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "userName": "Administrator",
+    "timestamp": "2026-04-17T10:18:25.000Z",
+    "details": "Client: asif , Belt: Style 4x4, Dims: 4565x2255 mm, Price: ₹15,209"
+  },
+  {
+    "id": "ovPbecE2UPMrIU6q7TSz",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,07,247",
+    "userId": "admin_user",
+    "timestamp": "2026-04-23T10:58:32.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "p2cKl7gRqSwu4llxVLS1",
+    "details": "Client: asif , Belt: PTFE (4X4 MESH BELT), Dim: L 2200mm x W 1000mm, Price: ₹3,557",
+    "action": "PRICE_CALCULATION",
+    "userName": "Administrator",
+    "timestamp": "2026-05-18T12:31:35.000Z",
+    "userId": "admin_user"
+  },
+  {
+    "id": "pbFgUySDe5tAmMKRHT5x",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-01T06:23:20.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "details": "Client: Narendra, Belt: PTFE (Style 4X4), Dim: L 1250mm x W 1400mm, Price: ₹3,994"
+  },
+  {
+    "id": "s1t3p6AjIXjuBGHYzq4v",
+    "userId": "bhumi",
+    "timestamp": "2026-05-01T06:19:15.000Z",
+    "userName": "bhumi tandel",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 1200mm x W 1400mm, Price: ₹4,484"
+  },
+  {
+    "id": "sDk7vAKyAmsF0vRXvz0E",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-05-14T05:31:27.000Z",
+    "userName": "Administrator",
+    "details": "Client: Narendra, Belt: PTFE (Style 4X4), Dim: L 2000mm x W 2000mm, Price: ₹8,132"
+  },
+  {
+    "id": "sSICNka5amu9W87SKmRs",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 4520mm x W 3500mm, Price: ₹15,004",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-05T06:09:36.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user"
+  },
+  {
+    "id": "tIAzbBmziXsq3XfvDSpC",
+    "userId": "admin_user",
+    "timestamp": "2026-04-22T10:11:45.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1.20mm x W 1.20mm, Price: ₹497"
+  },
+  {
+    "id": "toeMFAt00FNYXkJww9RO",
+    "timestamp": "2026-05-01T09:44:11.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹2,018"
+  },
+  {
+    "id": "uqPDZHktWWj490mPcE36",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 2000mm x W 2000mm, Price: ₹7,817",
+    "userId": "admin_user",
+    "timestamp": "2026-05-14T05:05:43.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "uvGxCvXFnoX2qszNSYYr",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 2500mm x W 1200mm, Price: ₹8,15,96,97,00,406",
+    "timestamp": "2026-05-12T11:15:41.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "w9uDz2u52Vwxr8NHmPSB",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,520",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-05-01T11:57:26.000Z",
+    "userName": "Administrator"
+  },
+  {
+    "id": "wjgOmfdX7kRMsDt4Jdvr",
+    "action": "PRICE_CALCULATION",
+    "userName": "Administrator",
+    "timestamp": "2026-04-20T15:12:34.000Z",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 21mm x W 10mm, Price: ₹409"
+  },
+  {
+    "id": "wwd51Ak6DXEMI8HnEib1",
+    "timestamp": "2026-05-12T11:07:29.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 8.20ft x W 1200mm, Price: ₹2,474"
+  },
+  {
+    "id": "x5aaQFu7vCm3wDE5Xj4G",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,715",
+    "userId": "admin_user",
+    "timestamp": "2026-05-01T09:10:33.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "x9ZB95P5zuh0GqlcCIQA",
+    "userId": "admin_user",
+    "timestamp": "2026-05-12T11:03:19.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 2500mm x W 1200mm, Price: ₹7,98,463"
+  },
+  {
+    "id": "xcP5yBOeRe99ZE1arch5",
+    "details": "Client: asif , Belt: PVC (PVC 1 MM GREEN), Dim: L 2500mm x W 1200mm, Price: ₹82,001",
+    "userId": "admin_user",
+    "timestamp": "2026-05-12T10:56:38.000Z",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "yOn54980ZTa9rAcZti5Y",
+    "userName": "Administrator",
+    "timestamp": "2026-04-18T08:32:27.000Z",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 3500mm x W 452mm, Price: ₹5,749"
+  },
+  {
+    "id": "ycP7FmQ4tjjrbz6bVuh7",
+    "action": "PRICE_CALCULATION",
+    "timestamp": "2026-05-01T09:09:02.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,787"
+  },
+  {
+    "id": "yr8gL9GD8rCWnmkveqEW",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-05-04T07:26:28.000Z",
+    "userName": "Administrator",
+    "details": "Client: asif , Belt: PUPVC (PVC 1MM), Dim: L 1200mm x W 1200mm, Price: ₹1,584"
+  },
+  {
+    "id": "yuETGpC9FLa5rYdmwRD1",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 1250mm x W 1400mm, Price: ₹3,994",
+    "action": "PRICE_CALCULATION",
+    "userId": "admin_user",
+    "timestamp": "2026-05-01T06:33:42.000Z",
+    "userName": "Administrator"
+  },
+  {
+    "id": "zEvkyYrkNtFqgpaVe6HX",
+    "details": "Client: asif , Belt: PTFE (Style 4X4), Dim: L 4522mm x W 3625mm, Price: ₹32,170",
+    "timestamp": "2026-04-17T17:02:53.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION"
+  },
+  {
+    "id": "zQffaSh0j3OsWW0hj17d",
+    "timestamp": "2026-05-05T06:42:07.000Z",
+    "userName": "Administrator",
+    "userId": "admin_user",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: Narendra, Belt: PTFE (Style 4X4), Dim: L 4562mm x W 4854mm, Price: ₹22,127"
+  },
+  {
+    "id": "1780111767977",
+    "timestamp": "2026-05-30T03:29:27.977Z",
+    "userId": "admin_user",
+    "userName": "Administrator",
+    "action": "PRICE_CALCULATION",
+    "details": "Client: asif , Belt: PTFE (4X4 MESH BELT), Dim: L 34mm x W 456mm, Price: ₹1,012"
+  }
+]

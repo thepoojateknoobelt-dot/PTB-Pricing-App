@@ -1,0 +1,70 @@
+[
+  {
+    "id": "d06O9IEKdHgKxpvbMJms",
+    "city": "delhi",
+    "profitMargins": {
+      "PUPVC": [
+        {
+          "minLength": 0,
+          "margin": 20,
+          "maxLength": null
+        }
+      ],
+      "PTFE": [
+        {
+          "minLength": 0,
+          "margin": 20,
+          "maxLength": null
+        }
+      ]
+    },
+    "createdAt": "2026-05-01T06:22:04.000Z",
+    "name": "Narendra",
+    "company": "india pvt ltd"
+  },
+  {
+    "id": "dXCDsBwOxkD3D1ECa5Cb",
+    "company": "keshwani industries",
+    "createdAt": "2026-04-17T10:07:56.000Z",
+    "name": "asif ",
+    "city": "surat",
+    "profitMargins": {
+      "Solid Belt": 20,
+      "PTFE": [
+        {
+          "minLength": 0,
+          "margin": 20,
+          "maxLength": 15
+        },
+        {
+          "maxLength": 50,
+          "minLength": 15,
+          "margin": 18
+        },
+        {
+          "maxLength": null,
+          "minLength": 50,
+          "margin": 15
+        }
+      ],
+      "Style 2x2": 10,
+      "Style 4x4": [
+        {
+          "minLength": 0,
+          "margin": 15,
+          "maxLength": 10
+        },
+        {
+          "maxLength": 50,
+          "minLength": 10,
+          "margin": 10
+        },
+        {
+          "margin": 8,
+          "minLength": 50,
+          "maxLength": 100
+        }
+      ]
+    }
+  }
+]

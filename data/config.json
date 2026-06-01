@@ -1,0 +1,475 @@
+{
+  "constants": {
+    "purchaseGst": 0,
+    "saleGst": 5,
+    "defaultProfit": 20,
+    "fixCost": 17
+  },
+  "awsServerUrl": "https://srdxqwkta6dm6c6wwd7xy7fetu0iezmh.lambda-url.ap-south-1.on.aws/",
+  "beltCutProUrl": "http://192.168.0.104:3001/",
+  "beltTypes": [
+    {
+      "styles": [
+        {
+          "name": "4X4 MESH BELT",
+          "id": "1779105269796",
+          "bom": [
+            {
+              "id": "1779105293048",
+              "unit": "sqm",
+              "formula": "L * W",
+              "rate": 335,
+              "name": "4X4 MESH OPEN Matiryal"
+            },
+            {
+              "id": "1779105327208",
+              "unit": "mtr",
+              "rate": 19,
+              "formula": "L*4",
+              "name": "RED Bodar"
+            },
+            {
+              "name": "FEP Film",
+              "formula": "L*4",
+              "rate": 9,
+              "unit": "mtr",
+              "id": "1779105334445"
+            },
+            {
+              "name": "Thread",
+              "rate": 1,
+              "formula": "W*10*4*2",
+              "unit": "mtr",
+              "id": "1779105368682"
+            },
+            {
+              "formula": "W*1.05*2",
+              "rate": 115,
+              "name": "PIN",
+              "id": "1779105378190",
+              "unit": "mtr"
+            },
+            {
+              "formula": "W*2",
+              "rate": 395,
+              "name": "Joint",
+              "id": "1779105390276",
+              "unit": "mtr"
+            }
+          ]
+        },
+        {
+          "name": "2X2 MESH BELT",
+          "id": "1779107724536",
+          "bom": [
+            {
+              "id": "1779107851864",
+              "unit": "sqm",
+              "rate": 0,
+              "formula": "L * W",
+              "name": "2X2 MESH Open Matiryal"
+            },
+            {
+              "unit": "mtr",
+              "id": "1779107872468",
+              "name": "RED Bodar",
+              "rate": 0,
+              "formula": "L*4"
+            },
+            {
+              "formula": "L*4",
+              "rate": 0,
+              "name": "FEP Film",
+              "id": "1779107881872",
+              "unit": "sqm"
+            },
+            {
+              "unit": "sqm",
+              "id": "1779107896244",
+              "name": "Thraed",
+              "formula": "W*10*4*2",
+              "rate": 0
+            },
+            {
+              "rate": 0,
+              "formula": "W*1.05*2",
+              "name": "Pin",
+              "id": "1779107900664",
+              "unit": "sqm"
+            },
+            {
+              "id": "1779107906224",
+              "unit": "sqm",
+              "rate": 0,
+              "formula": "W*2",
+              "name": "Joint"
+            }
+          ]
+        },
+        {
+          "id": "1779107800268",
+          "bom": [
+            {
+              "formula": "L * W",
+              "rate": 0,
+              "name": "4X4 MESH Black Open Matiryal",
+              "id": "1779108474076",
+              "unit": "sqm"
+            },
+            {
+              "id": "1779108483848",
+              "unit": "mtr",
+              "rate": 0,
+              "formula": "L*4",
+              "name": "Red Bodar"
+            },
+            {
+              "unit": "mtr",
+              "id": "1779108494104",
+              "name": "FEP Film",
+              "rate": 0,
+              "formula": "L*4"
+            },
+            {
+              "unit": "mtr",
+              "id": "1779108500280",
+              "name": "Thread",
+              "formula": "W*10*4*2",
+              "rate": 0
+            },
+            {
+              "unit": "mtr",
+              "id": "1779108507404",
+              "name": "Pin",
+              "formula": "W*1.05*2",
+              "rate": 0
+            },
+            {
+              "rate": 0,
+              "formula": "W*2",
+              "name": "Joint",
+              "id": "1779108512972",
+              "unit": "mtr"
+            }
+          ],
+          "name": "4X4 MESH BELT BLACK"
+        },
+        {
+          "bom": [
+            {
+              "unit": "sqm",
+              "id": "1779871378587",
+              "name": "1X1 Mesh Open Matiryal",
+              "rate": 0,
+              "formula": "L * W"
+            },
+            {
+              "formula": "L*2",
+              "rate": 0,
+              "name": "Red Bodar",
+              "id": "1779871396435",
+              "unit": "sqm"
+            },
+            {
+              "unit": "sqm",
+              "id": "1779871403624",
+              "name": "FEP Film",
+              "formula": "L*2",
+              "rate": 0
+            },
+            {
+              "id": "1779871417065",
+              "unit": "sqm",
+              "rate": 0,
+              "formula": "W*10*4*2",
+              "name": "Thrad"
+            },
+            {
+              "rate": 0,
+              "formula": "W*1.05*2",
+              "name": "pin",
+              "id": "1779871421347",
+              "unit": "sqm"
+            },
+            {
+              "name": "Joint",
+              "rate": 0,
+              "formula": "W*2",
+              "unit": "sqm",
+              "id": "1779871426403"
+            }
+          ],
+          "id": "1779871346905",
+          "name": "1X1 MESH BELT"
+        }
+      ],
+      "name": "PTFE",
+      "id": "1776442392547",
+      "fixCost": 25
+    },
+    {
+      "name": "PVC",
+      "styles": [
+        {
+          "id": "1778581477277",
+          "bom": [
+            {
+              "name": "PVC 5MM Matiryal",
+              "formula": "(L+0.1) * W",
+              "rate": 0,
+              "unit": "sqm",
+              "id": "1779093642462"
+            },
+            {
+              "rate": 0,
+              "formula": "W * 2",
+              "name": "PVC Film",
+              "id": "1779093671976",
+              "unit": "sqm"
+            }
+          ],
+          "name": "PVC 5MM GREEN"
+        },
+        {
+          "id": "1778581507675",
+          "bom": [
+            {
+              "unit": "sqmtr",
+              "id": "1778581586228",
+              "name": "PVC 1 MM OPEN MATIRYAL",
+              "formula": "(L+0.1) * W",
+              "rate": 450
+            },
+            {
+              "id": "1778582218076",
+              "unit": "mtr",
+              "rate": 58,
+              "formula": "W * 2",
+              "name": "PVC FILM"
+            }
+          ],
+          "name": "PVC 1 MM GREEN"
+        },
+        {
+          "name": "PVC 2MM GREEN",
+          "id": "1778581516224",
+          "bom": [
+            {
+              "formula": "(L+0.10) * W",
+              "rate": 600,
+              "name": "PVC 2MM Open Material",
+              "id": "1778649436416",
+              "unit": "sqmtr"
+            },
+            {
+              "formula": "W*2",
+              "rate": 58,
+              "name": "Pvc Film",
+              "id": "1778649496459",
+              "unit": "mtr"
+            }
+          ]
+        },
+        {
+          "bom": [
+            {
+              "name": "PVC 3 MM Matiryal",
+              "formula": "(L+0.1) * W",
+              "rate": 0,
+              "unit": "sqm",
+              "id": "1779093584720"
+            },
+            {
+              "id": "1779093601361",
+              "unit": "sqm",
+              "formula": "W * 2",
+              "rate": 0,
+              "name": "pvc Film"
+            }
+          ],
+          "id": "1778581523426",
+          "name": "PVC 3MM GREEN"
+        },
+        {
+          "id": "1779093722168",
+          "bom": [
+            {
+              "unit": "sqm",
+              "id": "1779093817945",
+              "name": "Pvc Ruf Open Matiryal",
+              "rate": 0,
+              "formula": "(L+0.1) * W"
+            },
+            {
+              "id": "1779093842009",
+              "unit": "sqm",
+              "rate": 0,
+              "formula": "W * 2",
+              "name": "PVC Film"
+            }
+          ],
+          "name": "PVC 5 MM Ruf Top"
+        },
+        {
+          "name": "PVC 2MM Diamond Black",
+          "id": "1779095084884",
+          "bom": [
+            {
+              "formula": "(L+0.1) * W",
+              "rate": 0,
+              "name": "PVC 2 mm Diamond Black Open Matiryal",
+              "id": "1779095113212",
+              "unit": "sqm"
+            },
+            {
+              "unit": "sqm",
+              "id": "1779095134272",
+              "name": "PVC Film",
+              "formula": "W * 2",
+              "rate": 0
+            }
+          ]
+        },
+        {
+          "id": "1779104657347",
+          "bom": [
+            {
+              "rate": 0,
+              "formula": "(L+0.1) * W",
+              "name": "PVC 3MM Diamond Open Matiryal",
+              "id": "1779104679673",
+              "unit": "sqm"
+            },
+            {
+              "unit": "sqm",
+              "id": "1779104719316",
+              "name": "PVC Film",
+              "rate": 0,
+              "formula": "W * 2"
+            }
+          ],
+          "name": "PVC 3MM DIAMOND WHITE"
+        }
+      ],
+      "id": "1778581418259"
+    },
+    {
+      "id": "1779095172712",
+      "styles": [
+        {
+          "bom": [
+            {
+              "rate": 0,
+              "formula": "(L+0.1) * W",
+              "name": "PU 1MM Open Matiryal",
+              "id": "1779095254660",
+              "unit": "sqm"
+            },
+            {
+              "name": "PU Film",
+              "rate": 0,
+              "formula": "W * 2",
+              "unit": "sqm",
+              "id": "1779095302271"
+            }
+          ],
+          "id": "1779095184243",
+          "name": "PU 1MM Belt"
+        },
+        {
+          "name": "PVC 1.5MM Belt",
+          "id": "1779095204851",
+          "bom": [
+            {
+              "name": "PU 1.5MM Open Matiryal",
+              "formula": "(L+0.1) * W",
+              "rate": 0,
+              "unit": "sqm",
+              "id": "1779095273872"
+            },
+            {
+              "formula": "W * 2",
+              "rate": 0,
+              "name": "PU Film",
+              "id": "1779095314403",
+              "unit": "sqm"
+            }
+          ]
+        },
+        {
+          "name": "PU 2.2MM BELT",
+          "id": "1779095237768",
+          "bom": [
+            {
+              "name": "PU 2.2 MM Open Matiryal",
+              "rate": 0,
+              "formula": "(L+0.1) * W",
+              "unit": "sqm",
+              "id": "1779095290972"
+            },
+            {
+              "name": "PU Film",
+              "formula": "W * 2",
+              "rate": 0,
+              "unit": "sqm",
+              "id": "1779095324136"
+            }
+          ]
+        }
+      ],
+      "name": "PU"
+    }
+  ],
+  "units": [
+    {
+      "value": "mm",
+      "label": "Millimeters (mm)"
+    },
+    {
+      "value": "mtr",
+      "label": "Meters (mtr)"
+    },
+    {
+      "label": "Feet (ft)",
+      "value": "ft"
+    },
+    {
+      "label": "Inches (in)",
+      "value": "in"
+    }
+  ],
+  "tapeTypes": [
+    {
+      "name": "Red Tape",
+      "rate": 19
+    },
+    {
+      "name": "Blue Tape",
+      "rate": 22
+    }
+  ],
+  "rates": {
+    "pin": 115,
+    "packing": 200,
+    "fep": 9,
+    "thread": 1,
+    "mesh": 400
+  },
+  "jointTypes": [
+    {
+      "multiplier": 2,
+      "rate": 375,
+      "name": "Bullnose"
+    },
+    {
+      "rate": 0,
+      "multiplier": 0,
+      "name": "Overlap"
+    },
+    {
+      "rate": 0,
+      "multiplier": 0,
+      "name": "Alligator"
+    }
+  ]
+}
