@@ -44,6 +44,12 @@ async function initializeDatabase() {
       )
     `);
 
+    try {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS permission VARCHAR(50) DEFAULT 'write' NOT NULL`);
+    } catch (alterErr) {
+      console.warn('Failed to add permission column to users table:', alterErr);
+    }
+
     // Create Clients table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS clients (
@@ -341,9 +347,9 @@ app.post('/api/auth/login', async (req, res) => {
   // Direct bypass check for admin/admin
   if (username === 'admin' && password === 'admin') {
     console.log('Login bypassed for admin/admin');
-    const token = jwt.sign({ id: 'admin_user', username: 'admin', role: 'admin', name: 'System Admin' }, JWT_SECRET);
+    const token = jwt.sign({ id: 'admin_user', username: 'admin', role: 'admin', name: 'System Admin', permission: 'write' }, JWT_SECRET);
     return res.cookie('token', token, { httpOnly: true }).json({ 
-      user: { id: 'admin_user', username: 'admin', role: 'admin', name: 'System Admin' } 
+      user: { id: 'admin_user', username: 'admin', role: 'admin', name: 'System Admin', permission: 'write' } 
     });
   }
 
@@ -377,8 +383,8 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     console.log('Login successful for:', username);
-    const token = jwt.sign({ id: user.id, username: user.username, role: user.role, name: user.name }, JWT_SECRET);
-    res.cookie('token', token, { httpOnly: true }).json({ user: { id: user.id, username: user.username, role: user.role, name: user.name } });
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role, name: user.name, permission: user.permission || 'write' }, JWT_SECRET);
+    res.cookie('token', token, { httpOnly: true }).json({ user: { id: user.id, username: user.username, role: user.role, name: user.name, permission: user.permission || 'write' } });
   } catch (error) {
     console.error('Login error on server:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -718,13 +724,14 @@ app.put('/api/quotations/:id', authenticate, async (req, res) => {
 app.get('/api/users', authenticate, async (req: any, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
   try {
-    const result = await pool.query('SELECT id, username, name, role, username_lower FROM users');
+    const result = await pool.query('SELECT id, username, name, role, username_lower, permission FROM users');
     res.json(result.rows.map(row => ({
       id: row.id,
       username: row.username,
       name: row.name,
       role: row.role,
-      usernameLower: row.username_lower
+      usernameLower: row.username_lower,
+      permission: row.permission || 'write'
     })));
   } catch (err) {
     console.error('Failed to get users', err);
@@ -734,7 +741,7 @@ app.get('/api/users', authenticate, async (req: any, res) => {
 
 app.post('/api/users', authenticate, async (req: any, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-  const { username, name, role, password } = req.body;
+  const { username, name, role, password, permission = 'write' } = req.body;
   
   try {
     const normalizedUsername = username.toLowerCase().trim().replace(/\s+/g, '_');
@@ -746,15 +753,16 @@ app.post('/api/users', authenticate, async (req: any, res) => {
   
     const passwordHash = bcrypt.hashSync(password, 10);
     await pool.query(
-      'INSERT INTO users (id, username, name, role, password, username_lower) VALUES ($1, $2, $3, $4, $5, $6)',
-      [normalizedUsername, username, name, role, passwordHash, normalizedUsername]
+      'INSERT INTO users (id, username, name, role, password, username_lower, permission) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [normalizedUsername, username, name, role, passwordHash, normalizedUsername, permission]
     );
     res.json({
       id: normalizedUsername,
       username,
       name,
       role,
-      usernameLower: normalizedUsername
+      usernameLower: normalizedUsername,
+      permission
     });
   } catch (err) {
     console.error('Failed to create user', err);

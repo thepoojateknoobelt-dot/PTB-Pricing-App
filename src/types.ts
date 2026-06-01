@@ -6,6 +6,7 @@ export interface User {
   name: string;
   role: UserRole;
   password?: string;
+  permission?: 'read' | 'write';
 }
 
 export interface Rates {

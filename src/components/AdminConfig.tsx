@@ -376,13 +376,35 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config }) => {
                           : "border-transparent hover:bg-zinc-50 hover:border-zinc-100"
                       )}
                     >
-                      <span className={cn("text-sm font-bold truncate", selectedCatIdx === idx ? "text-blue-700" : "text-zinc-700")}>
+                      <span className={cn("text-sm font-bold truncate max-w-[120px]", selectedCatIdx === idx ? "text-blue-700" : "text-zinc-700")}>
                         {cat.name.toUpperCase()}
                       </span>
-                      <X 
-                        className="h-3 w-3 text-zinc-300 opacity-0 group-hover:opacity-100 hover:text-red-500" 
-                        onClick={(e) => { e.stopPropagation(); removeItem('beltTypes', idx); setSelectedCatIdx(null); }} 
-                      />
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Edit2 
+                          className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 cursor-pointer" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newName = prompt('Edit Category Name:', cat.name);
+                            if (newName && newName.trim()) {
+                              const updated = [...localConfig.beltTypes];
+                              updated[idx].name = newName.trim();
+                              setLocalConfig({ ...localConfig, beltTypes: updated });
+                            }
+                          }}
+                        />
+                        <Trash2 
+                          className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-red-500 cursor-pointer" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Are you sure you want to delete Category "${cat.name}"? All associated styles and BOMs will be deleted.`)) {
+                              removeItem('beltTypes', idx);
+                              setSelectedCatIdx(null);
+                              setSelectedStyleIdx(null);
+                              setSelectedBOMIdx(null);
+                            }
+                          }} 
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -422,13 +444,34 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config }) => {
                             : "border-transparent hover:bg-zinc-50 hover:border-zinc-100"
                         )}
                       >
-                        <span className={cn("text-sm font-bold truncate", selectedStyleIdx === idx ? "text-blue-700" : "text-zinc-700")}>
+                        <span className={cn("text-sm font-bold truncate max-w-[120px]", selectedStyleIdx === idx ? "text-blue-700" : "text-zinc-700")}>
                           {style.name.toUpperCase()}
                         </span>
-                        <X 
-                          className="h-3 w-3 text-zinc-300 opacity-0 group-hover:opacity-100 hover:text-red-500" 
-                          onClick={(e) => { e.stopPropagation(); removeStyle(selectedCatIdx, idx); setSelectedStyleIdx(null); }} 
-                        />
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Edit2 
+                            className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 cursor-pointer" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const newName = prompt('Edit Style Name:', style.name);
+                              if (newName && newName.trim()) {
+                                const updated = [...localConfig.beltTypes];
+                                updated[selectedCatIdx!].styles[idx].name = newName.trim();
+                                setLocalConfig({ ...localConfig, beltTypes: updated });
+                              }
+                            }}
+                          />
+                          <Trash2 
+                            className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-red-500 cursor-pointer" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Are you sure you want to delete Style "${style.name}"?`)) {
+                                removeStyle(selectedCatIdx!, idx);
+                                setSelectedStyleIdx(null);
+                                setSelectedBOMIdx(null);
+                              }
+                            }} 
+                          />
+                        </div>
                       </div>
                     ))
                   ) : (
@@ -474,16 +517,36 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config }) => {
                             : "border-transparent hover:bg-zinc-50 hover:border-zinc-100"
                         )}
                       >
-                        <div className="flex flex-col">
+                        <div className="flex flex-col min-w-0 flex-1 mr-1">
                           <span className={cn("text-xs font-bold truncate", selectedBOMIdx === idx ? "text-blue-700" : "text-zinc-700")}>
                             {item.name.toUpperCase()}
                           </span>
                            <span className="text-[10px] text-blue-500 font-mono font-bold tracking-tighter">={item.formula}</span>
                         </div>
-                        <X 
-                          className="h-3 w-3 text-zinc-300 opacity-0 group-hover:opacity-100 hover:text-red-500" 
-                          onClick={(e) => { e.stopPropagation(); removeBOMItem(idx); setSelectedBOMIdx(null); }} 
-                        />
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Edit2 
+                            className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 cursor-pointer" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const newName = prompt('Edit Component Name:', item.name);
+                              if (newName && newName.trim()) {
+                                const updated = [...localConfig.beltTypes];
+                                updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[idx].name = newName.trim();
+                                setLocalConfig({ ...localConfig, beltTypes: updated });
+                              }
+                            }}
+                          />
+                          <Trash2 
+                            className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-red-500 cursor-pointer" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Are you sure you want to delete Component "${item.name}"?`)) {
+                                removeBOMItem(idx);
+                                setSelectedBOMIdx(null);
+                              }
+                            }} 
+                          />
+                        </div>
                       </div>
                     ))
                   ) : (

@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { toast } from 'sonner';
 import { UserPlus, Trash2, Shield, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { cn } from '../lib/utils';
 
 export const UserManagement = () => {
   const { user: currentUser } = useAuth();
@@ -18,6 +19,7 @@ export const UserManagement = () => {
     name: '',
     role: 'sales' as 'admin' | 'sales',
     password: '',
+    permission: 'write' as 'read' | 'write',
   });
   const [isAdding, setIsAdding] = useState(false);
 
@@ -55,7 +57,8 @@ export const UserManagement = () => {
           username: formData.username,
           name: formData.name,
           role: formData.role,
-          password: formData.password
+          password: formData.password,
+          permission: formData.permission
         })
       });
 
@@ -67,7 +70,7 @@ export const UserManagement = () => {
       }
 
       toast.success('User created successfully');
-      setFormData({ username: '', name: '', role: 'sales', password: '' });
+      setFormData({ username: '', name: '', role: 'sales', password: '', permission: 'write' });
       fetchUsers();
     } catch (err: any) {
       console.error('Error creating user:', err);
@@ -134,12 +137,24 @@ export const UserManagement = () => {
               <div className="space-y-2">
                 <Label>Role</Label>
                 <Select value={formData.role} onValueChange={(val: any) => setFormData({ ...formData, role: val })}>
-                  <SelectTrigger>
+                  <SelectTrigger className="border-zinc-300">
                     <SelectValue placeholder="Select Role" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="sales">Sales Person</SelectItem>
                     <SelectItem value="admin">Administrator</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Access Level / Permission</Label>
+                <Select value={formData.permission} onValueChange={(val: any) => setFormData({ ...formData, permission: val })}>
+                  <SelectTrigger className="border-zinc-300">
+                    <SelectValue placeholder="Select Access Level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="write">Read & Write (Full Access)</SelectItem>
+                    <SelectItem value="read">Read Only (Cannot Edit/Save)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -171,6 +186,7 @@ export const UserManagement = () => {
                 <TableRow>
                   <TableHead>User</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead>Access Level</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -199,6 +215,16 @@ export const UserManagement = () => {
                           {u.role}
                         </span>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className={cn(
+                        "text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border",
+                        u.permission === 'read' 
+                          ? "bg-amber-50 text-amber-700 border-amber-200" 
+                          : "bg-blue-50 text-blue-700 border-blue-200"
+                      )}>
+                        {u.permission === 'read' ? 'Read Only' : 'Read & Write'}
+                      </span>
                     </TableCell>
                     <TableCell className="text-right">
                       <Button 

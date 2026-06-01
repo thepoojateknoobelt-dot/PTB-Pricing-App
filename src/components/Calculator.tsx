@@ -721,18 +721,27 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                   </div>
                 </div>
 
+                {user?.permission === 'read' && (
+                  <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-medium animate-in fade-in duration-300">
+                    <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                    <span>Your account is in read-only mode. You cannot save or submit quotations.</span>
+                  </div>
+                )}
+
                 <div className="flex gap-3">
                   <Button 
                     variant="outline" 
-                    className="flex-1 gap-1.5 h-10 border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition-all" 
+                    className="flex-1 gap-1.5 h-10 border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition-all disabled:opacity-50" 
                     onClick={() => handleSaveQuotation('draft')}
+                    disabled={user?.permission === 'read'}
                   >
                     <Save className="h-3.5 w-3.5" />
                     Save Draft
                   </Button>
                   <Button 
-                    className="flex-2 gap-1.5 bg-zinc-900 hover:bg-zinc-800 text-white h-10 text-xs font-bold shadow-md transition-all active:scale-[0.98]"
+                    className="flex-2 gap-1.5 bg-zinc-900 hover:bg-zinc-800 text-white h-10 text-xs font-bold shadow-md transition-all active:scale-[0.98] disabled:opacity-50"
                     onClick={() => handleSaveQuotation(discountRequested ? 'pending_approval' : 'draft')}
+                    disabled={user?.permission === 'read'}
                   >
                     <Send className="h-3.5 w-3.5" />
                     {discountRequested ? 'Submit Review' : 'Finalize'}
