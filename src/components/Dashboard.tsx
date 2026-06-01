@@ -152,39 +152,91 @@ export const Dashboard = () => {
 
   if (activeModule === 'master') {
     return (
-      <div className="min-h-screen bg-zinc-50 flex flex-col justify-between text-zinc-900 font-sans antialiased overflow-hidden relative">
-        {/* Background Decorative Gradients */}
-        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="min-h-screen bg-[#f8fafc] flex flex-col justify-between text-zinc-900 font-sans antialiased overflow-hidden relative">
+        {/* CSS Keyframes for 3D Mesh and Floating Glow Spheres */}
+        <style>{`
+          @keyframes float-sphere-1 {
+            0% { transform: translate(0px, 0px) scale(1) rotate(0deg); }
+            33% { transform: translate(60px, -80px) scale(1.2) rotate(120deg); }
+            66% { transform: translate(-40px, 40px) scale(0.85) rotate(240deg); }
+            100% { transform: translate(0px, 0px) scale(1) rotate(360deg); }
+          }
+          @keyframes float-sphere-2 {
+            0% { transform: translate(0px, 0px) scale(1.15) rotate(360deg); }
+            33% { transform: translate(-70px, 50px) scale(0.9) rotate(240deg); }
+            66% { transform: translate(50px, -40px) scale(1.25) rotate(120deg); }
+            100% { transform: translate(0px, 0px) scale(1.15) rotate(0deg); }
+          }
+          @keyframes float-sphere-3 {
+            0% { transform: translate(0px, 0px) scale(0.9) rotate(0deg); }
+            33% { transform: translate(40px, 70px) scale(1.1) rotate(120deg); }
+            66% { transform: translate(-60px, -50px) scale(0.95) rotate(240deg); }
+            100% { transform: translate(0px, 0px) scale(0.9) rotate(360deg); }
+          }
+          .animate-sphere-1 {
+            animation: float-sphere-1 30s infinite alternate ease-in-out;
+          }
+          .animate-sphere-2 {
+            animation: float-sphere-2 25s infinite alternate ease-in-out;
+          }
+          .animate-sphere-3 {
+            animation: float-sphere-3 28s infinite alternate ease-in-out;
+          }
+          .glass-panel {
+            background: rgba(255, 255, 255, 0.45);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+          }
+          .glass-panel:hover {
+            background: rgba(255, 255, 255, 0.7);
+            border-color: rgba(255, 255, 255, 0.9);
+          }
+          .text-gradient {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+          }
+        `}</style>
+
+        {/* 3D Depth Grid Overlay */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_80%,transparent_100%)] opacity-[0.35] pointer-events-none z-0" />
+
+        {/* Animated 3D Light Spheres for Mesh Background */}
+        <div className="absolute top-[-15%] left-[-15%] w-[65vw] h-[65vw] max-w-[700px] max-h-[700px] rounded-full bg-gradient-to-br from-indigo-500/20 via-purple-500/15 to-transparent blur-[130px] pointer-events-none z-0 animate-sphere-1" />
+        <div className="absolute bottom-[-15%] right-[-15%] w-[65vw] h-[65vw] max-w-[700px] max-h-[700px] rounded-full bg-gradient-to-tr from-emerald-400/20 via-teal-400/15 to-transparent blur-[130px] pointer-events-none z-0 animate-sphere-2" />
+        <div className="absolute top-[25%] right-[10%] w-[50vw] h-[50vw] max-w-[550px] max-h-[550px] rounded-full bg-gradient-to-bl from-rose-400/15 via-pink-500/10 to-transparent blur-[110px] pointer-events-none z-0 animate-sphere-3" />
+        <div className="absolute bottom-[20%] left-[5%] w-[55vw] h-[55vw] max-w-[600px] max-h-[600px] rounded-full bg-gradient-to-tr from-amber-400/15 via-orange-400/10 to-transparent blur-[120px] pointer-events-none z-0 animate-sphere-1" />
         
         {/* Header */}
-        <header className="p-8 flex items-center justify-between border-b border-zinc-200/80 backdrop-blur-sm bg-white/40 z-10">
+        <header className="px-8 py-5 flex items-center justify-between border-b border-white/40 backdrop-blur-md bg-white/40 z-10 relative">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-zinc-900 rounded-xl shadow-lg">
+            <div className="p-2.5 bg-zinc-900 rounded-xl shadow-xl flex items-center justify-center transform hover:rotate-6 transition-transform">
               <Factory className="h-6 w-6 text-white" />
             </div>
             <div className="flex flex-col">
               <span className="text-zinc-900 font-black tracking-tight text-lg leading-none uppercase">Pooja Tekno Belt</span>
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1">Master Portal</span>
+              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mt-1">Master Portal</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-zinc-600 font-bold uppercase tracking-wider bg-white px-3 py-1.5 rounded-lg border border-zinc-200 shadow-sm">
+            <span className="text-xs text-zinc-700 font-bold uppercase tracking-wider bg-white/80 px-3.5 py-2 rounded-xl border border-white shadow-[0_4px_12px_rgba(0,0,0,0.03)] backdrop-blur-sm">
               Logged in as: {user?.name || user?.username}
             </span>
           </div>
         </header>
 
         {/* Content */}
-        <main className="flex-1 flex flex-col items-center justify-center px-6 py-12 z-10 max-w-5xl mx-auto w-full">
-          <div className="text-center space-y-4 mb-16 animate-in fade-in slide-in-from-top-6 duration-700">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-zinc-200/50 rounded-full border border-zinc-300 text-xs font-black uppercase tracking-widest text-zinc-600">
+        <main className="flex-1 flex flex-col items-center justify-center px-6 py-12 z-10 max-w-5xl mx-auto w-full relative">
+          <div className="text-center space-y-4 mb-14 animate-in fade-in slide-in-from-top-6 duration-700">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/80 text-zinc-800 rounded-full border border-white/60 shadow-[0_8px_16px_rgba(0,0,0,0.02)] backdrop-blur-md text-[10px] font-black uppercase tracking-widest">
+              <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
               Welcome to the Business Suite
             </div>
-            <h1 className="text-4xl md:text-6xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-zinc-950 via-zinc-800 to-zinc-700">
+            <h1 className="text-4xl md:text-6xl font-black tracking-tight text-gradient pb-1">
               Pooja Tekno Belt
             </h1>
-            <p className="text-zinc-600 text-sm md:text-base max-w-xl mx-auto leading-relaxed">
+            <p className="text-zinc-600 text-sm md:text-base max-w-xl mx-auto leading-relaxed font-medium">
               Select one of the specialized portals below to manage your pricing workflows or production optimization.
             </p>
           </div>
@@ -193,61 +245,65 @@ export const Dashboard = () => {
             {/* PTB Pricing Portal Button Card */}
             <button
               onClick={() => handleModuleChange('pricing')}
-              className="group text-left p-8 bg-white hover:bg-zinc-50/50 border border-zinc-200 hover:border-zinc-300 rounded-3xl transition-all duration-300 shadow-xl shadow-zinc-200/40 relative overflow-hidden flex flex-col justify-between min-h-[280px] cursor-pointer hover:-translate-y-1 hover:shadow-indigo-500/5"
+              className="group text-left p-8 glass-panel rounded-3xl transition-all duration-500 ease-out shadow-[0_20px_50px_rgba(0,0,0,0.03)] hover:shadow-[0_30px_60px_rgba(99,102,241,0.14)] relative overflow-hidden flex flex-col justify-between min-h-[300px] cursor-pointer hover:-translate-y-2 transform"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-indigo-500/5 to-transparent rounded-bl-[100px] transition-all group-hover:scale-110" />
+              {/* Radial Hover Glow */}
+              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-indigo-500/10 to-transparent rounded-bl-[120px] transition-transform duration-500 group-hover:scale-110" />
               
-              <div className="space-y-4 relative z-10">
-                <div className="p-3.5 bg-indigo-500/10 text-indigo-600 rounded-2xl w-fit group-hover:scale-105 transition-transform duration-300">
+              <div className="space-y-5 relative z-10">
+                <div className="p-4 bg-indigo-500/10 text-indigo-600 rounded-2xl w-fit group-hover:scale-110 group-hover:bg-indigo-500 group-hover:text-white transition-all duration-500 shadow-md shadow-indigo-500/5">
                   <CalcIcon className="h-7 w-7" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-zinc-900 group-hover:text-indigo-600 transition-colors">
+                  <h3 className="text-2xl font-bold text-zinc-950 group-hover:text-indigo-600 transition-colors tracking-tight">
                     PTB Pricing & Costing
                   </h3>
-                  <p className="text-zinc-500 text-xs mt-2 leading-relaxed">
+                  <p className="text-zinc-600 text-xs mt-2.5 leading-relaxed font-medium">
                     Calculate conveyor belt costing, manage client-specific profit margins, create quotations/drafts, and manage system configurations.
                   </p>
                 </div>
               </div>
 
-              <div className="mt-8 flex items-center gap-1.5 text-xs font-bold text-zinc-600 group-hover:text-zinc-900 transition-colors">
+              <div className="mt-8 flex items-center gap-2 text-xs font-black text-zinc-700 group-hover:text-indigo-600 transition-colors uppercase tracking-wider relative z-10">
                 <span>Access Pricing Portal</span>
-                <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                <ArrowRight className="h-4 w-4 group-hover:translate-x-1.5 transition-transform duration-300" />
               </div>
             </button>
 
             {/* Production Portal Button Card */}
             <button
               onClick={() => handleModuleChange('production')}
-              className="group text-left p-8 bg-white hover:bg-zinc-50/50 border border-zinc-200 hover:border-zinc-300 rounded-3xl transition-all duration-300 shadow-xl shadow-zinc-200/40 relative overflow-hidden flex flex-col justify-between min-h-[280px] cursor-pointer hover:-translate-y-1 hover:shadow-emerald-500/5"
+              className="group text-left p-8 glass-panel rounded-3xl transition-all duration-500 ease-out shadow-[0_20px_50px_rgba(0,0,0,0.03)] hover:shadow-[0_30px_60px_rgba(16,185,129,0.14)] relative overflow-hidden flex flex-col justify-between min-h-[300px] cursor-pointer hover:-translate-y-2 transform"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-emerald-500/5 to-transparent rounded-bl-[100px] transition-all group-hover:scale-110" />
+              {/* Radial Hover Glow */}
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-bl-[120px] transition-transform duration-500 group-hover:scale-110" />
               
-              <div className="space-y-4 relative z-10">
-                <div className="p-3.5 bg-emerald-500/10 text-emerald-600 rounded-2xl w-fit group-hover:scale-105 transition-transform duration-300">
+              <div className="space-y-5 relative z-10">
+                <div className="p-4 bg-emerald-500/10 text-emerald-600 rounded-2xl w-fit group-hover:scale-110 group-hover:bg-emerald-500 group-hover:text-white transition-all duration-500 shadow-md shadow-emerald-500/5">
                   <Scissors className="h-7 w-7" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-zinc-900 group-hover:text-emerald-600 transition-colors">
+                  <h3 className="text-2xl font-bold text-zinc-950 group-hover:text-emerald-600 transition-colors tracking-tight">
                     Production & Nesting
                   </h3>
-                  <p className="text-zinc-500 text-xs mt-2 leading-relaxed">
+                  <p className="text-zinc-600 text-xs mt-2.5 leading-relaxed font-medium">
                     Access Beltcut Pro. Optimize remnant utilization, perform 2D nesting on master rolls, calculate coordinates, and manage inventory cuts.
                   </p>
                 </div>
               </div>
 
-              <div className="mt-8 flex items-center gap-1.5 text-xs font-bold text-zinc-600 group-hover:text-zinc-900 transition-colors">
+              <div className="mt-8 flex items-center gap-2 text-xs font-black text-zinc-700 group-hover:text-emerald-600 transition-colors uppercase tracking-wider relative z-10">
                 <span>Access Production Portal</span>
-                <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                <ArrowRight className="h-4 w-4 group-hover:translate-x-1.5 transition-transform duration-300" />
               </div>
             </button>
           </div>
         </main>
 
         {/* Footer */}
-        <footer className="p-8 text-center text-zinc-500 text-xs border-t border-zinc-200/80 bg-zinc-100/50 z-10">
+        <footer className="py-6 text-center text-zinc-500 text-xs border-t border-white/20 bg-white/20 backdrop-blur-md z-10 relative">
           &copy; {new Date().getFullYear()} Pooja Tekno Belt. All rights reserved.
         </footer>
       </div>
