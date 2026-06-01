@@ -71,8 +71,8 @@ async function initializeDatabase() {
         client_name VARCHAR(255) NOT NULL,
         belt_type VARCHAR(255) NOT NULL,
         dimensions JSONB NOT NULL,
-        joint_type VARCHAR(255) NOT NULL,
-        tape_type VARCHAR(255) NOT NULL,
+        joint_type VARCHAR(255),
+        tape_type VARCHAR(255),
         total_cost NUMERIC NOT NULL,
         status VARCHAR(50) NOT NULL,
         discount_requested NUMERIC,
@@ -84,6 +84,14 @@ async function initializeDatabase() {
         audit_logs JSONB DEFAULT '[]'::jsonb
       )
     `);
+
+    // Ensure joint_type and tape_type are nullable for legacy/custom calculations
+    try {
+      await pool.query(`ALTER TABLE quotations ALTER COLUMN joint_type DROP NOT NULL`);
+      await pool.query(`ALTER TABLE quotations ALTER COLUMN tape_type DROP NOT NULL`);
+    } catch (alterErr) {
+      console.warn('Failed to alter quotations columns to drop NOT NULL constraint:', alterErr);
+    }
 
     // Create Audit Logs table
     await pool.query(`
@@ -615,7 +623,7 @@ app.get('/api/quotations', async (req, res) => {
 app.post('/api/quotations', authenticate, async (req, res) => {
   try {
     const id = Date.now().toString();
-    const { clientId, clientName, beltType, dimensions, jointType, tapeType, totalCost, status, discountRequested, discountReason, rejectionReason, createdBy, auditLogs } = req.body;
+    const { clientId, clientName, beltType, dimensions, jointType = '', tapeType = '', totalCost, status, discountRequested, discountReason, rejectionReason, createdBy, auditLogs } = req.body;
     const now = new Date();
     await pool.query(
       `INSERT INTO quotations (
@@ -624,13 +632,13 @@ app.post('/api/quotations', authenticate, async (req, res) => {
         created_by, created_at, updated_at, audit_logs
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
-        id, clientId, clientName, beltType, JSON.stringify(dimensions), jointType, tapeType,
+        id, clientId, clientName, beltType, JSON.stringify(dimensions), jointType || '', tapeType || '',
         totalCost, status, discountRequested || null, discountReason || null, rejectionReason || null,
         createdBy, now, now, JSON.stringify(auditLogs || [])
       ]
     );
     res.json({
-      id, clientId, clientName, beltType, dimensions, jointType, tapeType,
+      id, clientId, clientName, beltType, dimensions, jointType: jointType || '', tapeType: tapeType || '',
       totalCost, status, discountRequested, discountReason, rejectionReason,
       createdBy, createdAt: now.toISOString(), updatedAt: now.toISOString(), auditLogs: auditLogs || []
     });
@@ -642,7 +650,26 @@ app.post('/api/quotations', authenticate, async (req, res) => {
 
 app.put('/api/quotations/:id', authenticate, async (req, res) => {
   try {
-    const { clientId, clientName, beltType, dimensions, jointType, tapeType, totalCost, status, discountRequested, discountReason, rejectionReason, createdBy, auditLogs } = req.body;
+    // 1. Get the existing quotation
+    const existRes = await pool.query('SELECT * FROM quotations WHERE id = $1', [req.params.id]);
+    if (existRes.rowCount === 0) return res.status(404).json({ error: 'Quotation not found' });
+    const existing = existRes.rows[0];
+
+    // 2. Merge request body with existing quotation
+    const clientId = req.body.clientId !== undefined ? req.body.clientId : existing.client_id;
+    const clientName = req.body.clientName !== undefined ? req.body.clientName : existing.client_name;
+    const beltType = req.body.beltType !== undefined ? req.body.beltType : existing.belt_type;
+    const dimensions = req.body.dimensions !== undefined ? req.body.dimensions : existing.dimensions;
+    const jointType = req.body.jointType !== undefined ? req.body.jointType : existing.joint_type;
+    const tapeType = req.body.tapeType !== undefined ? req.body.tapeType : existing.tape_type;
+    const totalCost = req.body.totalCost !== undefined ? req.body.totalCost : existing.total_cost;
+    const status = req.body.status !== undefined ? req.body.status : existing.status;
+    const discountRequested = req.body.discountRequested !== undefined ? req.body.discountRequested : existing.discount_requested;
+    const discountReason = req.body.discountReason !== undefined ? req.body.discountReason : existing.discount_reason;
+    const rejectionReason = req.body.rejectionReason !== undefined ? req.body.rejectionReason : existing.rejection_reason;
+    const createdBy = req.body.createdBy !== undefined ? req.body.createdBy : existing.created_by;
+    const auditLogs = req.body.auditLogs !== undefined ? req.body.auditLogs : existing.audit_logs;
+
     const now = new Date();
     
     const result = await pool.query(
@@ -653,10 +680,11 @@ app.put('/api/quotations/:id', authenticate, async (req, res) => {
         created_by = $12, updated_at = $13, audit_logs = $14 
       WHERE id = $15 RETURNING *`,
       [
-        clientId, clientName, beltType, JSON.stringify(dimensions),
-        jointType, tapeType, totalCost, status,
-        discountRequested || null, discountReason || null, rejectionReason || null,
-        createdBy, now, JSON.stringify(auditLogs || []), req.params.id
+        clientId, clientName, beltType, typeof dimensions === 'string' ? dimensions : JSON.stringify(dimensions),
+        jointType || '', tapeType || '', totalCost, status,
+        discountRequested !== undefined && discountRequested !== null ? discountRequested : null,
+        discountReason || null, rejectionReason || null,
+        createdBy, now, typeof auditLogs === 'string' ? auditLogs : JSON.stringify(auditLogs || []), req.params.id
       ]
     );
     

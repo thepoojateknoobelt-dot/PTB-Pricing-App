@@ -93,30 +93,31 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
     return () => clearTimeout(timeout);
   }, [formData.length, formData.width, formData.lengthUnit, formData.widthUnit, formData.clientId]);
 
-  useEffect(() => {
-    if (!formData.clientId) {
+  const fetchClientHistory = async (clientId: string) => {
+    if (!clientId) {
       setClientHistory([]);
       return;
     }
-
-    const fetchHistory = async () => {
-      try {
-        const res = await fetch('/api/quotations');
-        if (res.ok) {
-          const allQuotes = await res.json();
-          const filtered = allQuotes
-            .filter((q: any) => q.clientId === formData.clientId)
-            .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-            .slice(0, 5);
-          setClientHistory(filtered);
-        }
-      } catch (err) {
-        console.error('Failed to fetch client history', err);
+    try {
+      const res = await fetch('/api/quotations');
+      if (res.ok) {
+        const allQuotes = await res.json();
+        const filtered = allQuotes
+          .filter((q: any) => q.clientId === clientId)
+          .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 5);
+        setClientHistory(filtered);
       }
-    };
+    } catch (err) {
+      console.error('Failed to fetch client history', err);
+    }
+  };
 
-    fetchHistory();
-    const interval = setInterval(fetchHistory, 15000);
+  useEffect(() => {
+    fetchClientHistory(formData.clientId);
+    const interval = setInterval(() => {
+      fetchClientHistory(formData.clientId);
+    }, 15000);
     return () => clearInterval(interval);
   }, [formData.clientId]);
 
@@ -231,6 +232,10 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
       
       toast.success(status === 'pending_approval' ? 'Approval request sent!' : 'Quotation saved!');
       setResult(null);
+      
+      // Fetch history immediately to update the client history table without manual refresh
+      fetchClientHistory(formData.clientId);
+      
       setFormData({ ...formData, length: '', width: '', manualPackingCost: '', manualProfitMargin: '', beltStyle: '' });
       setDiscountRequested('');
       setDiscountReason('');
