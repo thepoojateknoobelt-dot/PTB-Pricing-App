@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Package, Layers, Scissors, AlertTriangle, Plus, Trash2, 
   ChevronRight, ChevronLeft, TrendingDown, Info, 
-  RotateCcw, Wand2, BarChart3, Loader2, Warehouse, User
+  RotateCcw, Wand2, BarChart3, Loader2, Warehouse, User,
+  ArrowLeft
 } from 'lucide-react';
 import { 
   saveRoll, updateRoll, deleteRoll, saveCut, fetchRolls, OperationType 
@@ -24,7 +25,11 @@ const CONVERSIONS: Record<Unit, number> = {
   'in': 39.3701
 };
 
-export const BeltcutPro: React.FC = () => {
+interface BeltcutProProps {
+  onBackToMaster?: () => void;
+}
+
+export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   const [currentUnit, setCurrentUnit] = useState<Unit>('m');
   const [rolls, setRolls] = useState<Roll[]>([]);
 
@@ -236,12 +241,23 @@ export const BeltcutPro: React.FC = () => {
 
       {/* Top Navigation Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-zinc-200 mb-8">
-        <div>
-          <h1 className="text-3xl font-black text-zinc-950 flex items-center gap-2 italic uppercase">
-            <RotateCcw className="text-zinc-900 animate-spin-slow h-7 w-7" />
-            BELTCUT <span className="text-xs bg-zinc-900 text-white px-2 py-0.5 rounded not-italic font-bold">PRO</span>
-          </h1>
-          <p className="text-xs text-zinc-500 mt-1">Industrial roll cutting and remnant optimization engine</p>
+        <div className="flex items-center gap-4">
+          {onBackToMaster && (
+            <button 
+              onClick={onBackToMaster} 
+              className="flex items-center gap-1.5 px-3 py-2 bg-zinc-900 text-white hover:bg-zinc-800 transition-all rounded-xl text-xs font-bold shadow-md cursor-pointer mr-2 shrink-0 active:scale-95"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Master Dashboard
+            </button>
+          )}
+          <div>
+            <h1 className="text-3xl font-black text-zinc-950 flex items-center gap-2 italic uppercase">
+              <RotateCcw className="text-zinc-900 animate-spin-slow h-7 w-7" />
+              BELTCUT <span className="text-xs bg-zinc-900 text-white px-2 py-0.5 rounded not-italic font-bold">PRO</span>
+            </h1>
+            <p className="text-xs text-zinc-500 mt-1">Industrial roll cutting and remnant optimization engine</p>
+          </div>
         </div>
         
         <div className="flex flex-wrap items-center gap-3">

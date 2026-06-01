@@ -12,7 +12,8 @@ import {
   LogOut,
   Factory,
   Scissors,
-  X
+  X,
+  ArrowLeft
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Button } from './ui/button';
@@ -23,9 +24,10 @@ interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
   beltCutProUrl?: string;
+  onBackToMaster?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, onClose, beltCutProUrl }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, onClose, beltCutProUrl, onBackToMaster }) => {
   const { user, logout } = useAuth();
   const isAdmin = user?.role === 'admin';
 
@@ -66,6 +68,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpe
           <X className="h-5 w-5" />
         </button>
       </div>
+
+      {onBackToMaster && (
+        <div className="px-4 mb-2">
+          <button
+            type="button"
+            onClick={onBackToMaster}
+            className="w-full flex items-center gap-3 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            <ArrowLeft className="h-4 w-4 text-zinc-400" />
+            Master Dashboard
+          </button>
+        </div>
+      )}
 
       <nav className="flex-1 px-4 space-y-1 mt-4">
         {menuItems.filter(item => item.roles.includes(user?.role || '')).map((item) => (
