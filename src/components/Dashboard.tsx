@@ -152,24 +152,24 @@ export const Dashboard = () => {
 
   if (activeModule === 'master') {
     return (
-      <div className="min-h-screen bg-zinc-950 flex flex-col justify-between text-white font-sans antialiased overflow-hidden relative">
+      <div className="min-h-screen bg-zinc-50 flex flex-col justify-between text-zinc-900 font-sans antialiased overflow-hidden relative">
         {/* Background Decorative Gradients */}
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none" />
         <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
         
         {/* Header */}
-        <header className="p-8 flex items-center justify-between border-b border-white/5 backdrop-blur-sm bg-zinc-950/20 z-10">
+        <header className="p-8 flex items-center justify-between border-b border-zinc-200/80 backdrop-blur-sm bg-white/40 z-10">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-white rounded-xl shadow-lg">
-              <Factory className="h-6 w-6 text-zinc-950" />
+            <div className="p-2.5 bg-zinc-900 rounded-xl shadow-lg">
+              <Factory className="h-6 w-6 text-white" />
             </div>
             <div className="flex flex-col">
-              <span className="text-white font-black tracking-tight text-lg leading-none uppercase">Pooja Tekno Belt</span>
+              <span className="text-zinc-900 font-black tracking-tight text-lg leading-none uppercase">Pooja Tekno Belt</span>
               <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1">Master Portal</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-zinc-500 font-bold uppercase tracking-wider bg-zinc-900 px-3 py-1.5 rounded-lg border border-white/5">
+            <span className="text-xs text-zinc-600 font-bold uppercase tracking-wider bg-white px-3 py-1.5 rounded-lg border border-zinc-200 shadow-sm">
               Logged in as: {user?.name || user?.username}
             </span>
           </div>
@@ -178,13 +178,13 @@ export const Dashboard = () => {
         {/* Content */}
         <main className="flex-1 flex flex-col items-center justify-center px-6 py-12 z-10 max-w-5xl mx-auto w-full">
           <div className="text-center space-y-4 mb-16 animate-in fade-in slide-in-from-top-6 duration-700">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/5 rounded-full border border-white/5 text-xs font-black uppercase tracking-widest text-zinc-400">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-zinc-200/50 rounded-full border border-zinc-300 text-xs font-black uppercase tracking-widest text-zinc-600">
               Welcome to the Business Suite
             </div>
-            <h1 className="text-4xl md:text-6xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-zinc-200 to-zinc-400">
+            <h1 className="text-4xl md:text-6xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-zinc-950 via-zinc-800 to-zinc-700">
               Pooja Tekno Belt
             </h1>
-            <p className="text-zinc-400 text-sm md:text-base max-w-xl mx-auto leading-relaxed">
+            <p className="text-zinc-600 text-sm md:text-base max-w-xl mx-auto leading-relaxed">
               Select one of the specialized portals below to manage your pricing workflows or production optimization.
             </p>
           </div>
@@ -193,16 +193,16 @@ export const Dashboard = () => {
             {/* PTB Pricing Portal Button Card */}
             <button
               onClick={() => handleModuleChange('pricing')}
-              className="group text-left p-8 bg-zinc-900/50 hover:bg-zinc-900/80 border border-white/5 hover:border-white/10 rounded-3xl transition-all duration-300 shadow-2xl relative overflow-hidden flex flex-col justify-between min-h-[280px] cursor-pointer hover:-translate-y-1 hover:shadow-indigo-500/5"
+              className="group text-left p-8 bg-white hover:bg-zinc-50/50 border border-zinc-200 hover:border-zinc-300 rounded-3xl transition-all duration-300 shadow-xl shadow-zinc-200/40 relative overflow-hidden flex flex-col justify-between min-h-[280px] cursor-pointer hover:-translate-y-1 hover:shadow-indigo-500/5"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-indigo-500/10 to-transparent rounded-bl-[100px] transition-all group-hover:scale-110" />
+              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-indigo-500/5 to-transparent rounded-bl-[100px] transition-all group-hover:scale-110" />
               
               <div className="space-y-4 relative z-10">
-                <div className="p-3.5 bg-indigo-500/10 text-indigo-400 rounded-2xl w-fit group-hover:scale-105 transition-transform duration-300">
+                <div className="p-3.5 bg-indigo-500/10 text-indigo-600 rounded-2xl w-fit group-hover:scale-105 transition-transform duration-300">
                   <CalcIcon className="h-7 w-7" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-white group-hover:text-indigo-400 transition-colors">
+                  <h3 className="text-xl font-bold text-zinc-900 group-hover:text-indigo-600 transition-colors">
                     PTB Pricing & Costing
                   </h3>
                   <p className="text-zinc-500 text-xs mt-2 leading-relaxed">
@@ -211,7 +211,7 @@ export const Dashboard = () => {
                 </div>
               </div>
 
-              <div className="mt-8 flex items-center gap-1.5 text-xs font-bold text-zinc-400 group-hover:text-white transition-colors">
+              <div className="mt-8 flex items-center gap-1.5 text-xs font-bold text-zinc-600 group-hover:text-zinc-900 transition-colors">
                 <span>Access Pricing Portal</span>
                 <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
               </div>
@@ -220,16 +220,16 @@ export const Dashboard = () => {
             {/* Production Portal Button Card */}
             <button
               onClick={() => handleModuleChange('production')}
-              className="group text-left p-8 bg-zinc-900/50 hover:bg-zinc-900/80 border border-white/5 hover:border-white/10 rounded-3xl transition-all duration-300 shadow-2xl relative overflow-hidden flex flex-col justify-between min-h-[280px] cursor-pointer hover:-translate-y-1 hover:shadow-emerald-500/5"
+              className="group text-left p-8 bg-white hover:bg-zinc-50/50 border border-zinc-200 hover:border-zinc-300 rounded-3xl transition-all duration-300 shadow-xl shadow-zinc-200/40 relative overflow-hidden flex flex-col justify-between min-h-[280px] cursor-pointer hover:-translate-y-1 hover:shadow-emerald-500/5"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-bl-[100px] transition-all group-hover:scale-110" />
+              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-emerald-500/5 to-transparent rounded-bl-[100px] transition-all group-hover:scale-110" />
               
               <div className="space-y-4 relative z-10">
-                <div className="p-3.5 bg-emerald-500/10 text-emerald-400 rounded-2xl w-fit group-hover:scale-105 transition-transform duration-300">
+                <div className="p-3.5 bg-emerald-500/10 text-emerald-600 rounded-2xl w-fit group-hover:scale-105 transition-transform duration-300">
                   <Scissors className="h-7 w-7" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-white group-hover:text-emerald-400 transition-colors">
+                  <h3 className="text-xl font-bold text-zinc-900 group-hover:text-emerald-600 transition-colors">
                     Production & Nesting
                   </h3>
                   <p className="text-zinc-500 text-xs mt-2 leading-relaxed">
@@ -238,7 +238,7 @@ export const Dashboard = () => {
                 </div>
               </div>
 
-              <div className="mt-8 flex items-center gap-1.5 text-xs font-bold text-zinc-400 group-hover:text-white transition-colors">
+              <div className="mt-8 flex items-center gap-1.5 text-xs font-bold text-zinc-600 group-hover:text-zinc-900 transition-colors">
                 <span>Access Production Portal</span>
                 <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
               </div>
@@ -247,7 +247,7 @@ export const Dashboard = () => {
         </main>
 
         {/* Footer */}
-        <footer className="p-8 text-center text-zinc-600 text-xs border-t border-white/5 z-10">
+        <footer className="p-8 text-center text-zinc-500 text-xs border-t border-zinc-200/80 bg-zinc-100/50 z-10">
           &copy; {new Date().getFullYear()} Pooja Tekno Belt. All rights reserved.
         </footer>
       </div>
