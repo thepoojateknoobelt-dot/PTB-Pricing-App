@@ -3,7 +3,7 @@ import {
   Package, Layers, Scissors, AlertTriangle, Plus, Trash2, 
   ChevronRight, ChevronLeft, TrendingDown, Info, 
   RotateCcw, Wand2, BarChart3, Loader2, Warehouse, User,
-  ArrowLeft
+  ArrowLeft, X, Menu
 } from 'lucide-react';
 import { 
   saveRoll, updateRoll, deleteRoll, saveCut, fetchRolls, OperationType 
@@ -32,6 +32,7 @@ interface BeltcutProProps {
 export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   const [currentUnit, setCurrentUnit] = useState<Unit>('m');
   const [rolls, setRolls] = useState<Roll[]>([]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'cutting' | 'stock'>('dashboard');
   const [cuttingMode, setCuttingMode] = useState<'auto' | 'manual'>('auto');
@@ -239,16 +240,25 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       )}
 
       {/* Beltcut Pro Sidebar */}
-      <aside className="w-64 bg-zinc-950 text-zinc-400 flex flex-col border-r border-zinc-800 shrink-0">
+      <aside className={`w-64 bg-zinc-950 text-zinc-400 flex flex-col border-r border-zinc-800 shrink-0 transition-transform duration-300 ease-in-out fixed inset-y-0 left-0 z-50 lg:static lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         {/* Sidebar Header */}
-        <div className="p-6 flex items-center gap-3 border-b border-white/5">
-          <div className="p-2 bg-white rounded-xl shadow-md">
-            <RotateCcw className="h-6 w-6 text-zinc-950 animate-spin-slow" />
+        <div className="p-6 flex items-center justify-between gap-3 border-b border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-white rounded-xl shadow-md">
+              <RotateCcw className="h-6 w-6 text-zinc-950 animate-spin-slow" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-white font-black text-lg tracking-tight leading-none uppercase">BELTCUT <span className="text-[10px] bg-zinc-800 text-white px-1.5 py-0.5 rounded not-italic font-bold">PRO</span></span>
+              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mt-1">Nesting Portal</span>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-white font-black text-lg tracking-tight leading-none uppercase">BELTCUT <span className="text-[10px] bg-zinc-800 text-white px-1.5 py-0.5 rounded not-italic font-bold">PRO</span></span>
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mt-1">Nesting Portal</span>
-          </div>
+          <button
+            onClick={() => setIsSidebarOpen(false)}
+            className="lg:hidden p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
+            aria-label="Close Sidebar"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         {/* Master Dashboard Link */}
@@ -278,7 +288,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
               <button
                 type="button"
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => {
+                  setActiveTab(tab.id as any);
+                  setIsSidebarOpen(false);
+                }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
                   isActive
                     ? 'bg-white text-zinc-950 shadow-lg shadow-black/20 font-bold'
@@ -317,8 +330,26 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto p-8 bg-zinc-50/50">
+      <main className="flex-1 overflow-y-auto p-4 sm:p-8 bg-zinc-50/50">
         <div className="max-w-7xl mx-auto">
+          {/* Mobile Header Bar */}
+          <div className="flex lg:hidden items-center justify-between p-3.5 mb-6 bg-zinc-950 text-white rounded-2xl border border-zinc-850 shadow-md">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-xl transition-all cursor-pointer animate-pulse"
+                aria-label="Open Menu"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <span className="font-black text-sm uppercase tracking-tight">BELTCUT <span className="text-[9px] bg-zinc-850 text-white px-1.5 py-0.5 rounded not-italic font-bold">PRO</span></span>
+            </div>
+            <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest bg-zinc-900 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
+              Nesting
+            </span>
+          </div>
+
           {/* Header section in content */}
           <div className="pb-6 border-b border-zinc-200 mb-8">
             <h2 className="text-3xl font-black text-zinc-950 uppercase tracking-tight">
