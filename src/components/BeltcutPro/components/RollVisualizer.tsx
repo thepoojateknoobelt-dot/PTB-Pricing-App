@@ -24,6 +24,7 @@ const CONVERSIONS: Record<Unit, number> = {
 const RollVisualizer: React.FC<RollVisualizerProps> = ({ 
   roll, 
   unit = 'm',
+  onSelectCut,
   suggestedPlacement, 
   manualMode, 
   manualDimensions,
@@ -33,11 +34,12 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [mousePos, setMousePos] = useState<{ x: number, y: number } | null>(null);
+  const [isValidPos, setIsValidPos] = useState(false);
 
   const SCALE = 35; // 1m = 35px
   const viewWidth = roll.fullLength * SCALE;
   const viewHeight = roll.fullWidth * SCALE;
-  const RULER_SIZE = 40;
+  const RULER_SIZE = 55; // wider for clean Y-axis labels
 
   const conv = CONVERSIONS[unit];
 
@@ -54,9 +56,8 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
     }
   }, [suggestedPlacement, zoom]);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!manualMode || !manualDimensions || !svgRef.current) return;
-
+  const getSVGCoords = (e: React.MouseEvent): { x: number; y: number } | null => {
+    if (!svgRef.current || !manualDimensions) return null;
     const svg = svgRef.current;
     const pt = svg.createSVGPoint();
     pt.x = e.clientX;
@@ -72,19 +73,31 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
     meterX = Math.max(0, Math.min(roll.fullLength - manualDimensions.length, meterX));
     meterY = Math.max(0, Math.min(roll.fullWidth - manualDimensions.width, meterY));
 
-    setMousePos({ x: meterX, y: meterY });
+    return { x: meterX, y: meterY };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!manualMode || !manualDimensions) return;
+    const pos = getSVGCoords(e);
+    if (!pos) return;
+    setMousePos(pos);
+    setIsValidPos(isSpaceAvailable(roll, pos.x, pos.y, manualDimensions.width, manualDimensions.length));
   };
 
   const handleClick = (e: React.MouseEvent) => {
-    if (manualMode && mousePos && onManualPlacementChange) {
-      if (manualDimensions && isSpaceAvailable(roll, mousePos.x, mousePos.y, manualDimensions.width, manualDimensions.length)) {
-        onManualPlacementChange(mousePos);
-      }
+    if (!manualMode || !mousePos || !onManualPlacementChange) return;
+    if (manualDimensions && isSpaceAvailable(roll, mousePos.x, mousePos.y, manualDimensions.width, manualDimensions.length)) {
+      onManualPlacementChange(mousePos);
+    } else {
+      alert('Yahan cut nahi ho sakta — jagah occupied hai ya dimension fit nahi hoti.');
     }
   };
 
   const lengthMarkers = Array.from({ length: Math.floor(roll.fullLength / 5) + 1 }, (_, i) => i * 5);
-  const widthMarkers = Array.from({ length: roll.fullWidth + 1 }, (_, i) => i);
+  // Width markers: show every 1m tick, but only label every 1m (clean spacing at SCALE=35)
+  const widthTicks = Array.from({ length: Math.floor(roll.fullWidth * 2) + 1 }, (_, i) => i * 0.5);
+  // Only label every 1m to avoid overlap
+  const widthLabels = Array.from({ length: Math.floor(roll.fullWidth) + 1 }, (_, i) => i);
 
   const formatVal = (m: number) => (m * conv).toFixed(unit === 'm' ? 1 : 0);
 
@@ -98,26 +111,41 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
           <div>
             <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 italic uppercase tracking-tight">
               Roll {roll.id} 
-              <span className={`text-[10px] px-3 py-1 rounded-full not-italic font-black tracking-widest ${roll.cuts.length > 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                {roll.cuts.length > 0 ? 'REMNANT' : 'FULL ROLL'}
+              <span className={`text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${roll.isReuse ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                {roll.isReuse ? 'REUSE' : 'FRESH'}
               </span>
+              <span className={`text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${roll.cuts.length > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700'}`}>
+                {roll.cuts.length > 0 ? 'REMNANT' : 'FULL'}
+              </span>
+              {roll.status === 'refused' && (
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest bg-rose-100 text-rose-700">
+                  REFUSED
+                </span>
+              )}
             </h3>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{roll.materialType}</p>
           </div>
         </div>
-        <div className="flex bg-slate-100 border border-slate-200 rounded-2xl p-1.5">
-          <button onClick={() => setZoom(prev => Math.max(0.2, prev - 0.2))} className="w-8 h-8 flex items-center justify-center text-xs hover:bg-white rounded-xl font-black transition-all">-</button>
-          <div className="px-5 text-[10px] font-mono font-black flex items-center text-slate-600">{(zoom * 100).toFixed(0)}%</div>
-          <button onClick={() => setZoom(prev => Math.min(2, prev + 0.2))} className="w-8 h-8 flex items-center justify-center text-xs hover:bg-white rounded-xl font-black transition-all">+</button>
+        <div className="flex items-center gap-2">
+          {manualMode && (
+            <span className="text-[9px] font-black text-blue-600 bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200 uppercase tracking-wider animate-pulse">
+              ✦ Click to Place
+            </span>
+          )}
+          <div className="flex bg-slate-100 border border-slate-200 rounded-2xl p-1.5">
+            <button onClick={() => setZoom(prev => Math.max(0.2, prev - 0.2))} className="w-8 h-8 flex items-center justify-center text-xs hover:bg-white rounded-xl font-black transition-all">-</button>
+            <div className="px-5 text-[10px] font-mono font-black flex items-center text-slate-600">{(zoom * 100).toFixed(0)}%</div>
+            <button onClick={() => setZoom(prev => Math.min(2, prev + 0.2))} className="w-8 h-8 flex items-center justify-center text-xs hover:bg-white rounded-xl font-black transition-all">+</button>
+          </div>
         </div>
       </div>
 
       <div 
         ref={containerRef}
-        className={`w-full h-[400px] rounded-3xl overflow-auto border-4 relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-200 cursor-crosshair' : 'bg-slate-50 border-white shadow-inner'}`}
+        className={`w-full h-[400px] rounded-3xl overflow-auto border-4 relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : 'bg-slate-50 border-white shadow-inner'}`}
         onMouseMove={handleMouseMove}
         onClick={handleClick}
-        onMouseLeave={() => setMousePos(null)}
+        onMouseLeave={() => { setMousePos(null); setIsValidPos(false); }}
       >
         <div style={{ width: (viewWidth + RULER_SIZE) * zoom, height: (viewHeight + RULER_SIZE + 40) * zoom, position: 'relative' }}>
           <svg 
@@ -139,18 +167,43 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
 
             <g transform={`translate(0, ${RULER_SIZE})`}>
               <rect width={RULER_SIZE} height={viewHeight} fill="#f8fafc" stroke="#e2e8f0" />
-              {widthMarkers.map(m => (
-                <g key={`w-${m}`} transform={`translate(0, ${m * SCALE})`}>
-                  <line x1="28" x2="40" stroke="#cbd5e1" strokeWidth="2" />
-                  <text x="8" y="16" fontSize="10" fill="#64748b" fontWeight="900" transform={`rotate(-90, 8, 16)`}>{formatVal(m)}{unit}</text>
+              {/* Minor ticks every 0.5m */}
+              {widthTicks.map(m => (
+                <g key={`wt-${m}`} transform={`translate(0, ${m * SCALE})`}>
+                  <line x1={Number.isInteger(m) ? 38 : 44} x2={RULER_SIZE} stroke="#cbd5e1" strokeWidth={Number.isInteger(m) ? 2 : 1} />
+                </g>
+              ))}
+              {/* Labels only every 1m, horizontal, right-aligned */}
+              {widthLabels.map(m => (
+                <g key={`wl-${m}`} transform={`translate(0, ${m * SCALE})`}>
+                  <text
+                    x={RULER_SIZE - 6}
+                    y={m === 0 ? 11 : 5}
+                    fontSize="9"
+                    fill="#64748b"
+                    fontWeight="700"
+                    textAnchor="end"
+                  >
+                    {formatVal(m)}{unit}
+                  </text>
                 </g>
               ))}
             </g>
 
             <g transform={`translate(${RULER_SIZE}, ${RULER_SIZE})`}>
               <rect width={viewWidth} height={viewHeight} fill="#ffffff" stroke="#cbd5e1" strokeWidth="1" />
+
               {roll.cuts.map((cut) => (
-                <g key={cut.id}>
+                <g 
+                  key={cut.id} 
+                  onClick={(e) => {
+                    // In manual mode, don't let cut clicks interfere with placement
+                    if (manualMode) { e.stopPropagation(); return; }
+                    onSelectCut?.(cut);
+                  }} 
+                  className={!manualMode && onSelectCut ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}
+                >
+                  <title>{`Client: ${cut.customerName}\nSize: ${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}${!manualMode ? '\nClick to delete cut' : ''}`}</title>
                   <rect 
                     x={cut.x * SCALE} 
                     y={cut.y * SCALE} 
@@ -173,6 +226,22 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                   </text>
                 </g>
               ))}
+
+              {/* Manual mode live ghost preview */}
+              {manualMode && mousePos && manualDimensions && (
+                <rect
+                  x={mousePos.x * SCALE}
+                  y={mousePos.y * SCALE}
+                  width={manualDimensions.length * SCALE}
+                  height={manualDimensions.width * SCALE}
+                  fill={isValidPos ? 'rgba(59,130,246,0.15)' : 'rgba(239,68,68,0.12)'}
+                  stroke={isValidPos ? '#3b82f6' : '#ef4444'}
+                  strokeWidth="3"
+                  strokeDasharray="8,4"
+                  rx="4"
+                  style={{ pointerEvents: 'none' }}
+                />
+              )}
 
               {suggestedPlacement && (
                 <g className="animate-in fade-in zoom-in duration-300">

@@ -22,6 +22,9 @@ export interface Roll {
   totalSqm: number;
   remainingSqm: number;
   isArchived: boolean;
+  isReuse?: boolean;
+  parentRollId?: string | null;
+  status?: 'active' | 'refused';
 }
 
 export interface Order {

@@ -99,3 +99,18 @@ export const saveCut = async (rollId: string, cut: any) => {
     handleApiError(error, OperationType.WRITE, `rolls/${rollId}/cuts/${cut.id}`);
   }
 };
+
+// Delete cutting placement record
+export const deleteCut = async (rollId: string, cutId: string) => {
+  try {
+    const response = await fetch(`/api/rolls/${rollId}/cuts/${cutId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    handleApiError(error, OperationType.DELETE, `rolls/${rollId}/cuts/${cutId}`);
+  }
+};

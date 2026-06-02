@@ -13,6 +13,7 @@ import { ActivityLog } from './ActivityLog';
 import { Config, Client } from '../types';
 import { cn } from '../lib/utils';
 import { Loader2, Factory, Calculator as CalcIcon, Scissors, ArrowRight, ArrowLeft, Menu } from 'lucide-react';
+import { Background3D } from './Background3D';
 
 export const Dashboard = () => {
   const { user } = useAuth();
@@ -203,6 +204,7 @@ export const Dashboard = () => {
 
         {/* 3D Depth Grid Overlay */}
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_80%,transparent_100%)] opacity-[0.35] pointer-events-none z-0" />
+        <Background3D />
 
         {/* Animated 3D Light Spheres for Mesh Background */}
         <div className="absolute top-[-15%] left-[-15%] w-[65vw] h-[65vw] max-w-[700px] max-h-[700px] rounded-full bg-gradient-to-br from-indigo-500/20 via-purple-500/15 to-transparent blur-[130px] pointer-events-none z-0 animate-sphere-1" />

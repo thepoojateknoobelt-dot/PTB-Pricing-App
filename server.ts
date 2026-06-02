@@ -152,6 +152,15 @@ async function initializeDatabase() {
       )
     `);
 
+    // Schema alterations for reuse roll tracking
+    try {
+      await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS is_reuse BOOLEAN DEFAULT FALSE`);
+      await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS parent_roll_id VARCHAR(255)`);
+      await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active'`);
+    } catch (alterErr) {
+      console.warn('Failed to add columns to rolls table:', alterErr);
+    }
+
     console.log('Database schema checked/created successfully.');
 
     // Seed default admin user if none exists
@@ -565,6 +574,9 @@ app.get('/api/rolls', async (req, res) => {
       totalSqm: parseFloat(r.total_sqm),
       remainingSqm: parseFloat(r.remaining_sqm),
       isArchived: r.is_archived,
+      isReuse: r.is_reuse || false,
+      parentRollId: r.parent_roll_id || null,
+      status: r.status || 'active',
       cuts: cutsRes.rows
         .filter(c => c.roll_id === r.id)
         .map(c => ({
@@ -588,14 +600,14 @@ app.get('/api/rolls', async (req, res) => {
 });
 
 app.post('/api/rolls', async (req, res) => {
-  const { id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived } = req.body;
+  const { id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived, isReuse, parentRollId, status } = req.body;
   try {
     await pool.query(
-      `INSERT INTO rolls (id, material_type, full_width, full_length, total_sqm, remaining_sqm, is_archived) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived || false]
+      `INSERT INTO rolls (id, material_type, full_width, full_length, total_sqm, remaining_sqm, is_archived, is_reuse, parent_roll_id, status) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived || false, isReuse || false, parentRollId || null, status || 'active']
     );
-    res.json({ id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived: isArchived || false, cuts: [] });
+    res.json({ id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived: isArchived || false, isReuse: isReuse || false, parentRollId: parentRollId || null, status: status || 'active', cuts: [] });
   } catch (err) {
     console.error('Failed to create roll', err);
     res.status(500).json({ error: 'Failed to create roll' });
@@ -603,12 +615,19 @@ app.post('/api/rolls', async (req, res) => {
 });
 
 app.put('/api/rolls/:id', async (req, res) => {
-  const { remainingSqm } = req.body;
+  const { remainingSqm, status } = req.body;
   try {
-    await pool.query(
-      'UPDATE rolls SET remaining_sqm = $1 WHERE id = $2',
-      [remainingSqm, req.params.id]
-    );
+    if (status !== undefined) {
+      await pool.query(
+        'UPDATE rolls SET remaining_sqm = COALESCE($1, remaining_sqm), status = $2 WHERE id = $3',
+        [remainingSqm, status, req.params.id]
+      );
+    } else {
+      await pool.query(
+        'UPDATE rolls SET remaining_sqm = $1 WHERE id = $2',
+        [remainingSqm, req.params.id]
+      );
+    }
     res.json({ success: true });
   } catch (err) {
     console.error('Failed to update roll', err);
@@ -641,6 +660,35 @@ app.post('/api/rolls/:rollId/cuts', async (req, res) => {
     res.status(500).json({ error: 'Failed to save cut' });
   }
 });
+
+app.delete('/api/rolls/:rollId/cuts/:cutId', async (req, res) => {
+  const { rollId, cutId } = req.params;
+  try {
+    const cutRes = await pool.query('SELECT * FROM cuts WHERE id = $1 AND roll_id = $2', [cutId, rollId]);
+    if (cutRes.rowCount === 0) {
+      return res.status(404).json({ error: 'Cut not found' });
+    }
+    const cut = cutRes.rows[0];
+    const cutArea = parseFloat(cut.width) * parseFloat(cut.length);
+
+    await pool.query('DELETE FROM cuts WHERE id = $1 AND roll_id = $2', [cutId, rollId]);
+
+    const rollRes = await pool.query('SELECT * FROM rolls WHERE id = $1', [rollId]);
+    if (rollRes.rowCount && rollRes.rowCount > 0) {
+      const roll = rollRes.rows[0];
+      const newRemainingSqm = parseFloat(roll.remaining_sqm) + cutArea;
+      const totalSqm = parseFloat(roll.total_sqm);
+      const finalRemaining = Math.min(totalSqm, newRemainingSqm);
+      await pool.query('UPDATE rolls SET remaining_sqm = $1 WHERE id = $2', [finalRemaining, rollId]);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to delete cut', err);
+    res.status(500).json({ error: 'Failed to delete cut' });
+  }
+});
+
 
 // Quotations Routes
 app.get('/api/quotations', async (req, res) => {

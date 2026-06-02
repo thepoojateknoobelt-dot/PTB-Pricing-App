@@ -6,6 +6,7 @@ import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { toast } from 'sonner';
 import { Factory } from 'lucide-react';
+import { Background3D } from './Background3D';
 
 export const Login = () => {
   const [username, setUsername] = useState('');
@@ -48,16 +49,25 @@ export const Login = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4">
-      <Card className="w-full max-w-md border-zinc-200 shadow-xl">
+    <div className="flex min-h-screen items-center justify-center bg-[#f8fafc] p-4 relative overflow-hidden">
+      {/* 3D Depth Grid Overlay */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_80%,transparent_100%)] opacity-[0.35] pointer-events-none z-0" />
+      
+      {/* Glowing background spheres to match the 3D canvas */}
+      <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] max-w-[500px] max-h-[500px] rounded-full bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent blur-[100px] pointer-events-none z-0 animate-pulse duration-[8000ms]" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] max-w-[500px] max-h-[500px] rounded-full bg-gradient-to-tr from-emerald-400/10 via-teal-400/5 to-transparent blur-[100px] pointer-events-none z-0 animate-pulse duration-[10000ms]" />
+      
+      <Background3D />
+
+      <Card className="w-full max-w-md border-white/40 bg-white/45 backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.06)] relative z-10">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-zinc-900 rounded-2xl">
+            <div className="p-3 bg-zinc-900 rounded-2xl shadow-lg">
               <Factory className="h-8 w-8 text-white" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight">Pooja Tekno Belt</CardTitle>
-          <CardDescription>Enter your credentials to access the portal</CardDescription>
+          <CardTitle className="text-2xl font-bold tracking-tight text-zinc-900">Pooja Tekno Belt</CardTitle>
+          <CardDescription className="text-zinc-500">Enter your credentials to access the portal</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
@@ -69,7 +79,7 @@ export const Login = () => {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
-                className="border-zinc-300 focus:ring-zinc-900"
+                className="bg-white/80 border-zinc-300 focus:ring-zinc-900"
               />
             </div>
             <div className="space-y-2">
@@ -80,12 +90,12 @@ export const Login = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="border-zinc-300 focus:ring-zinc-900"
+                className="bg-white/80 border-zinc-300 focus:ring-zinc-900"
               />
             </div>
           </CardContent>
-          <CardFooter>
-            <Button type="submit" className="w-full" disabled={isLoading}>
+          <CardFooter className="pt-2">
+            <Button type="submit" className="w-full bg-zinc-900 hover:bg-zinc-800 text-white font-semibold shadow-md active:scale-[0.98] transition-transform" disabled={isLoading}>
               {isLoading ? 'Signing in...' : 'Sign In'}
             </Button>
           </CardFooter>
