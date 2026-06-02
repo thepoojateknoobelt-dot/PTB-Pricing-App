@@ -10,9 +10,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// 🟢 AAPKA LIVE AWS LAMBDA URL LOCK KAR DIYA HAI
-const LAMBDA_API_URL = "https://srdxqwkta6dm6c6wwd7xy7fetu0iezmh.lambda-url.ap-south-1.on.aws/";
-
+// 🟢 Relative API endpoint internally resolves to the same host/port in local/production.
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -20,8 +18,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // Direct live AWS Lambda URL par request bhej rahe hain
-        const res = await fetch(`${LAMBDA_API_URL}auth/me`);
+        // Query the same-origin backend directly
+        const res = await fetch('/api/auth/me');
         if (res.ok) {
           const data = await res.json();
           if (data.user) {
@@ -29,9 +27,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem('ptb_user', JSON.stringify(data.user));
             return;
           }
+        } else if (res.status === 401) {
+          // If explicitly unauthorized, clear the session and force login
+          localStorage.removeItem('ptb_user');
+          setUser(null);
+          return;
         }
         
-        // Agar server offline ya unauthorized kahe, toh local check karenge
+        // If server says offline or other status (not 401), we do local check
         const storedUser = localStorage.getItem('ptb_user');
         if (storedUser) {
           setUser(JSON.parse(storedUser));
@@ -40,7 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (err) {
         console.error('Auth check failed, using local fallback', err);
-        // Fallback to offline local storage
+        // Fallback to offline local storage (unreachable server scenario)
         const storedUser = localStorage.getItem('ptb_user');
         if (storedUser) {
           setUser(JSON.parse(storedUser));
@@ -59,8 +62,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
-      // Direct live AWS Lambda URL par logout request
-      await fetch(`${LAMBDA_API_URL}auth/logout`, { method: 'POST' });
+      // Direct same-origin request for logout
+      await fetch('/api/auth/logout', { method: 'POST' });
     } catch (err) {
       console.error('Logout API failed', err);
     }
