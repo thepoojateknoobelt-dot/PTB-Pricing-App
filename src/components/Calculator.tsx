@@ -132,6 +132,56 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
       return;
     }
 
+    const lengthVal = parseFloat(formData.length);
+    const widthVal = parseFloat(formData.width);
+
+    if (isNaN(lengthVal) || lengthVal <= 0) {
+      toast.error('Please enter a valid length greater than 0');
+      return;
+    }
+
+    if (isNaN(widthVal) || widthVal <= 0) {
+      toast.error('Please enter a valid width greater than 0');
+      return;
+    }
+
+    const lengthInMeters = toMeters(lengthVal, formData.lengthUnit);
+    const widthInMeters = toMeters(widthVal, formData.widthUnit);
+
+    if (lengthInMeters > 100000) {
+      toast.error('Length is too large (maximum 100,000 meters / 100 km)');
+      return;
+    }
+
+    if (widthInMeters > 100) {
+      toast.error('Width is too large (maximum 100 meters)');
+      return;
+    }
+
+    if (formData.manualPackingCost) {
+      const packingVal = parseFloat(formData.manualPackingCost);
+      if (isNaN(packingVal) || packingVal < 0) {
+        toast.error('Packing cost must be a valid positive number');
+        return;
+      }
+      if (packingVal > 10000000) {
+        toast.error('Packing cost is too large');
+        return;
+      }
+    }
+
+    if (formData.manualProfitMargin) {
+      const profitVal = parseFloat(formData.manualProfitMargin);
+      if (isNaN(profitVal) || profitVal < 0) {
+        toast.error('Profit margin must be a valid positive number');
+        return;
+      }
+      if (profitVal > 1000) {
+        toast.error('Profit margin cannot exceed 1000%');
+        return;
+      }
+    }
+
     setIsLoading(true);
     try {
       const selectedCategory = (Array.isArray(config?.beltTypes) ? config.beltTypes : [])?.find?.(t => t.name === formData.beltType) || null;
@@ -580,7 +630,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                       <div className="h-1 w-1 rounded-full bg-zinc-900" />
                       <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-600">Material Cost Breakdown</h3>
                     </div>
-                    <div className="border border-zinc-100 rounded-lg overflow-hidden shadow-sm">
+                    <div className="border border-zinc-100 rounded-lg overflow-x-auto shadow-sm">
                       <Table>
                         <TableHeader className="bg-zinc-50/50">
                         <TableRow>
@@ -596,7 +646,9 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                           .map(([key, val]: [string, any]) => (
                           <TableRow key={key} className="hover:bg-zinc-50/30 transition-colors h-8">
                             <TableCell className="font-medium capitalize text-xs py-1.5">{key.replace(/([A-Z])/g, ' $1')}</TableCell>
-                            <TableCell className="text-right text-xs text-zinc-600 font-mono py-1.5">{val.consumption.toFixed(4)}</TableCell>
+                            <TableCell className="text-right text-xs text-zinc-600 font-mono py-1.5">
+                              {val.consumption > 999999 ? val.consumption.toExponential(4) : val.consumption.toFixed(4)}
+                            </TableCell>
                             <TableCell className="text-right text-xs text-zinc-600 font-mono py-1.5">{formatCurrency(val.rate)}</TableCell>
                             <TableCell className="text-right font-bold text-xs font-mono py-1.5">{formatCurrency(val.cost)}</TableCell>
                           </TableRow>
@@ -617,7 +669,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                       <div className="h-1 w-1 rounded-full bg-zinc-900" />
                       <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-600">Price Summary</h3>
                     </div>
-                    <div className="border border-zinc-100 rounded-lg overflow-hidden shadow-sm">
+                    <div className="border border-zinc-100 rounded-lg overflow-x-auto shadow-sm">
                       <Table>
                         <TableBody>
                           <TableRow className="hover:bg-zinc-50/30 transition-colors h-8">
