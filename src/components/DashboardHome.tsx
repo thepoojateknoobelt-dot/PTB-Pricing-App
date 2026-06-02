@@ -270,29 +270,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({ config, clients, o
         </Card>
       </div>
 
-      {/* Beltcut Pro Banner */}
-      <div className="relative overflow-hidden bg-zinc-950 text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="relative z-10 space-y-1">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-white/10 rounded-full border border-white/10 text-[9px] font-black uppercase tracking-wider text-blue-400">
-            Industrial Grade Nesting
-          </div>
-          <h3 className="text-xl font-black italic tracking-tight uppercase">
-            Beltcut <span className="text-blue-400 not-italic font-bold">Pro</span> Integration
-          </h3>
-          <p className="text-xs text-zinc-400 max-w-xl">
-            Optimize 2D roll cutting directly inside the pricing portal. Nest custom slices on raw master rolls to calculate placement coordinates and reduce scrap waste.
-          </p>
-        </div>
-        <div className="relative z-10 shrink-0">
-          <button 
-            onClick={() => onNavigate('beltcut')}
-            className="relative inline-flex items-center justify-center px-8 py-4 text-xs font-black uppercase tracking-widest text-zinc-950 bg-white rounded-2xl border-2 border-zinc-200/20 shadow-[0_5px_0_#d4d4d8,0_12px_20px_rgba(0,0,0,0.15)] hover:shadow-[0_7px_0_#d4d4d8,0_16px_24px_rgba(0,0,0,0.2)] hover:-translate-y-[2px] active:translate-y-[3px] active:shadow-[0_2px_0_#d4d4d8,0_6px_10px_rgba(0,0,0,0.1)] transition-all duration-150 cursor-pointer select-none group/btn"
-          >
-            <span>Launch Beltcut Pro</span>
-            <ArrowRight className="ml-2 h-4 w-4 group-hover/btn:translate-x-1.5 transition-transform duration-200" />
-          </button>
-        </div>
-      </div>
+
 
       {/* Recent Activity and Quick Actions Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
