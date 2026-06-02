@@ -112,7 +112,7 @@ export const Dashboard = () => {
 
   useEffect(() => {
     fetchConfigAndClients();
-    const interval = setInterval(fetchConfigAndClients, 15000);
+    const interval = setInterval(fetchConfigAndClients, 4000);
     return () => clearInterval(interval);
   }, []);
 
@@ -134,11 +134,11 @@ export const Dashboard = () => {
       case 'calculator':
         return <Calculator config={safeConfig} clients={clients} />;
       case 'config':
-        return <AdminConfig config={safeConfig} />;
+        return <AdminConfig config={safeConfig} onRefresh={fetchConfigAndClients} />;
       case 'users':
         return <UserManagement />;
       case 'clients':
-        return <ClientRegistry clients={clients} config={safeConfig} />;
+        return <ClientRegistry clients={clients} config={safeConfig} onRefresh={fetchConfigAndClients} />;
       case 'quotations':
         return <QuotationsList config={safeConfig} />;
       case 'reports':

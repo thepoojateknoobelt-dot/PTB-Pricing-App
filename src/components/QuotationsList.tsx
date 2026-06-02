@@ -44,7 +44,7 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
 
   useEffect(() => {
     fetchQuotations();
-    const interval = setInterval(fetchQuotations, 10000);
+    const interval = setInterval(fetchQuotations, 3000);
     return () => clearInterval(interval);
   }, []);
 

@@ -48,7 +48,7 @@ export const UserManagement = () => {
 
   useEffect(() => {
     fetchUsers();
-    const interval = setInterval(fetchUsers, 15000);
+    const interval = setInterval(fetchUsers, 4000);
     return () => clearInterval(interval);
   }, []);
 

@@ -13,9 +13,10 @@ import { cn } from '../lib/utils';
 
 interface AdminConfigProps {
   config: Config;
+  onRefresh?: () => void;
 }
 
-export const AdminConfig: React.FC<AdminConfigProps> = ({ config }) => {
+export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) => {
   const { user } = useAuth();
   
   const [localConfig, setLocalConfig] = useState<Config>(() => {
@@ -68,6 +69,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config }) => {
 
       setLocalConfig(cleanedConfig); // Update local state with cleaned data
       toast.success('Configuration updated successfully');
+      onRefresh?.();
     } catch (err) {
       toast.error('Failed to update configuration');
     } finally {

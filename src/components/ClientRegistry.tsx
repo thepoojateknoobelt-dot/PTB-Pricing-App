@@ -13,9 +13,10 @@ import { cn } from '../lib/utils';
 interface ClientRegistryProps {
   clients: Client[];
   config: Config;
+  onRefresh?: () => void;
 }
 
-export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config }) => {
+export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config, onRefresh }) => {
   const { user } = useAuth();
   const [search, setSearch] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -47,6 +48,7 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config 
 
       toast.success('Client added');
       setFormData({ name: '', company: '', city: '' });
+      onRefresh?.();
     } catch (err) {
       toast.error('Failed to add client');
     } finally {
@@ -68,6 +70,7 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config 
 
       toast.success('Margins updated');
       setEditingId(null);
+      onRefresh?.();
     } catch (err) {
       toast.error('Failed to update margins');
     }
@@ -83,6 +86,7 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config 
       if (!res.ok) throw new Error('Delete failed');
 
       toast.success('Client deleted');
+      onRefresh?.();
     } catch (err) {
       toast.error('Failed to delete client');
     }
@@ -122,6 +126,7 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config 
         }
       }
       toast.success(`Successfully uploaded ${count} clients`);
+      onRefresh?.();
     };
     reader.readAsText(file);
   };

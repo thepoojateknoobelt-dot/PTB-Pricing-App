@@ -56,8 +56,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   useEffect(() => {
     setIsSyncing(true);
     loadRollsData();
-    // Set up a polling interval for visual updates every 15 seconds
-    const interval = setInterval(loadRollsData, 15000);
+    // Set up a polling interval for visual updates every 4 seconds
+    const interval = setInterval(loadRollsData, 4000);
     return () => clearInterval(interval);
   }, []);
   

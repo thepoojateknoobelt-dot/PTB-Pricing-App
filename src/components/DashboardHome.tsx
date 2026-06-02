@@ -54,6 +54,8 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({ config, clients, o
       }
     };
     fetchQuotations();
+    const interval = setInterval(fetchQuotations, 4000);
+    return () => clearInterval(interval);
   }, []);
 
   // Compute metrics
