@@ -551,6 +551,35 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
                   </p>
                 </div>
               )}
+
+              {selectedQuotation.dimensions.hasHoles && (
+                <div className="col-span-2 p-3 bg-indigo-50 border border-indigo-150 rounded-xl space-y-1.5 animate-in fade-in duration-200">
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5 text-indigo-700" />
+                    Holes Layout Specifications
+                  </h4>
+                  <div className="grid grid-cols-4 gap-2 text-xs font-semibold text-slate-700 mt-1">
+                    <div>
+                      <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Total Holes</span>
+                      <p className="text-sm font-black text-indigo-900">{selectedQuotation.dimensions.totalHoles}</p>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Hole Size</span>
+                      <p className="text-xs font-bold text-slate-900">{selectedQuotation.dimensions.holeSize} mm</p>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Spacing (H / V)</span>
+                      <p className="text-xs font-bold text-slate-900">
+                        {selectedQuotation.dimensions.holeDistHorizontal}mm / {selectedQuotation.dimensions.holeDistVertical}mm
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Price per Hole</span>
+                      <p className="text-xs font-bold text-slate-900">₹{selectedQuotation.dimensions.pricePerHole}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
               
               {selectedQuotation.discountRequested && selectedQuotation.discountRequested > 0 && (
                 <div className="col-span-2 p-4 bg-amber-50 rounded-xl border border-amber-100 space-y-2">

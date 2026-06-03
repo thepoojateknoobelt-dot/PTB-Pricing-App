@@ -109,6 +109,37 @@ export const calculateCosting = (data: any, config: any, clientProfitRanges: Pro
     };
   }
 
+  // Holes Layout Spacing and Costing Calculation
+  const hasHoles = !!data.hasHoles;
+  let totalHoles = 0;
+  let holesCost = 0;
+  if (hasHoles) {
+    const lMm = lMtr * 1000;
+    const wMm = wMtr * 1000;
+    const hDist = parseFloat(data.holeDistHorizontal) || 0;
+    const vDist = parseFloat(data.holeDistVertical) || 0;
+    const holesH = hDist > 0 ? Math.floor(lMm / hDist) : 0;
+    const holesV = vDist > 0 ? Math.floor(wMm / vDist) : 0;
+    totalHoles = holesH * holesV;
+    const ratePerHole = parseFloat(data.pricePerHole) || 0;
+    holesCost = Math.round(totalHoles * ratePerHole);
+
+    breakdown['Holes'] = {
+      consumption: totalHoles,
+      rate: ratePerHole,
+      cost: holesCost,
+      unit: 'holes',
+      details: {
+        holeSize: parseFloat(data.holeSize) || 0,
+        holeDistHorizontal: hDist,
+        holeDistVertical: vDist,
+        holesH,
+        holesV
+      }
+    };
+    subtotal += holesCost;
+  }
+
   const purchaseGstAmount = Math.round(subtotal * (constants.purchaseGst / 100));
   const totalWithPurchaseGst = Math.round(subtotal + purchaseGstAmount);
   
@@ -149,7 +180,11 @@ export const calculateCosting = (data: any, config: any, clientProfitRanges: Pro
       totalWithProfit,
       saleGst: saleGstAmount,
       packingCost,
-      finalTotal
+      finalTotal,
+      hasHoles,
+      totalHoles,
+      pricePerHole: hasHoles ? (parseFloat(data.pricePerHole) || 0) : 0,
+      holesCost
     }
   };
 };

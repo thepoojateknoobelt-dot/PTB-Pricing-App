@@ -39,6 +39,11 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
     manualPackingCost: '',
     manualProfitMargin: '',
     selectedBOMOptions: {} as Record<string, number>, // bomItemId -> optionIndex
+    hasHoles: false,
+    holeSize: '',
+    holeDistHorizontal: '',
+    holeDistVertical: '',
+    pricePerHole: '',
   });
 
   const [result, setResult] = useState<any>(null);
@@ -210,6 +215,11 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
         beltType: formData.beltType,
         manualPackingCost: formData.manualPackingCost || undefined,
         manualProfitMargin: formData.manualProfitMargin || undefined,
+        hasHoles: formData.hasHoles,
+        holeSize: formData.holeSize,
+        holeDistHorizontal: formData.holeDistHorizontal,
+        holeDistVertical: formData.holeDistVertical,
+        pricePerHole: formData.pricePerHole,
       }, config, clientProfitRanges, customBOM, {});
 
 
@@ -264,6 +274,12 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
           lengthUnit: formData.lengthUnit,
           width: parseFloat(formData.width),
           widthUnit: formData.widthUnit,
+          hasHoles: formData.hasHoles,
+          holeSize: formData.hasHoles ? (parseFloat(formData.holeSize) || 0) : undefined,
+          holeDistHorizontal: formData.hasHoles ? (parseFloat(formData.holeDistHorizontal) || 0) : undefined,
+          holeDistVertical: formData.hasHoles ? (parseFloat(formData.holeDistVertical) || 0) : undefined,
+          pricePerHole: formData.hasHoles ? (parseFloat(formData.pricePerHole) || 0) : undefined,
+          totalHoles: formData.hasHoles ? (result.summary.totalHoles || 0) : undefined,
         },
         totalCost: result.summary.finalTotal,
         status,
@@ -287,7 +303,19 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
       // Fetch history immediately to update the client history table without manual refresh
       fetchClientHistory(formData.clientId);
       
-      setFormData({ ...formData, length: '', width: '', manualPackingCost: '', manualProfitMargin: '', beltStyle: '' });
+      setFormData({
+        ...formData,
+        length: '',
+        width: '',
+        manualPackingCost: '',
+        manualProfitMargin: '',
+        beltStyle: '',
+        hasHoles: false,
+        holeSize: '',
+        holeDistHorizontal: '',
+        holeDistVertical: '',
+        pricePerHole: '',
+      });
       setDiscountRequested('');
       setDiscountReason('');
     } catch (err) {
@@ -439,6 +467,72 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Hole Checkbox Layout Specification */}
+                  <div className="space-y-3 pt-2.5 border-t border-zinc-100">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="holeCheckbox"
+                        checked={formData.hasHoles || false}
+                        onChange={(e) => setFormData({ ...formData, hasHoles: e.target.checked })}
+                        className="h-4 w-4 rounded border-zinc-400 text-zinc-900 focus:ring-zinc-900 transition-colors"
+                      />
+                      <Label htmlFor="holeCheckbox" className="text-xs font-semibold cursor-pointer">
+                        Hole Checkbox
+                      </Label>
+                    </div>
+
+                    {formData.hasHoles && (
+                      <div className="grid gap-2.5 pl-4 border-l border-zinc-200 mt-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-bold text-zinc-500 uppercase">Hole Size (mm)</Label>
+                          <Input
+                            type="number"
+                            placeholder="e.g. 5"
+                            value={formData.holeSize || ''}
+                            onChange={(e) => setFormData({ ...formData, holeSize: e.target.value })}
+                            className="bg-white border-zinc-400 h-9 text-xs"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Horizontal Spacing (mm)</Label>
+                            <Input
+                              type="number"
+                              placeholder="e.g. 50"
+                              value={formData.holeDistHorizontal || ''}
+                              onChange={(e) => setFormData({ ...formData, holeDistHorizontal: e.target.value })}
+                              className="bg-white border-zinc-400 h-9 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Vertical Spacing (mm)</Label>
+                            <Input
+                              type="number"
+                              placeholder="e.g. 30"
+                              value={formData.holeDistVertical || ''}
+                              onChange={(e) => setFormData({ ...formData, holeDistVertical: e.target.value })}
+                              className="bg-white border-zinc-400 h-9 text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-bold text-zinc-500 uppercase">Price per Hole (₹)</Label>
+                          <Input
+                            type="number"
+                            placeholder="e.g. 2.5"
+                            value={formData.pricePerHole || ''}
+                            onChange={(e) => setFormData({ ...formData, pricePerHole: e.target.value })}
+                            className="bg-white border-zinc-400 h-9 text-xs"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                 </div>
                 {dimensionInsight && insightOrders.length > 0 && (
                   <Dialog>
@@ -627,6 +721,38 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
               </div>
             ) : (
               <div className="space-y-6">
+                {/* Hole Layout Info Card */}
+                {result.summary && result.summary.hasHoles && (
+                  <div className="p-3 bg-indigo-50 border border-indigo-150 rounded-xl space-y-1.5 animate-in fade-in duration-200">
+                    <h3 className="text-[10px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+                      <AlertCircle className="h-3.5 w-3.5 text-indigo-700" />
+                      Holes Layout Specifications
+                    </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-semibold text-slate-700 mt-1">
+                      <div>
+                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Total Holes</span>
+                        <p className="text-base font-black text-indigo-900">{result.summary.totalHoles}</p>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Holes Grid (L x W)</span>
+                        <p className="text-xs font-bold text-slate-900">
+                          {Math.round(toMeters(parseFloat(formData.length), formData.lengthUnit) * 1000 / (parseFloat(formData.holeDistHorizontal) || 1))} × {Math.round(toMeters(parseFloat(formData.width), formData.widthUnit) * 1000 / (parseFloat(formData.holeDistVertical) || 1))}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Hole Size</span>
+                        <p className="text-xs font-bold text-slate-900">{formData.holeSize} mm</p>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Spacing (H / V)</span>
+                        <p className="text-xs font-bold text-slate-900">
+                          {formData.holeDistHorizontal}mm / {formData.holeDistVertical}mm
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {user?.role === 'admin' && result.breakdown && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
@@ -648,9 +774,15 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                           .filter(([key]) => key.toLowerCase() !== 'packing')
                           .map(([key, val]: [string, any]) => (
                           <TableRow key={key} className="hover:bg-zinc-50/30 transition-colors h-8">
-                            <TableCell className="font-medium capitalize text-xs py-1.5">{key.replace(/([A-Z])/g, ' $1')}</TableCell>
+                            <TableCell className="font-medium capitalize text-xs py-1.5">
+                              {key.replace(/([A-Z])/g, ' $1')}
+                              {val.unit && <span className="text-[10px] text-zinc-400 font-medium ml-1">({val.unit})</span>}
+                            </TableCell>
                             <TableCell className="text-right text-xs text-zinc-600 font-mono py-1.5">
-                              {val.consumption > 999999 ? val.consumption.toExponential(4) : val.consumption.toFixed(4)}
+                              {val.unit === 'holes'
+                                ? val.consumption.toFixed(0)
+                                : (val.consumption > 999999 ? val.consumption.toExponential(4) : val.consumption.toFixed(4))
+                              }
                             </TableCell>
                             <TableCell className="text-right text-xs text-zinc-600 font-mono py-1.5">{formatCurrency(val.rate)}</TableCell>
                             <TableCell className="text-right font-bold text-xs font-mono py-1.5">{formatCurrency(val.cost)}</TableCell>

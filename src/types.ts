@@ -98,6 +98,12 @@ export interface Quotation {
     unit?: 'mm' | 'ft' | 'mtr' | 'in';
     lengthUnit?: string;
     widthUnit?: string;
+    hasHoles?: boolean;
+    holeSize?: number;
+    holeDistHorizontal?: number;
+    holeDistVertical?: number;
+    pricePerHole?: number;
+    totalHoles?: number;
   };
   jointType: string;
   tapeType: string;
