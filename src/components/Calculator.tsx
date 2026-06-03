@@ -258,6 +258,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
         clientName: selectedClient.name,
         beltType: formData.beltType,
         beltStyle: formData.beltStyle,
+        selectedBOMOptions: formData.selectedBOMOptions,
         dimensions: {
           length: parseFloat(formData.length),
           lengthUnit: formData.lengthUnit,
@@ -327,7 +328,9 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                     <Label className="text-xs font-medium">Client</Label>
                     <Select value={formData.clientId} onValueChange={(val) => setFormData({ ...formData, clientId: val })}>
                       <SelectTrigger className="bg-white border-zinc-400 focus:ring-zinc-900 transition-all h-9 text-xs">
-                        <SelectValue placeholder="Select Client" />
+                        <SelectValue placeholder="Select Client">
+                          {selectedClient ? selectedClient.name : undefined}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {(Array.isArray(clients) ? clients : [])?.map?.(c => (

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Config } from '../types';
+import { Config, Company, MaterialStock } from '../types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { UserPlus, Trash2, Upload, Download, Search, Edit2, Save, X, IndianRupee, Percent, ListPlus, Settings2, Lock, Unlock, Plus, Link2 } from 'lucide-react';
+import { UserPlus, Trash2, Upload, Download, Search, Edit2, Save, X, IndianRupee, Percent, ListPlus, Settings2, Lock, Unlock, Plus, Link2, Building2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { useAuth } from '../contexts/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
@@ -18,6 +18,103 @@ interface AdminConfigProps {
 
 export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) => {
   const { user } = useAuth();
+
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [editingCompany, setEditingCompany] = useState<{ id: string; name: string } | null>(null);
+  const [isLoadingCompanies, setIsLoadingCompanies] = useState(false);
+  const [materialStocks, setMaterialStocks] = useState<MaterialStock[]>([]);
+
+  const fetchCompanies = async () => {
+    setIsLoadingCompanies(true);
+    try {
+      const res = await fetch('/api/companies');
+      if (res.ok) {
+        const data = await res.json();
+        setCompanies(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch companies:', err);
+    } finally {
+      setIsLoadingCompanies(false);
+    }
+  };
+
+  const fetchMaterialStocks = async () => {
+    try {
+      const res = await fetch('/api/material-stocks');
+      if (res.ok) {
+        const data = await res.json();
+        setMaterialStocks(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch material stocks:', err);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchCompanies();
+    fetchMaterialStocks();
+  }, []);
+
+  const handleAddCompany = async () => {
+    if (!newCompanyName.trim()) return;
+    try {
+      const res = await fetch('/api/companies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCompanyName.trim() }),
+      });
+      if (res.ok) {
+        toast.success('Company added successfully');
+        setNewCompanyName('');
+        fetchCompanies();
+      } else {
+        const errData = await res.json();
+        toast.error(errData.error || 'Failed to add company');
+      }
+    } catch (err) {
+      toast.error('Failed to add company');
+    }
+  };
+
+  const handleUpdateCompany = async () => {
+    if (!editingCompany || !editingCompany.name.trim()) return;
+    try {
+      const res = await fetch(`/api/companies/${editingCompany.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editingCompany.name.trim() }),
+      });
+      if (res.ok) {
+        toast.success('Company updated successfully');
+        setEditingCompany(null);
+        fetchCompanies();
+      } else {
+        const errData = await res.json();
+        toast.error(errData.error || 'Failed to update company');
+      }
+    } catch (err) {
+      toast.error('Failed to update company');
+    }
+  };
+
+  const handleDeleteCompany = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
+    try {
+      const res = await fetch(`/api/companies/${id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        toast.success('Company deleted successfully');
+        fetchCompanies();
+      } else {
+        toast.error('Failed to delete company');
+      }
+    } catch (err) {
+      toast.error('Failed to delete company');
+    }
+  };
   
   const [localConfig, setLocalConfig] = useState<Config>(() => {
     const defaultConfig: Config = {
@@ -329,6 +426,86 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
           </CardContent>
         </Card>
 
+        <Card className="border-zinc-200 shadow-sm bg-white flex flex-col justify-between">
+          <CardHeader className="flex flex-row items-center gap-4 py-4 border-b">
+            <div className="p-2 bg-zinc-100 rounded-lg">
+              <Building2 className="h-5 w-5 text-zinc-900" />
+            </div>
+            <div>
+              <CardTitle>Company Management</CardTitle>
+              <CardDescription>Manage child companies (add, rename, delete)</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 flex-1 flex flex-col space-y-4">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  type="text"
+                  placeholder="Enter new company name..."
+                  className="border-zinc-300 bg-white h-9"
+                  value={newCompanyName}
+                  onChange={(e) => setNewCompanyName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddCompany()}
+                />
+              </div>
+              <Button onClick={handleAddCompany} size="sm" className="bg-zinc-900 hover:bg-zinc-800 text-white h-9">
+                Add
+              </Button>
+            </div>
+
+            <div className="border border-zinc-200 rounded-lg overflow-hidden flex-1 max-h-[160px] overflow-y-auto divide-y divide-zinc-100 bg-zinc-50/30">
+              {isLoadingCompanies ? (
+                <div className="p-4 text-center text-xs text-zinc-400">Loading companies...</div>
+              ) : companies.length === 0 ? (
+                <div className="p-4 text-center text-xs text-zinc-400">No companies added yet.</div>
+              ) : (
+                companies.map((company) => (
+                  <div key={company.id} className="flex items-center justify-between p-2.5 px-3 bg-white hover:bg-zinc-50 transition-colors">
+                    {editingCompany && editingCompany.id === company.id ? (
+                      <div className="flex items-center gap-2 w-full">
+                        <Input
+                          type="text"
+                          className="h-7 text-xs border-zinc-400 bg-white"
+                          value={editingCompany.name}
+                          onChange={(e) => setEditingCompany({ ...editingCompany, name: e.target.value })}
+                          onKeyDown={(e) => e.key === 'Enter' && handleUpdateCompany()}
+                        />
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-emerald-600 hover:bg-emerald-50" onClick={handleUpdateCompany}>
+                          <Save className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-600 hover:bg-rose-50" onClick={() => setEditingCompany(null)}>
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-xs font-bold text-zinc-800">{company.name}</span>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100"
+                            onClick={() => setEditingCompany({ id: company.id, name: company.name })}
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-zinc-400 hover:text-rose-500 hover:bg-rose-50"
+                            onClick={() => handleDeleteCompany(company.id, company.name)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         <Card className="border-zinc-200 shadow-md md:col-span-2 overflow-hidden bg-white">
           <CardHeader className="flex flex-row items-center justify-between bg-zinc-50/50 border-b py-4">
@@ -642,6 +819,30 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                           This rate applies for every 1 {item.unit || 'unit'} of material.
                                         </p>
                                       </div>
+
+                                      <div className="space-y-1.5 pt-2">
+                                        <Label className="text-[10px] font-bold uppercase text-zinc-500">Linked Material Stock</Label>
+                                        <Select
+                                          value={item.linkedStockId || 'none'}
+                                          onValueChange={(val) => {
+                                            const updated = [...localConfig.beltTypes];
+                                            updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].linkedStockId = val === 'none' ? undefined : val;
+                                            setLocalConfig({ ...localConfig, beltTypes: updated });
+                                          }}
+                                        >
+                                          <SelectTrigger className="bg-white border-zinc-300 h-10 text-xs font-bold w-full">
+                                            <SelectValue placeholder="Not Linked" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="none">Not Linked</SelectItem>
+                                            {materialStocks.map(stock => (
+                                              <SelectItem key={stock.id} value={stock.id}>
+                                                {stock.name} ({stock.quantity} {stock.unit})
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
                                     </div>
                                   )}
 
@@ -764,6 +965,29 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                                 {getFilteredUnits(item.formula).map(u => (
                                                   <SelectItem key={u.id || u.value} value={u.value} className="text-[10px]">
                                                     {u.label || u.value}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                          <div className="w-[110px] space-y-1">
+                                            <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Link Stock</Label>
+                                            <Select 
+                                              value={opt.linkedStockId || 'none'}
+                                              onValueChange={(val) => {
+                                                const updated = [...localConfig.beltTypes];
+                                                updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].linkedStockId = val === 'none' ? undefined : val;
+                                                setLocalConfig({ ...localConfig, beltTypes: updated });
+                                              }}
+                                            >
+                                              <SelectTrigger className="bg-zinc-50 border-zinc-200 h-8 text-[9px] font-black uppercase px-2 hover:bg-white transition-all">
+                                                <SelectValue placeholder="Not Linked" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="none" className="text-[10px]">Not Linked</SelectItem>
+                                                {materialStocks.map(stock => (
+                                                  <SelectItem key={stock.id} value={stock.id} className="text-[10px]">
+                                                    {stock.name}
                                                   </SelectItem>
                                                 ))}
                                               </SelectContent>

@@ -59,7 +59,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
         <div className="flex items-center gap-3 relative z-10">
           <div className="px-4 py-2 bg-white/10 rounded-2xl border border-white/15 backdrop-blur-sm text-xs font-semibold capitalize">
-            Role: {user?.role}
+            Department: {user?.role}
           </div>
         </div>
       </div>

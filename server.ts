@@ -110,6 +110,82 @@ async function initializeDatabase() {
       console.warn('Failed to alter quotations columns to drop NOT NULL constraint:', alterErr);
     }
 
+    // Ensure company column exists on quotations table
+    try {
+      await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS company VARCHAR(255)`);
+    } catch (alterErr) {
+      console.warn('Failed to add company column to quotations table:', alterErr);
+    }
+
+    // Ensure belt_style and selected_bom_options columns exist on quotations table
+    try {
+      await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS belt_style VARCHAR(255)`);
+      await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS selected_bom_options JSONB DEFAULT '{}'::jsonb`);
+    } catch (alterErr) {
+      console.warn('Failed to add belt_style and selected_bom_options columns to quotations table:', alterErr);
+    }
+
+    // Create Companies table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS companies (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) UNIQUE NOT NULL
+      )
+    `);
+
+    // Prepopulate default company if table is empty
+    try {
+      const compCheck = await pool.query('SELECT COUNT(*) FROM companies');
+      if (parseInt(compCheck.rows[0].count, 10) === 0) {
+        await pool.query("INSERT INTO companies (id, name) VALUES ($1, $2)", ['comp-1', 'Pooja Tekno Belt']);
+      }
+    } catch (compErr) {
+      console.warn('Failed to pre-populate default company:', compErr);
+    }
+
+    // Create Material Stocks table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS material_stocks (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) UNIQUE NOT NULL,
+        quantity NUMERIC NOT NULL DEFAULT 0,
+        unit VARCHAR(50) DEFAULT 'pcs' NOT NULL
+      )
+    `);
+
+    // Add reorder_level column if it doesn't exist yet
+    try {
+      await pool.query(`ALTER TABLE material_stocks ADD COLUMN IF NOT EXISTS reorder_level NUMERIC NOT NULL DEFAULT 0`);
+    } catch (alterErr) {
+      console.warn('Failed to add reorder_level column:', alterErr);
+    }
+
+    // Seed default material stocks if empty
+    try {
+      const stockCheck = await pool.query('SELECT COUNT(*) FROM material_stocks');
+      if (parseInt(stockCheck.rows[0].count, 10) === 0) {
+        await pool.query("INSERT INTO material_stocks (id, name, quantity, unit, reorder_level) VALUES ($1, $2, $3, $4, $5)", ['stock-1', 'Screws', 250, 'pcs', 50]);
+        await pool.query("INSERT INTO material_stocks (id, name, quantity, unit, reorder_level) VALUES ($1, $2, $3, $4, $5)", ['stock-2', 'Clips', 120, 'pcs', 30]);
+        await pool.query("INSERT INTO material_stocks (id, name, quantity, unit, reorder_level) VALUES ($1, $2, $3, $4, $5)", ['stock-3', 'Glue', 15, 'bottles', 5]);
+      }
+    } catch (stockErr) {
+      console.warn('Failed to pre-populate default material stocks:', stockErr);
+    }
+
+    // Create Material Issues (Production Log) table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS material_issues (
+        id VARCHAR(255) PRIMARY KEY,
+        material_id VARCHAR(255) NOT NULL,
+        material_name VARCHAR(255) NOT NULL,
+        quantity NUMERIC NOT NULL,
+        unit VARCHAR(50) NOT NULL,
+        issued_to VARCHAR(255) NOT NULL,
+        notes TEXT DEFAULT '',
+        issued_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Create Audit Logs table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS audit_logs (
@@ -157,6 +233,7 @@ async function initializeDatabase() {
       await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS is_reuse BOOLEAN DEFAULT FALSE`);
       await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS parent_roll_id VARCHAR(255)`);
       await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active'`);
+      await pool.query(`UPDATE rolls SET is_reuse = TRUE WHERE id LIKE 'REUSE-%' AND is_reuse = FALSE`);
     } catch (alterErr) {
       console.warn('Failed to add columns to rolls table:', alterErr);
     }
@@ -241,6 +318,121 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+const toMetersBackend = (val: number, u: string) => {
+  if (!u) return val;
+  const unit = u.toLowerCase();
+  if (unit === 'mm' || unit === 'millimeters') return val / 1000;
+  if (unit === 'ft' || unit === 'feet') return val * 0.3048;
+  if (unit === 'in' || unit === 'inch' || unit === 'inches') return val * 0.0254;
+  if (unit === 'mtr' || unit === 'm' || unit === 'meter' || unit === 'meters') return val;
+  return val;
+};
+
+const evaluateFormulaBackend = (formula: string, L: number, W: number) => {
+  try {
+    if (!formula) return 0;
+    const sanitized = formula.toUpperCase().replace(/\s/g, '');
+    if (!/^[0-9LWP\.\+\-\*\/\(\)]+$/.test(sanitized)) return 0;
+    
+    const P = 2 * ((L || 0) + (W || 0));
+    
+    const expr = sanitized
+      .replace(/L/g, `(${L || 0})`)
+      .replace(/W/g, `(${W || 0})`)
+      .replace(/P/g, `(${P})`);
+    
+    const result = Function(`"use strict"; return (${expr})`)();
+    return isNaN(result) ? 0 : result;
+  } catch (e) {
+    console.error('Formula Error:', formula, e);
+    return 0;
+  }
+};
+
+async function deductStockForQuotation(quotationId: string, updateData: any) {
+  try {
+    const quoteRes = await pool.query('SELECT * FROM quotations WHERE id = $1', [quotationId]);
+    if (quoteRes.rowCount === 0) return;
+    const quote = quoteRes.rows[0];
+
+    const beltType = updateData.beltType || quote.belt_type;
+    const beltStyle = updateData.beltStyle || quote.belt_style;
+    const dimensions = typeof quote.dimensions === 'string' ? JSON.parse(quote.dimensions) : quote.dimensions;
+    const selectedBOMOptions = updateData.selectedBOMOptions || quote.selected_bom_options || {};
+
+    if (!dimensions || !beltType || !beltStyle) {
+      console.warn(`Cannot deduct stock for quotation ${quotationId}: missing dimensions, belt_type, or belt_style`);
+      return;
+    }
+
+    const length = parseFloat(dimensions.length);
+    const width = parseFloat(dimensions.width);
+    const lengthUnit = dimensions.lengthUnit || dimensions.unit || 'mm';
+    const widthUnit = dimensions.widthUnit || dimensions.unit || 'mm';
+
+    const lMtr = toMetersBackend(length, lengthUnit);
+    const wMtr = toMetersBackend(width, widthUnit);
+
+    const configRes = await pool.query('SELECT data FROM system_config WHERE id = $1', ['default']);
+    if (configRes.rowCount === 0) return;
+    const config = configRes.rows[0].data;
+
+    if (!config || !Array.isArray(config.beltTypes)) return;
+
+    const category = config.beltTypes.find((t: any) => t.name === beltType);
+    if (!category || !Array.isArray(category.styles)) return;
+    const style = category.styles.find((s: any) => s.name === beltStyle);
+    if (!style || !Array.isArray(style.bom)) return;
+
+    for (const item of style.bom) {
+      let linkedStockId = item.linkedStockId;
+      let selectedOptionName = '';
+      
+      const optIdx = selectedBOMOptions[item.id];
+      if (optIdx !== undefined && Array.isArray(item.options) && item.options[optIdx]) {
+        const opt = item.options[optIdx];
+        if (opt.linkedStockId) {
+          linkedStockId = opt.linkedStockId;
+        }
+        selectedOptionName = opt.name || '';
+      }
+
+      if (!linkedStockId) continue;
+
+      let consumption = evaluateFormulaBackend(item.formula || '', lMtr, wMtr);
+      const u = (item.unit || '').toLowerCase();
+      if (u === 'ft' || u === 'feet') consumption = consumption / 0.3048;
+      else if (u === 'in' || u === 'inch' || u === 'inches') consumption = consumption / 0.0254;
+      else if (u === 'mm' || u === 'millimeters') consumption = consumption * 1000;
+      else if (u.includes('sq')) {
+        if (u.includes('ft') || u.includes('feet')) consumption = consumption / (0.3048 * 0.3048);
+        else if (u.includes('in') || u.includes('inch') || u.includes('inches')) consumption = consumption / (0.0254 * 0.0254);
+        else if (u.includes('mm') || u.includes('millimeters')) consumption = consumption * (1000 * 1000);
+      }
+
+      const stockRes = await pool.query('SELECT * FROM material_stocks WHERE id = $1', [linkedStockId]);
+      if (stockRes.rowCount === 0) continue;
+      const stock = stockRes.rows[0];
+
+      const deductQty = parseFloat(consumption.toFixed(4));
+      const newQty = Math.max(0, parseFloat(stock.quantity) - deductQty);
+      await pool.query('UPDATE material_stocks SET quantity = $1 WHERE id = $2', [newQty, linkedStockId]);
+
+      const issueId = 'issue-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+      const issuedTo = `Order #${quote.id} (${quote.client_name})`;
+      const note = `Auto-deducted on execution. Style: ${beltStyle}, BOM Component: ${item.name}${selectedOptionName ? ` (${selectedOptionName})` : ''}`;
+      
+      await pool.query(
+        `INSERT INTO material_issues (id, material_id, material_name, quantity, unit, issued_to, notes, issued_at) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
+        [issueId, linkedStockId, stock.name, deductQty, stock.unit, issuedTo, note]
+      );
+    }
+  } catch (err) {
+    console.error('Error in deductStockForQuotation:', err);
+  }
+}
 
 // Calculation Logic
 const calculateCosting = (data: any, config: any, clientProfitRanges: any[] = [], customBOM: any[] = []) => {
@@ -479,6 +671,219 @@ app.post('/api/settings/config', authenticate, async (req: any, res) => {
   }
 });
 
+// Companies Routes
+app.get('/api/companies', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM companies ORDER BY name ASC');
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Failed to get companies', err);
+    res.status(500).json({ error: 'Failed to retrieve companies' });
+  }
+});
+
+app.post('/api/companies', authenticate, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const { name } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
+    const id = 'company-' + Date.now();
+    await pool.query('INSERT INTO companies (id, name) VALUES ($1, $2)', [id, name.trim()]);
+    res.json({ id, name: name.trim() });
+  } catch (err) {
+    console.error('Failed to add company', err);
+    res.status(500).json({ error: 'Failed to add company' });
+  }
+});
+
+app.put('/api/companies/:id', authenticate, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const { name } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
+    await pool.query('UPDATE companies SET name = $1 WHERE id = $2', [name.trim(), req.params.id]);
+    res.json({ id: req.params.id, name: name.trim() });
+  } catch (err) {
+    console.error('Failed to update company', err);
+    res.status(500).json({ error: 'Failed to update company' });
+  }
+});
+
+app.delete('/api/companies/:id', authenticate, async (req: any, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+  try {
+    await pool.query('DELETE FROM companies WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to delete company', err);
+    res.status(500).json({ error: 'Failed to delete company' });
+  }
+});
+
+// Material Stocks Routes
+app.get('/api/material-stocks', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM material_stocks ORDER BY name ASC');
+    res.json(result.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      quantity: parseFloat(row.quantity),
+      unit: row.unit,
+      reorderLevel: parseFloat(row.reorder_level) || 0
+    })));
+  } catch (err) {
+    console.error('Failed to get material stocks', err);
+    res.status(500).json({ error: 'Failed to retrieve material stocks' });
+  }
+});
+
+app.post('/api/material-stocks', async (req: any, res) => {
+  try {
+    const { name, quantity, unit, reorderLevel } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
+    const id = 'stock-' + Date.now();
+    await pool.query(
+      'INSERT INTO material_stocks (id, name, quantity, unit, reorder_level) VALUES ($1, $2, $3, $4, $5)', 
+      [id, name.trim(), parseFloat(quantity) || 0, (unit || 'pcs').trim(), parseFloat(reorderLevel) || 0]
+    );
+    res.json({ id, name: name.trim(), quantity: parseFloat(quantity) || 0, unit: (unit || 'pcs').trim(), reorderLevel: parseFloat(reorderLevel) || 0 });
+  } catch (err: any) {
+    console.error('Failed to add material stock', err);
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'A material with this name already exists' });
+    }
+    res.status(500).json({ error: 'Failed to add material stock' });
+  }
+});
+
+app.put('/api/material-stocks/:id', async (req: any, res) => {
+  try {
+    const { name, quantity, unit, reorderLevel } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
+    await pool.query(
+      'UPDATE material_stocks SET name = $1, quantity = $2, unit = $3, reorder_level = $4 WHERE id = $5',
+      [name.trim(), parseFloat(quantity) || 0, (unit || 'pcs').trim(), parseFloat(reorderLevel) || 0, req.params.id]
+    );
+    res.json({ id: req.params.id, name: name.trim(), quantity: parseFloat(quantity) || 0, unit: (unit || 'pcs').trim(), reorderLevel: parseFloat(reorderLevel) || 0 });
+  } catch (err: any) {
+    console.error('Failed to update material stock', err);
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'A material with this name already exists' });
+    }
+    res.status(500).json({ error: 'Failed to update material stock' });
+  }
+});
+
+// PATCH – update only the reorder level for a stock item
+app.patch('/api/material-stocks/:id/reorder-level', async (req: any, res) => {
+  try {
+    const { reorderLevel } = req.body;
+    await pool.query(
+      'UPDATE material_stocks SET reorder_level = $1 WHERE id = $2',
+      [parseFloat(reorderLevel) || 0, req.params.id]
+    );
+    res.json({ success: true, reorderLevel: parseFloat(reorderLevel) || 0 });
+  } catch (err) {
+    console.error('Failed to update reorder level', err);
+    res.status(500).json({ error: 'Failed to update reorder level' });
+  }
+});
+
+// PATCH – increment stock quantity for an item (refill)
+app.patch('/api/material-stocks/:id/refill', async (req: any, res) => {
+  try {
+    const { addQuantity } = req.body;
+    if (addQuantity === undefined || isNaN(addQuantity) || parseFloat(addQuantity) <= 0) {
+      return res.status(400).json({ error: 'Valid addQuantity is required' });
+    }
+    const result = await pool.query(
+      'UPDATE material_stocks SET quantity = quantity + $1 WHERE id = $2 RETURNING *',
+      [parseFloat(addQuantity), req.params.id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Material stock not found' });
+    }
+    const row = result.rows[0];
+    res.json({
+      id: row.id,
+      name: row.name,
+      quantity: parseFloat(row.quantity),
+      unit: row.unit,
+      reorderLevel: parseFloat(row.reorder_level) || 0
+    });
+  } catch (err) {
+    console.error('Failed to refill stock', err);
+    res.status(500).json({ error: 'Failed to refill stock' });
+  }
+});
+
+app.delete('/api/material-stocks/:id', async (req: any, res) => {
+  try {
+    await pool.query('DELETE FROM material_stocks WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to delete material stock', err);
+    res.status(500).json({ error: 'Failed to delete material stock' });
+  }
+});
+
+// ─── Material Issues / Production Log Routes ──────────────────────────────
+
+app.get('/api/material-issues', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM material_issues ORDER BY issued_at DESC');
+    res.json(result.rows.map((row: any) => ({
+      id: row.id,
+      materialId: row.material_id,
+      materialName: row.material_name,
+      quantity: parseFloat(row.quantity),
+      unit: row.unit,
+      issuedTo: row.issued_to,
+      notes: row.notes || '',
+      issuedAt: row.issued_at
+    })));
+  } catch (err) {
+    console.error('Failed to get material issues', err);
+    res.status(500).json({ error: 'Failed to retrieve production log' });
+  }
+});
+
+app.post('/api/material-issues', async (req: any, res) => {
+  try {
+    const { materialId, materialName, quantity, unit, issuedTo, notes } = req.body;
+    if (!materialName || !issuedTo) return res.status(400).json({ error: 'Material name and issued-to are required' });
+    if (!quantity || quantity <= 0) return res.status(400).json({ error: 'Quantity must be greater than 0' });
+
+    if (materialId) {
+      const stockRow = await pool.query('SELECT quantity FROM material_stocks WHERE id = $1', [materialId]);
+      if (stockRow.rows.length > 0) {
+        const newQty = Math.max(0, parseFloat(stockRow.rows[0].quantity) - parseFloat(quantity));
+        await pool.query('UPDATE material_stocks SET quantity = $1 WHERE id = $2', [newQty, materialId]);
+      }
+    }
+
+    const id = 'issue-' + Date.now();
+    await pool.query(
+      'INSERT INTO material_issues (id, material_id, material_name, quantity, unit, issued_to, notes) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [id, materialId || '', materialName, parseFloat(quantity), unit || 'pcs', issuedTo.trim(), notes || '']
+    );
+    res.json({ id, materialId: materialId || '', materialName, quantity: parseFloat(quantity), unit: unit || 'pcs', issuedTo: issuedTo.trim(), notes: notes || '', issuedAt: new Date().toISOString() });
+  } catch (err) {
+    console.error('Failed to create material issue', err);
+    res.status(500).json({ error: 'Failed to issue material' });
+  }
+});
+
+app.delete('/api/material-issues/:id', async (req: any, res) => {
+  try {
+    await pool.query('DELETE FROM material_issues WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to delete material issue', err);
+    res.status(500).json({ error: 'Failed to delete record' });
+  }
+});
+
 // Proxy endpoint to bypass CORS for AWS Lambda status verification
 app.get('/api/aws-ping', async (req: any, res) => {
   const target = req.query.url;
@@ -574,7 +979,7 @@ app.get('/api/rolls', async (req, res) => {
       totalSqm: parseFloat(r.total_sqm),
       remainingSqm: parseFloat(r.remaining_sqm),
       isArchived: r.is_archived,
-      isReuse: r.is_reuse || false,
+      isReuse: r.is_reuse || (r.id && r.id.startsWith('REUSE-')) || false,
       parentRollId: r.parent_roll_id || null,
       status: r.status || 'active',
       cuts: cutsRes.rows
@@ -601,13 +1006,14 @@ app.get('/api/rolls', async (req, res) => {
 
 app.post('/api/rolls', async (req, res) => {
   const { id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived, isReuse, parentRollId, status } = req.body;
+  const computedIsReuse = isReuse || (id && id.startsWith('REUSE-')) || false;
   try {
     await pool.query(
       `INSERT INTO rolls (id, material_type, full_width, full_length, total_sqm, remaining_sqm, is_archived, is_reuse, parent_roll_id, status) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived || false, isReuse || false, parentRollId || null, status || 'active']
+      [id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived || false, computedIsReuse, parentRollId || null, status || 'active']
     );
-    res.json({ id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived: isArchived || false, isReuse: isReuse || false, parentRollId: parentRollId || null, status: status || 'active', cuts: [] });
+    res.json({ id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived: isArchived || false, isReuse: computedIsReuse, parentRollId: parentRollId || null, status: status || 'active', cuts: [] });
   } catch (err) {
     console.error('Failed to create roll', err);
     res.status(500).json({ error: 'Failed to create roll' });
@@ -699,7 +1105,9 @@ app.get('/api/quotations', async (req, res) => {
       clientId: row.client_id,
       clientName: row.client_name,
       beltType: row.belt_type,
-      dimensions: row.dimensions,
+      beltStyle: row.belt_style,
+      selectedBOMOptions: typeof row.selected_bom_options === 'string' ? JSON.parse(row.selected_bom_options) : (row.selected_bom_options || {}),
+      dimensions: typeof row.dimensions === 'string' ? JSON.parse(row.dimensions) : row.dimensions,
       jointType: row.joint_type,
       tapeType: row.tape_type,
       totalCost: parseFloat(row.total_cost),
@@ -710,7 +1118,8 @@ app.get('/api/quotations', async (req, res) => {
       createdBy: row.created_by,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      auditLogs: row.audit_logs
+      auditLogs: typeof row.audit_logs === 'string' ? JSON.parse(row.audit_logs) : row.audit_logs,
+      company: row.company
     }));
     res.json(quotations);
   } catch (err) {
@@ -722,24 +1131,25 @@ app.get('/api/quotations', async (req, res) => {
 app.post('/api/quotations', authenticate, async (req, res) => {
   try {
     const id = Date.now().toString();
-    const { clientId, clientName, beltType, dimensions, jointType = '', tapeType = '', totalCost, status, discountRequested, discountReason, rejectionReason, createdBy, auditLogs } = req.body;
+    const { clientId, clientName, beltType, beltStyle = '', selectedBOMOptions = {}, dimensions, jointType = '', tapeType = '', totalCost, status, discountRequested, discountReason, rejectionReason, createdBy, auditLogs, company } = req.body;
     const now = new Date();
     await pool.query(
       `INSERT INTO quotations (
         id, client_id, client_name, belt_type, dimensions, joint_type, tape_type, 
         total_cost, status, discount_requested, discount_reason, rejection_reason, 
-        created_by, created_at, updated_at, audit_logs
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        created_by, created_at, updated_at, audit_logs, company, belt_style, selected_bom_options
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
       [
         id, clientId, clientName, beltType, JSON.stringify(dimensions), jointType || '', tapeType || '',
         totalCost, status, discountRequested || null, discountReason || null, rejectionReason || null,
-        createdBy, now, now, JSON.stringify(auditLogs || [])
+        createdBy, now, now, JSON.stringify(auditLogs || []), company || null, beltStyle || '', JSON.stringify(selectedBOMOptions || {})
       ]
     );
     res.json({
-      id, clientId, clientName, beltType, dimensions, jointType: jointType || '', tapeType: tapeType || '',
+      id, clientId, clientName, beltType, beltStyle: beltStyle || '', selectedBOMOptions: selectedBOMOptions || {}, dimensions, jointType: jointType || '', tapeType: tapeType || '',
       totalCost, status, discountRequested, discountReason, rejectionReason,
-      createdBy, createdAt: now.toISOString(), updatedAt: now.toISOString(), auditLogs: auditLogs || []
+      createdBy, createdAt: now.toISOString(), updatedAt: now.toISOString(), auditLogs: auditLogs || [],
+      company
     });
   } catch (err) {
     console.error('Failed to create quotation', err);
@@ -758,6 +1168,8 @@ app.put('/api/quotations/:id', authenticate, async (req, res) => {
     const clientId = req.body.clientId !== undefined ? req.body.clientId : existing.client_id;
     const clientName = req.body.clientName !== undefined ? req.body.clientName : existing.client_name;
     const beltType = req.body.beltType !== undefined ? req.body.beltType : existing.belt_type;
+    const beltStyle = req.body.beltStyle !== undefined ? req.body.beltStyle : existing.belt_style;
+    const selectedBOMOptions = req.body.selectedBOMOptions !== undefined ? req.body.selectedBOMOptions : existing.selected_bom_options;
     const dimensions = req.body.dimensions !== undefined ? req.body.dimensions : existing.dimensions;
     const jointType = req.body.jointType !== undefined ? req.body.jointType : existing.joint_type;
     const tapeType = req.body.tapeType !== undefined ? req.body.tapeType : existing.tape_type;
@@ -768,6 +1180,19 @@ app.put('/api/quotations/:id', authenticate, async (req, res) => {
     const rejectionReason = req.body.rejectionReason !== undefined ? req.body.rejectionReason : existing.rejection_reason;
     const createdBy = req.body.createdBy !== undefined ? req.body.createdBy : existing.created_by;
     const auditLogs = req.body.auditLogs !== undefined ? req.body.auditLogs : existing.audit_logs;
+    const company = req.body.company !== undefined ? req.body.company : existing.company;
+
+    const oldStatus = existing.status;
+    const newStatus = req.body.status !== undefined ? req.body.status : existing.status;
+
+    // Perform stock deduction if transitioned to executed
+    if (newStatus === 'executed' && oldStatus !== 'executed') {
+      try {
+        await deductStockForQuotation(req.params.id, req.body);
+      } catch (stockErr) {
+        console.error('Failed to deduct stock for quotation execution:', stockErr);
+      }
+    }
 
     const now = new Date();
     
@@ -776,14 +1201,19 @@ app.put('/api/quotations/:id', authenticate, async (req, res) => {
         client_id = $1, client_name = $2, belt_type = $3, dimensions = $4, 
         joint_type = $5, tape_type = $6, total_cost = $7, status = $8, 
         discount_requested = $9, discount_reason = $10, rejection_reason = $11, 
-        created_by = $12, updated_at = $13, audit_logs = $14 
-      WHERE id = $15 RETURNING *`,
+        created_by = $12, updated_at = $13, audit_logs = $14, company = $15,
+        belt_style = $16, selected_bom_options = $17
+      WHERE id = $18 RETURNING *`,
       [
         clientId, clientName, beltType, typeof dimensions === 'string' ? dimensions : JSON.stringify(dimensions),
         jointType || '', tapeType || '', totalCost, status,
         discountRequested !== undefined && discountRequested !== null ? discountRequested : null,
         discountReason || null, rejectionReason || null,
-        createdBy, now, typeof auditLogs === 'string' ? auditLogs : JSON.stringify(auditLogs || []), req.params.id
+        createdBy, now, typeof auditLogs === 'string' ? auditLogs : JSON.stringify(auditLogs || []), 
+        company || null,
+        beltStyle || '',
+        typeof selectedBOMOptions === 'string' ? selectedBOMOptions : JSON.stringify(selectedBOMOptions || {}),
+        req.params.id
       ]
     );
     
@@ -794,7 +1224,9 @@ app.put('/api/quotations/:id', authenticate, async (req, res) => {
       clientId: row.client_id,
       clientName: row.client_name,
       beltType: row.belt_type,
-      dimensions: row.dimensions,
+      beltStyle: row.belt_style,
+      selectedBOMOptions: typeof row.selected_bom_options === 'string' ? JSON.parse(row.selected_bom_options) : row.selected_bom_options,
+      dimensions: typeof row.dimensions === 'string' ? JSON.parse(row.dimensions) : row.dimensions,
       jointType: row.joint_type,
       tapeType: row.tape_type,
       totalCost: parseFloat(row.total_cost),
@@ -805,7 +1237,8 @@ app.put('/api/quotations/:id', authenticate, async (req, res) => {
       createdBy: row.created_by,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      auditLogs: row.audit_logs
+      auditLogs: typeof row.audit_logs === 'string' ? JSON.parse(row.audit_logs) : row.audit_logs,
+      company: row.company
     });
   } catch (err) {
     console.error('Failed to update quotation', err);

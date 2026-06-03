@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'sales';
+export type UserRole = 'admin' | 'sales' | 'production';
 
 export interface User {
   id: string;
@@ -44,7 +44,8 @@ export interface BOMItem {
   unit: string;
   formula: string;
   isLocked?: boolean;
-  options?: { name: string, rate: number, unit?: string }[];
+  options?: { name: string, rate: number, unit?: string; linkedStockId?: string }[];
+  linkedStockId?: string;
 }
 
 export interface BeltStyle {
@@ -101,7 +102,7 @@ export interface Quotation {
   jointType: string;
   tapeType: string;
   totalCost: number;
-  status: 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'order';
+  status: 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'order' | 'executed';
   discountRequested?: number;
   discountReason?: string;
   rejectionReason?: string;
@@ -109,6 +110,9 @@ export interface Quotation {
   createdAt: any;
   updatedAt: any;
   auditLogs: AuditLog[];
+  company?: string;
+  beltStyle?: string;
+  selectedBOMOptions?: Record<string, number>;
 }
 
 export interface AuditLog {
@@ -117,4 +121,16 @@ export interface AuditLog {
   userName: string;
   action: string;
   details: string;
+}
+
+export interface Company {
+  id: string;
+  name: string;
+}
+
+export interface MaterialStock {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
 }

@@ -52,3 +52,22 @@ export interface StockStats {
   efficiency: number;
   activeRolls: number;
 }
+
+export interface MaterialStock {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  reorderLevel: number;
+}
+
+export interface MaterialIssue {
+  id: string;
+  materialId: string;
+  materialName: string;
+  quantity: number;
+  unit: string;
+  issuedTo: string;
+  notes: string;
+  issuedAt: string;
+}

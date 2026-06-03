@@ -35,8 +35,12 @@ interface DashboardHomeProps {
   onNavigate: (tab: string) => void;
 }
 
+interface EnhancedQuotation extends Quotation {
+  orderNumber?: number;
+}
+
 export const DashboardHome: React.FC<DashboardHomeProps> = ({ config, clients, onNavigate }) => {
-  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [quotations, setQuotations] = useState<EnhancedQuotation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -45,7 +49,16 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({ config, clients, o
         const res = await fetch('/api/quotations');
         if (res.ok) {
           const data = await res.json();
-          setQuotations(data);
+          
+          // Sort chronologically ascending to assign permanent order numbers starting at 100
+          const sortedChronologically = [...data].sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+          
+          const withOrderNumbers = sortedChronologically.map((q: any, index: number) => ({
+            ...q,
+            orderNumber: 100 + index
+          }));
+          
+          setQuotations(withOrderNumbers);
         }
       } catch (err) {
         console.error('Failed to fetch quotations for dashboard', err);
@@ -297,16 +310,20 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({ config, clients, o
                 <Table>
                   <TableHeader className="bg-zinc-50/20">
                     <TableRow className="h-9">
-                      <TableHead className="text-[10px] font-black uppercase tracking-wider pl-4">Timeline</TableHead>
+                      <TableHead className="text-[10px] font-black uppercase tracking-wider pl-4">ID</TableHead>
+                      <TableHead className="text-[10px] font-black uppercase tracking-wider">Timeline</TableHead>
                       <TableHead className="text-[10px] font-black uppercase tracking-wider">Client</TableHead>
                       <TableHead className="text-[10px] font-black uppercase tracking-wider">Belt Specs</TableHead>
                       <TableHead className="text-[10px] font-black uppercase tracking-wider text-right pr-4">Total Cost</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentQuotes.map((q) => (
+                    {recentQuotes.map((q: any) => (
                       <TableRow key={q.id} className="text-xs hover:bg-zinc-50/50 transition-colors h-11">
-                        <TableCell className="text-zinc-400 font-mono text-[10px] pl-4 py-2">
+                        <TableCell className="font-mono font-bold text-zinc-700 text-xs pl-4 py-2">
+                          #{q.orderNumber}
+                        </TableCell>
+                        <TableCell className="text-zinc-400 font-mono text-[10px] py-2">
                           {formatOrderDate(q.createdAt)}
                         </TableCell>
                         <TableCell className="font-bold text-zinc-900 py-2">

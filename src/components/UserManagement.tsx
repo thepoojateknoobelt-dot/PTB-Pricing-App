@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User } from '../types';
+import { User, UserRole } from '../types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -18,7 +18,7 @@ export const UserManagement = () => {
   const [formData, setFormData] = useState({
     username: '',
     name: '',
-    role: 'sales' as 'admin' | 'sales',
+    role: 'sales' as UserRole,
     password: '',
     permission: 'write' as 'read' | 'write',
   });
@@ -29,7 +29,7 @@ export const UserManagement = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editFormData, setEditFormData] = useState({
     name: '',
-    role: 'sales' as 'admin' | 'sales',
+    role: 'sales' as UserRole,
     permission: 'write' as 'read' | 'write',
     allowedPages: [] as string[]
   });
@@ -188,14 +188,15 @@ export const UserManagement = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Role</Label>
+                <Label>Department</Label>
                 <Select value={formData.role} onValueChange={(val: any) => setFormData({ ...formData, role: val })}>
                   <SelectTrigger className="border-zinc-300">
-                    <SelectValue placeholder="Select Role" />
+                    <SelectValue placeholder="Select Department" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="sales">Sales Person</SelectItem>
                     <SelectItem value="admin">Administrator</SelectItem>
+                    <SelectItem value="production">Production Person</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -275,7 +276,7 @@ export const UserManagement = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>User</TableHead>
-                  <TableHead>Role</TableHead>
+                  <TableHead>Department</TableHead>
                   <TableHead>Access Level</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -350,7 +351,7 @@ export const UserManagement = () => {
             <DialogHeader>
               <DialogTitle>Modify Account Access</DialogTitle>
               <DialogDescription>
-                Configure role, permission and allowed pages for @{editingUser.username}.
+                Configure department, permission and allowed pages for @{editingUser.username}.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleEditUser}>
@@ -365,14 +366,15 @@ export const UserManagement = () => {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Role</Label>
+                  <Label>Department</Label>
                   <Select value={editFormData.role} onValueChange={(val: any) => setEditFormData({ ...editFormData, role: val })}>
                     <SelectTrigger className="border-zinc-300">
-                      <SelectValue placeholder="Select Role" />
+                      <SelectValue placeholder="Select Department" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="sales">Sales Person</SelectItem>
                       <SelectItem value="admin">Administrator</SelectItem>
+                      <SelectItem value="production">Production Person</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

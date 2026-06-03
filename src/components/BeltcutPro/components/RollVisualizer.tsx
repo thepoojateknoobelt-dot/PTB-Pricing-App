@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Roll, Cut, Unit } from '../types';
 import { isSpaceAvailable } from '../services/optimizationEngine';
-import { Box } from 'lucide-react';
+import { Box, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface RollVisualizerProps {
   roll: Roll;
@@ -11,6 +11,8 @@ interface RollVisualizerProps {
   manualMode?: boolean;
   manualDimensions?: { width: number; length: number } | null;
   onManualPlacementChange?: (pos: { x: number; y: number } | null) => void;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
 }
 
 const CONVERSIONS: Record<Unit, number> = {
@@ -28,7 +30,9 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   suggestedPlacement, 
   manualMode, 
   manualDimensions,
-  onManualPlacementChange 
+  onManualPlacementChange,
+  isExpanded = true,
+  onToggleExpand
 }) => {
   const [zoom, setZoom] = useState(0.8);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -42,6 +46,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   const RULER_SIZE = 55; // wider for clean Y-axis labels
 
   const conv = CONVERSIONS[unit];
+  const isReuse = !!(roll.isReuse || (roll.id && roll.id.toString().startsWith('REUSE-')));
 
   // Auto-scroll to suggested placement
   React.useEffect(() => {
@@ -59,29 +64,42 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   const getSVGCoords = (e: React.MouseEvent): { x: number; y: number } | null => {
     if (!svgRef.current || !manualDimensions) return null;
     const svg = svgRef.current;
-    const pt = svg.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
-    const cursor = pt.matrixTransform(svg.getScreenCTM()?.inverse());
+    const rect = svg.getBoundingClientRect();
+    // Convert client coordinates to SVG user units
+    const clientX = e.clientX - rect.left - RULER_SIZE;
+    const clientY = e.clientY - rect.top - RULER_SIZE;
     
-    let meterX = (cursor.x - RULER_SIZE) / SCALE;
-    let meterY = (cursor.y - RULER_SIZE) / SCALE;
-
-    meterX = Math.round(meterX * 10) / 10;
-    meterY = Math.round(meterY * 10) / 10;
-
-    meterX = Math.max(0, Math.min(roll.fullLength - manualDimensions.length, meterX));
-    meterY = Math.max(0, Math.min(roll.fullWidth - manualDimensions.width, meterY));
-
-    return { x: meterX, y: meterY };
+    // Scale back to raw meters
+    const rawX = clientX / SCALE;
+    const rawY = clientY / SCALE;
+    
+    // Snap to 10cm grid
+    const x = Math.max(0, Math.min(roll.fullLength - manualDimensions.length, Math.round(rawX * 10) / 10));
+    const y = Math.max(0, Math.min(roll.fullWidth - manualDimensions.width, Math.round(rawY * 10) / 10));
+    
+    return { x, y };
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!manualMode || !manualDimensions) return;
-    const pos = getSVGCoords(e);
-    if (!pos) return;
-    setMousePos(pos);
-    setIsValidPos(isSpaceAvailable(roll, pos.x, pos.y, manualDimensions.width, manualDimensions.length));
+    const coords = getSVGCoords(e);
+    if (!coords) return;
+    
+    setMousePos(coords);
+    const valid = isSpaceAvailable(roll, coords.x, coords.y, manualDimensions.width, manualDimensions.length);
+    setIsValidPos(valid);
+    
+    if (onManualPlacementChange) {
+      onManualPlacementChange(valid ? coords : null);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setMousePos(null);
+    setIsValidPos(false);
+    if (onManualPlacementChange) {
+      onManualPlacementChange(null);
+    }
   };
 
   const handleClick = (e: React.MouseEvent) => {
@@ -89,7 +107,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
     if (manualDimensions && isSpaceAvailable(roll, mousePos.x, mousePos.y, manualDimensions.width, manualDimensions.length)) {
       onManualPlacementChange(mousePos);
     } else {
-      alert('Yahan cut nahi ho sakta — jagah occupied hai ya dimension fit nahi hoti.');
+      alert('Cut cannot be placed here — space is either occupied or dimensions do not fit.');
     }
   };
 
@@ -111,8 +129,8 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
           <div>
             <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 italic uppercase tracking-tight">
               Roll {roll.id} 
-              <span className={`text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${roll.isReuse ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                {roll.isReuse ? 'REUSE' : 'FRESH'}
+              <span className={`text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${isReuse ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                {isReuse ? 'REUSE' : 'FRESH'}
               </span>
               <span className={`text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${roll.cuts.length > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700'}`}>
                 {roll.cuts.length > 0 ? 'REMNANT' : 'FULL'}
@@ -132,17 +150,32 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
               ✦ Click to Place
             </span>
           )}
-          <div className="flex bg-slate-100 border border-slate-200 rounded-2xl p-1.5">
-            <button onClick={() => setZoom(prev => Math.max(0.2, prev - 0.2))} className="w-8 h-8 flex items-center justify-center text-xs hover:bg-white rounded-xl font-black transition-all">-</button>
-            <div className="px-5 text-[10px] font-mono font-black flex items-center text-slate-600">{(zoom * 100).toFixed(0)}%</div>
-            <button onClick={() => setZoom(prev => Math.min(2, prev + 0.2))} className="w-8 h-8 flex items-center justify-center text-xs hover:bg-white rounded-xl font-black transition-all">+</button>
-          </div>
+          {isExpanded && (
+            <div className="flex bg-slate-100 border border-slate-200 rounded-2xl p-1.5">
+              <button onClick={() => setZoom(prev => Math.max(0.2, prev - 0.2))} className="w-8 h-8 flex items-center justify-center text-xs hover:bg-white rounded-xl font-black transition-all">-</button>
+              <div className="px-5 text-[10px] font-mono font-black flex items-center text-slate-600">{(zoom * 100).toFixed(0)}%</div>
+              <button onClick={() => setZoom(prev => Math.min(2, prev + 0.2))} className="w-8 h-8 flex items-center justify-center text-xs hover:bg-white rounded-xl font-black transition-all">+</button>
+            </div>
+          )}
+          {onToggleExpand && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleExpand();
+              }}
+              className="p-2 hover:bg-slate-150 active:scale-95 bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer text-slate-500 hover:text-slate-800"
+              title={isExpanded ? "Collapse" : "Expand"}
+            >
+              {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          )}
         </div>
       </div>
 
-      <div 
-        ref={containerRef}
-        className={`w-full h-[400px] rounded-3xl overflow-auto border-4 relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : 'bg-slate-50 border-white shadow-inner'}`}
+      {isExpanded && (
+        <div 
+          ref={containerRef}
+          className={`w-full h-[400px] rounded-3xl overflow-auto border-4 relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : 'bg-slate-50 border-white shadow-inner'}`}
         onMouseMove={handleMouseMove}
         onClick={handleClick}
         onMouseLeave={() => { setMousePos(null); setIsValidPos(false); }}
@@ -155,6 +188,17 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
             viewBox={`0 0 ${viewWidth + RULER_SIZE} ${viewHeight + RULER_SIZE + 40}`}
             className="absolute top-0 left-0"
           >
+            <defs>
+              <pattern id="suggested-pattern-auto" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <line x1="0" y1="0" x2="0" y2="14" stroke="#10b981" strokeWidth="3.5" opacity="0.35" />
+              </pattern>
+              <pattern id="suggested-pattern-manual" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <line x1="0" y1="0" x2="0" y2="14" stroke="#3b82f6" strokeWidth="3.5" opacity="0.35" />
+              </pattern>
+              <pattern id="suggested-pattern-invalid" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <line x1="0" y1="0" x2="0" y2="14" stroke="#ef4444" strokeWidth="3.5" opacity="0.35" />
+              </pattern>
+            </defs>
             <g transform={`translate(${RULER_SIZE}, 0)`}>
               <rect width={viewWidth} height={RULER_SIZE} fill="#f8fafc" stroke="#e2e8f0" />
               {lengthMarkers.map(m => (
@@ -216,13 +260,20 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                     rx="4" 
                   />
                   <text 
-                    x={(cut.x + 0.1) * SCALE} 
-                    y={(cut.y + 0.25) * SCALE} 
-                    fontSize="10" 
+                    x={(cut.x + cut.length / 2) * SCALE} 
+                    y={(cut.y + cut.width / 2) * SCALE} 
+                    textAnchor="middle" 
+                    dominantBaseline="middle" 
+                    fontSize="9.5" 
                     fontWeight="black" 
                     fill="white"
                   >
-                    {cut.isInventoryCut ? 'INV' : cut.customerName.substring(0, 10)}
+                    <tspan x={(cut.x + cut.length / 2) * SCALE} dy="-5">
+                      {cut.isInventoryCut ? 'INV' : cut.customerName.substring(0, 12)}
+                    </tspan>
+                    <tspan x={(cut.x + cut.length / 2) * SCALE} dy="13" fontSize="8" fontWeight="black" fill="rgba(255, 255, 255, 0.85)">
+                      {`${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}`}
+                    </tspan>
                   </text>
                 </g>
               ))}
@@ -234,7 +285,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                   y={mousePos.y * SCALE}
                   width={manualDimensions.length * SCALE}
                   height={manualDimensions.width * SCALE}
-                  fill={isValidPos ? 'rgba(59,130,246,0.15)' : 'rgba(239,68,68,0.12)'}
+                  fill={isValidPos ? 'url(#suggested-pattern-manual)' : 'url(#suggested-pattern-invalid)'}
                   stroke={isValidPos ? '#3b82f6' : '#ef4444'}
                   strokeWidth="3"
                   strokeDasharray="8,4"
@@ -250,7 +301,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                     y={suggestedPlacement.y * SCALE} 
                     width={suggestedPlacement.length * SCALE} 
                     height={suggestedPlacement.width * SCALE} 
-                    fill="rgba(59, 130, 246, 0.15)" 
+                    fill={manualMode ? "url(#suggested-pattern-manual)" : "url(#suggested-pattern-auto)"} 
                     stroke={manualMode ? "#3b82f6" : "#10b981"} 
                     strokeWidth="5" 
                     strokeDasharray="10,5" 
@@ -263,6 +314,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
           </svg>
         </div>
       </div>
+      )}
     </div>
   );
 };
