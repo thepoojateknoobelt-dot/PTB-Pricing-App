@@ -143,7 +143,7 @@ export const Dashboard = () => {
       case 'quotations':
         return <QuotationsList config={safeConfig} />;
       case 'reports':
-        return <Reports />;
+        return <Reports config={safeConfig} clients={clients} />;
       case 'activity':
         return <ActivityLog />;
       case 'beltcut':
