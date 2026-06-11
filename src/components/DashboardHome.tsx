@@ -119,15 +119,17 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({ config, clients, o
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Dashboard</h1>
-          <p className="text-zinc-500">Overview of system performance, quotations, and active business metrics.</p>
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-zinc-900 rounded-lg text-white">
+            <TrendingUp className="h-4 w-4" />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">Dashboard</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={() => onNavigate('calculator')} className="bg-zinc-900 hover:bg-zinc-800 text-white gap-1.5 shadow-md">
-            <Plus className="h-4 w-4" /> Create Quotation
+          <Button onClick={() => onNavigate('calculator')} className="bg-zinc-900 hover:bg-zinc-800 text-white gap-1.5 shadow-md h-8 text-xs px-3">
+            <Plus className="h-3.5 w-3.5" /> Create Quotation
           </Button>
         </div>
       </div>

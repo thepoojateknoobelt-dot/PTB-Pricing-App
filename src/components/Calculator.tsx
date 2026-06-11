@@ -324,14 +324,13 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Costing Calculator</h1>
-          <p className="text-zinc-500">Calculate conveyor belt pricing based on dimensions and specifications.</p>
-        </div>
-        <div className="p-3 bg-zinc-900 rounded-2xl">
-          <CalcIcon className="h-6 w-6 text-white" />
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-zinc-900 rounded-lg text-white">
+            <CalcIcon className="h-4 w-4" />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">Costing Calculator</h1>
         </div>
       </div>
 
@@ -736,7 +735,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                       <div>
                         <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Holes Grid (L x W)</span>
                         <p className="text-xs font-bold text-slate-900">
-                          {Math.round(toMeters(parseFloat(formData.length), formData.lengthUnit) * 1000 / (parseFloat(formData.holeDistHorizontal) || 1))} × {Math.round(toMeters(parseFloat(formData.width), formData.widthUnit) * 1000 / (parseFloat(formData.holeDistVertical) || 1))}
+                          {Math.floor(toMeters(parseFloat(formData.length), formData.lengthUnit) * 1000 / (parseFloat(formData.holeDistHorizontal) || 1))} × {Math.floor(toMeters(parseFloat(formData.width), formData.widthUnit) * 1000 / (parseFloat(formData.holeDistVertical) || 1))}
                         </p>
                       </div>
                       <div>

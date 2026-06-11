@@ -1819,7 +1819,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                         const lMtr = convertToMeters(o.dimensions.length, o.dimensions.lengthUnit || o.dimensions.unit);
 
                                         setSelectedOrderNumber(o.orderNumber.toString());
-                                        setOrderSearchQuery(`#${o.orderNumber} — ${(o.clientName || '').trim()}`);
+                                        setOrderSearchQuery(`#${o.orderNumber}`);
                                         setShowOrderDropdown(false);
                                         setSelectedOrder(prev => ({
                                           ...prev,

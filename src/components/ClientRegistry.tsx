@@ -138,19 +138,21 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Client Registry</h1>
-          <p className="text-zinc-500">Manage client-specific profit margins, company and location.</p>
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-zinc-900 rounded-lg text-white">
+            <UserPlus className="h-4 w-4" />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">Client Registry</h1>
         </div>
-        <div className="flex gap-3">
-          <label className={cn(buttonVariants({ variant: "outline" }), "gap-2 cursor-pointer")}>
-            <Upload className="h-4 w-4" />
+        <div className="flex gap-2">
+          <label className={cn(buttonVariants({ variant: "outline" }), "gap-1.5 cursor-pointer h-8 text-xs px-3 flex items-center shadow-sm")}>
+            <Upload className="h-3.5 w-3.5" />
             Bulk Upload
             <input type="file" accept=".csv" className="hidden" onChange={handleBulkUpload} />
           </label>
-          <Button variant="outline" className="gap-2" onClick={() => {
+          <Button variant="outline" className="gap-1.5 h-8 text-xs px-3 shadow-sm" onClick={() => {
             const csv = "Name,Company,City,DefaultProfit\nJohn Doe,ABC Industries,Mumbai,25\nJane Smith,XYZ Corp,Delhi,18";
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
@@ -159,7 +161,7 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
             a.download = 'clients_template.csv';
             a.click();
           }}>
-            <Download className="h-4 w-4" />
+            <Download className="h-3.5 w-3.5" />
             Template
           </Button>
         </div>

@@ -377,18 +377,20 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
   }, [selectedBOMIdx, selectedStyleIdx, selectedCatIdx]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">System Configuration</h1>
-          <p className="text-zinc-500">Manage unit rates, taxes, and fix costs.</p>
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-zinc-900 rounded-lg text-white">
+            <Settings2 className="h-4 w-4" />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">System Configuration</h1>
         </div>
         <Button 
-          className="bg-zinc-900 hover:bg-zinc-800 text-white gap-2" 
+          className="bg-zinc-900 hover:bg-zinc-800 text-white gap-1.5 h-8 text-xs px-3 shadow-md" 
           onClick={handleSave}
           disabled={isSaving}
         >
-          <Save className="h-4 w-4" />
+          <Save className="h-3.5 w-3.5" />
           {isSaving ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>

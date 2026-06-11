@@ -289,14 +289,16 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
   const hasActiveFilters = searchQuery !== '' || selectedStatus !== 'all' || selectedBeltType !== 'all' || selectedDateRange !== 'all';
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Quotations & Orders</h1>
-          <p className="text-zinc-500">Track all pricing requests, approvals, and active orders.</p>
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-zinc-900 rounded-lg text-white">
+            <FileText className="h-4 w-4" />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">Quotations & Orders</h1>
         </div>
-        <Button variant="outline" className="gap-2 self-start sm:self-auto" onClick={exportToCSV}>
-          <Download className="h-4 w-4" />
+        <Button variant="outline" className="gap-1.5 self-start sm:self-auto h-8 text-xs px-3" onClick={exportToCSV}>
+          <Download className="h-3.5 w-3.5" />
           Export Report
         </Button>
       </div>

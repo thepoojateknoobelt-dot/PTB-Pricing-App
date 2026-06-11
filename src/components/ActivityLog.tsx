@@ -306,14 +306,13 @@ export const ActivityLog = () => {
   const hasActiveFilters = Object.values(filters).some(val => val !== '') || sortConfig !== null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Recent Activity</h1>
-          <p className="text-zinc-500">System-wide audit logs and user actions.</p>
-        </div>
-        <div className="p-3 bg-zinc-900 rounded-2xl">
-          <History className="h-6 w-6 text-white" />
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-zinc-900 rounded-lg text-white">
+            <History className="h-4 w-4" />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">Recent Activity</h1>
         </div>
       </div>
 

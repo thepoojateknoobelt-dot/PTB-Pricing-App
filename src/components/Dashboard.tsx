@@ -382,8 +382,8 @@ export const Dashboard = () => {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
       />
-      <main className="flex-1 overflow-y-auto p-4 sm:p-8">
-        <div className="max-w-7xl mx-auto">
+      <main className="flex-1 overflow-y-auto p-3 sm:p-5">
+        <div className={cn("mx-auto", activeTab === 'reports' ? "w-full max-w-none" : "max-w-7xl")}>
           {/* Mobile Header Bar */}
           <div className="flex lg:hidden items-center justify-between p-3.5 mb-6 bg-white/80 backdrop-blur-md rounded-2xl border border-zinc-200 shadow-sm">
             <div className="flex items-center gap-3">
