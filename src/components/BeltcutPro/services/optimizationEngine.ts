@@ -5,7 +5,12 @@ import { Roll, Cut, Order, OptimizationCandidate } from '../types';
  * Prioritizes remnants and inventory-matched pieces first.
  */
 export const findGlobalBestPlacement = (rolls: Roll[], order: Order): OptimizationCandidate[] => {
-  const compatibleRolls = rolls.filter(r => r.materialType === order.materialType && !r.isArchived);
+  // Filter compatible, non-archived, non-refused rolls
+  const compatibleRolls = rolls.filter(r => 
+    r.materialType === order.materialType && 
+    !r.isArchived && 
+    r.status !== 'refused'
+  );
 
   const getCandidatesForRolls = (subsetRolls: Roll[]): OptimizationCandidate[] => {
     const candidates: OptimizationCandidate[] = [];
@@ -76,25 +81,10 @@ export const findGlobalBestPlacement = (rolls: Roll[], order: Order): Optimizati
     return uniqueRollCandidates;
   };
 
-  // 1. First search in Group A: Existing open inventory (remnants or rolls with existing cuts)
-  const openRolls = compatibleRolls.filter(r => 
-    r.isReuse === true || 
-    (r.id && (r.id.startsWith('REUSE-') || r.id.startsWith('INV-') || r.id.startsWith('SCRAP-'))) ||
-    (r.cuts && r.cuts.length > 0)
-  );
-  const openCandidates = getCandidatesForRolls(openRolls);
-  if (openCandidates.length > 0) {
-    return openCandidates.slice(0, 10);
-  }
-
-  // 2. If no open rolls/remnants fit, search in Group B: Fresh uncut master rolls
-  const freshRolls = compatibleRolls.filter(r => 
-    !(r.isReuse === true) && 
-    !(r.id && (r.id.startsWith('REUSE-') || r.id.startsWith('INV-') || r.id.startsWith('SCRAP-'))) &&
-    (!r.cuts || r.cuts.length === 0)
-  );
-  const freshCandidates = getCandidatesForRolls(freshRolls);
-  return freshCandidates.slice(0, 10);
+  // Evaluate remnants and fresh rolls together to produce a comprehensive list of recommendations.
+  // The precision score naturally handles prioritizing remnants and size matching.
+  const candidates = getCandidatesForRolls(compatibleRolls);
+  return candidates.slice(0, 10);
 };
 
 const calculatePrecisionScore = (roll: Roll, order: Order, placement: { x: number; y: number }) => {
@@ -186,10 +176,11 @@ const calculatePrecisionScore = (roll: Roll, order: Order, placement: { x: numbe
   }
 
   // 6. Remnant Usage Bonus
-  // If we are using a roll that already has cuts, give it a small boost over a fresh roll
-  // to encourage finishing one roll before starting another.
-  if (roll.cuts.length > 0) {
-    score += 2000;
+  // Prioritize remnants or rolls with existing cuts over fresh master rolls
+  // to encourage utilizing available stock before starting a fresh roll.
+  const isRemnantOrOpen = isRemnant || roll.cuts.length > 0;
+  if (isRemnantOrOpen) {
+    score += 8000;
     reasons.push("Remnant Priority");
   }
 
