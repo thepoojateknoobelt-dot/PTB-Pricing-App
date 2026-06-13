@@ -11,7 +11,6 @@ import {
   History, 
   LogOut,
   Factory,
-  Scissors,
   X,
   ArrowLeft
 } from 'lucide-react';
@@ -82,7 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpe
         </div>
       )}
 
-      <nav className="flex-1 px-4 space-y-1 mt-4">
+      <nav className="flex-1 px-4 space-y-1 mt-4 overflow-y-auto">
         {menuItems.filter(item => {
           if (user?.role === 'admin') return true;
           return user?.allowedPages?.includes(item.id);
@@ -109,7 +108,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpe
 
       </nav>
 
-      <div className="p-4 border-t border-zinc-800">
+      <div className="p-4 border-t border-zinc-800 shrink-0">
         <div className="flex items-center gap-3 px-4 py-3 mb-4">
           <div className="h-8 w-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-200 font-bold text-xs">
             {user?.name?.charAt(0) || user?.username?.charAt(0)}

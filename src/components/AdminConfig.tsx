@@ -741,7 +741,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
               {/* 4. DETAILS COLUMN */}
               <div className="flex-[1.5] flex flex-col min-w-[250px] bg-zinc-50/30 overflow-hidden">
                 <div className="p-3 bg-zinc-50/80 border-b flex items-center justify-between shrink-0">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">4. COSTING & VARIANTS</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">4. COSTING & SUB-CATEGORIES</span>
                 </div>
                 <div className="flex-1 flex flex-col overflow-hidden">
                   {selectedBOMIdx !== null && localConfig.beltTypes[selectedCatIdx!]?.styles?.[selectedStyleIdx!]?.bom?.[selectedBOMIdx] ? (
@@ -888,11 +888,11 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                   </div>
                                 </div>
 
-                                {/* SCROLLING VARIANTS AREA */}
+                                {/* SCROLLING SUB-CATEGORIES AREA */}
                                 <div className="flex-1 flex flex-col min-h-0 space-y-3 pt-6 border-t border-zinc-100">
                                   <div className="flex items-center justify-between px-1 shrink-0">
                                     <div className="flex items-center gap-2">
-                                      <Label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Material Variants</Label>
+                                      <Label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Sub-categories</Label>
                                       <span className="bg-zinc-100 text-zinc-500 text-[9px] px-1.5 py-0.5 rounded-full font-bold">
                                         {(item.options?.length || 0)}
                                       </span>
@@ -909,7 +909,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                       }}
                                     >
                                       <Plus className="h-3 w-3" />
-                                      ADD VARIANT
+                                      ADD SUB-CATEGORY
                                     </Button>
                                   </div>
                                   
@@ -917,9 +917,9 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                     {(Array.isArray(item.options) ? item.options : [])?.map?.((opt: any, optIdx: number) => (
                                       <div key={optIdx} className="group flex flex-col gap-2.5 p-3 rounded-xl bg-white border border-zinc-200 hover:border-blue-200 hover:shadow-md transition-all animate-in slide-in-from-right-1 duration-200 relative">
                                         <div className="space-y-1">
-                                          <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Variant Name</Label>
+                                          <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Sub-category Name</Label>
                                           <Input 
-                                            placeholder="e.g. Bullnose / Overlap Joint"
+                                            placeholder="e.g. White Border / Red Border"
                                             className="h-8 text-xs font-medium border-zinc-200 bg-zinc-50/50 focus:bg-white focus:border-blue-400 transition-all w-full"
                                             value={opt.name}
                                             onChange={(e) => {
@@ -929,6 +929,29 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                             }}
                                           />
                                         </div>
+
+                                        <div className="space-y-1">
+                                          <div className="flex items-center justify-between">
+                                            <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Mathematical Formula (Optional)</Label>
+                                            <span className="text-[8px] text-zinc-400 italic">Defaults to: ={item.formula}</span>
+                                          </div>
+                                          <div className="relative">
+                                            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-[10px]">=</div>
+                                            <Input 
+                                              placeholder={item.formula}
+                                              className="h-8 pl-6 text-xs font-mono border-zinc-200 bg-zinc-50/50 focus:bg-white focus:border-blue-400 transition-all w-full"
+                                              value={opt.formula || ''}
+                                              onChange={(e) => {
+                                                const val = e.target.value.toUpperCase();
+                                                if (val && !/^[0-9LWP\.\+\-\*\/\(\)\s]*$/.test(val)) return;
+                                                const updated = [...localConfig.beltTypes];
+                                                updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formula = val;
+                                                setLocalConfig({ ...localConfig, beltTypes: updated });
+                                              }}
+                                            />
+                                          </div>
+                                        </div>
+
                                         <div className="flex items-end gap-2">
                                           <div className="flex-1 space-y-1">
                                             <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Rate</Label>
@@ -964,7 +987,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                                 <SelectValue placeholder="Unit" />
                                               </SelectTrigger>
                                               <SelectContent>
-                                                {getFilteredUnits(item.formula).map(u => (
+                                                {getFilteredUnits(opt.formula || item.formula).map(u => (
                                                   <SelectItem key={u.id || u.value} value={u.value} className="text-[10px]">
                                                     {u.label || u.value}
                                                   </SelectItem>
@@ -1012,7 +1035,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                     ))}
                                     {(!item.options || item.options.length === 0) && (
                                       <div className="flex flex-col items-center justify-center py-6 px-4 bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-100">
-                                        <p className="text-[10px] text-zinc-400 font-medium text-center">No variants defined. The system will use the default base rate for this component.</p>
+                                        <p className="text-[10px] text-zinc-400 font-medium text-center">No sub-categories defined. The system will use the default base rate for this component.</p>
                                       </div>
                                     )}
                                   </div>
@@ -1021,9 +1044,20 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                           );
                         })()}
                       </div>
-                      <div className="pt-3 pb-3 border-t border-zinc-100 flex items-center gap-2 px-4 shrink-0 bg-zinc-50/50">
-                        <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Pricing Model: EXCEL-SYNC</span>
+                      <div className="pt-3 pb-3 border-t border-zinc-100 flex items-center justify-between gap-2 px-4 shrink-0 bg-zinc-50/50">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Pricing Model: EXCEL-SYNC</span>
+                        </div>
+                        <Button 
+                          onClick={handleSave}
+                          disabled={isSaving}
+                          size="sm"
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 h-8 shadow-sm flex items-center gap-1.5 rounded-lg shrink-0 cursor-pointer"
+                        >
+                          <Save className="h-3.5 w-3.5" />
+                          {isSaving ? 'Saving...' : 'Save Sub-categories'}
+                        </Button>
                       </div>
                     </>
                   ) : (selectedCatIdx !== null && localConfig.beltTypes[selectedCatIdx]) ? (

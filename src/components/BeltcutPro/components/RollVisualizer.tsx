@@ -43,10 +43,11 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   const SCALE = 35; // 1m = 35px
   const viewWidth = roll.fullLength * SCALE;
   const viewHeight = roll.fullWidth * SCALE;
+  const conv = CONVERSIONS[unit];
+  const isReuse = !!(roll.isReuse || (roll.id && (roll.id.toString().startsWith('REUSE-') || roll.id.toString().startsWith('INV-') || roll.id.toString().startsWith('SCRAP-'))));
   const RULER_SIZE = 55; // wider for clean Y-axis labels
 
-  const conv = CONVERSIONS[unit];
-  const isReuse = !!(roll.isReuse || (roll.id && roll.id.toString().startsWith('REUSE-')));
+
 
   // Auto-scroll to suggested placement
   React.useEffect(() => {
@@ -269,7 +270,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                     fill="white"
                   >
                     <tspan x={(cut.x + cut.length / 2) * SCALE} dy="-5">
-                      {cut.isInventoryCut ? 'INV' : cut.customerName.substring(0, 12)}
+                      {cut.isInventoryCut ? 'REUSE' : cut.customerName.substring(0, 12)}
                     </tspan>
                     <tspan x={(cut.x + cut.length / 2) * SCALE} dy="13" fontSize="8" fontWeight="black" fill="rgba(255, 255, 255, 0.85)">
                       {`${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}`}

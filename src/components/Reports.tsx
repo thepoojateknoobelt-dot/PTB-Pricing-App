@@ -21,6 +21,12 @@ const convertToDate = (dateVal: any): Date => {
   return isNaN(date.getTime()) ? new Date(0) : date;
 };
 
+const formatLocalDate = (date: Date): string => {
+  const offset = date.getTimezoneOffset();
+  const localDate = new Date(date.getTime() - (offset * 60 * 1000));
+  return localDate.toISOString().split('T')[0];
+};
+
 export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
@@ -32,10 +38,10 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
   // Default date range: current month start to today
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
+    return formatLocalDate(new Date(d.getFullYear(), d.getMonth(), 1));
   });
   const [endDate, setEndDate] = useState<string>(() => {
-    return new Date().toISOString().split('T')[0];
+    return formatLocalDate(new Date());
   });
 
   const handlePresetClick = (preset: string) => {
@@ -79,8 +85,8 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
         return;
     }
 
-    setStartDate(start.toISOString().split('T')[0]);
-    setEndDate(end.toISOString().split('T')[0]);
+    setStartDate(formatLocalDate(start));
+    setEndDate(formatLocalDate(end));
   };
 
   useEffect(() => {
@@ -111,29 +117,69 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
 
     return orders
       .filter(q => {
-        if (!q.createdAt) return false;
-        const qDate = convertToDate(q.createdAt);
+        const orderDate = q.updatedAt || q.createdAt;
+        if (!orderDate) return false;
+        const qDate = convertToDate(orderDate);
         return qDate >= start && qDate <= end;
       })
       .map(q => {
+        if (q.items && q.items.length > 0) {
+          const itemsSubtotal = q.items.reduce((sum, item) => sum + (item.calculated?.summary?.subtotal || 0), 0);
+          const itemsTotalWithProfit = q.items.reduce((sum, item) => sum + (item.calculated?.summary?.totalWithProfit || 0), 0);
+          const itemsProfit = q.items.reduce((sum, item) => sum + (item.calculated?.summary?.profit || 0), 0);
+          const itemsProfitMarginUsed = q.items.length > 0 
+            ? q.items.reduce((sum, item) => sum + (item.calculated?.summary?.profitMarginUsed || 0), 0) / q.items.length
+            : 0;
+
+          return {
+            ...q,
+            calculated: {
+              summary: {
+                subtotal: itemsSubtotal,
+                totalWithProfit: itemsTotalWithProfit,
+                profit: itemsProfit,
+                profitMarginUsed: itemsProfitMarginUsed
+              }
+            }
+          };
+        }
+
         const client = clients?.find(c => c.id === q.clientId) || null;
         const clientProfitRanges = client?.profitMargins?.[q.beltType] || [];
         const category = config?.beltTypes?.find(t => t.name === q.beltType) || null;
         const style = category?.styles?.find(s => s.name === q.beltStyle) || null;
 
-        const customBOM = (style?.bom || []).map(item => {
-          const selectedOptIdx = q.selectedBOMOptions?.[item.id];
-          if (selectedOptIdx !== undefined && item.options && item.options[selectedOptIdx]) {
-            const opt = item.options[selectedOptIdx];
+        const included = q.selectedBOMOptions?._included;
+        const customRates = q.selectedBOMOptions?._customRates || {};
+        const customBOM = (style?.bom || [])
+          .filter(item => !included || included[item.id] !== false)
+          .map(item => {
+            const selectedOptIdx = q.selectedBOMOptions?.[item.id];
+            let rate = item.rate;
+            let unit = item.unit;
+            let name = item.name;
+            let formula = item.formula;
+
+            if (selectedOptIdx !== undefined && item.options && item.options[selectedOptIdx]) {
+              const opt = item.options[selectedOptIdx];
+              rate = opt.rate;
+              unit = opt.unit || item.unit;
+              name = opt.name ? opt.name.trim() : item.name;
+              formula = opt.formula || item.formula;
+            }
+
+            if (customRates[item.id] !== undefined) {
+              rate = customRates[item.id];
+            }
+
             return {
               ...item,
-              rate: opt.rate,
-              unit: opt.unit || item.unit,
-              name: opt.name ? `${item.name} (${opt.name})` : item.name
+              rate,
+              unit,
+              name,
+              formula
             };
-          }
-          return item;
-        });
+          });
 
         const costingParams = {
           length: q.dimensions.length,
@@ -155,7 +201,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
           calculated: result
         };
       })
-      .sort((a, b) => convertToDate(b.createdAt).getTime() - convertToDate(a.createdAt).getTime());
+      .sort((a, b) => convertToDate(b.updatedAt || b.createdAt).getTime() - convertToDate(a.updatedAt || a.createdAt).getTime());
   }, [quotations, startDate, endDate, config, clients]);
 
   // Aggregated calculations for Reports
@@ -224,7 +270,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
       headers = ['Order ID', 'Date', 'Client', 'Material Subtotal'];
       rows = filteredOrders.map(o => [
         `#${o.orderNumber || ''}`,
-        convertToDate(o.createdAt).toLocaleDateString('en-IN'),
+        convertToDate(o.updatedAt || o.createdAt).toLocaleDateString('en-IN'),
         o.clientName,
         Math.round(o.calculated?.summary?.subtotal || 0).toString()
       ]);
@@ -233,7 +279,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
       headers = ['Order ID', 'Date', 'Client', 'Base Price', 'Profit Margin (Cash)', 'Profit Margin (%)'];
       rows = filteredOrders.map(o => [
         `#${o.orderNumber || ''}`,
-        convertToDate(o.createdAt).toLocaleDateString('en-IN'),
+        convertToDate(o.updatedAt || o.createdAt).toLocaleDateString('en-IN'),
         o.clientName,
         Math.round(o.calculated?.summary?.totalWithProfit || 0).toString(),
         Math.round(o.calculated?.summary?.profit || 0).toString(),
@@ -244,7 +290,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
       headers = ['Order ID', 'Date', 'Client', 'Company', 'Final Selling Price'];
       rows = displayOrders.map(o => [
         `#${o.orderNumber || ''}`,
-        convertToDate(o.createdAt).toLocaleDateString('en-IN'),
+        convertToDate(o.updatedAt || o.createdAt).toLocaleDateString('en-IN'),
         o.clientName,
         o.company || 'Pooja Tekno Belt',
         Math.round(o.totalCost).toString()
@@ -291,7 +337,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
       tableRows = filteredOrders.map(o => `
         <tr>
           <td>#${o.orderNumber || ''}</td>
-          <td>${convertToDate(o.createdAt).toLocaleDateString('en-IN')}</td>
+          <td>${convertToDate(o.updatedAt || o.createdAt).toLocaleDateString('en-IN')}</td>
           <td>${o.clientName}</td>
           <td style="text-align: right;">${formatCurrency(o.calculated?.summary?.subtotal || 0)}</td>
         </tr>
@@ -303,7 +349,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
       tableRows = filteredOrders.map(o => `
         <tr>
           <td>#${o.orderNumber || ''}</td>
-          <td>${convertToDate(o.createdAt).toLocaleDateString('en-IN')}</td>
+          <td>${convertToDate(o.updatedAt || o.createdAt).toLocaleDateString('en-IN')}</td>
           <td>${o.clientName}</td>
           <td style="text-align: right;">${formatCurrency(o.calculated?.summary?.totalWithProfit || 0)}</td>
           <td style="text-align: right;">${formatCurrency(o.calculated?.summary?.profit || 0)}</td>
@@ -321,7 +367,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
       tableRows = displayOrders.map(o => `
         <tr>
           <td>#${o.orderNumber || ''}</td>
-          <td>${convertToDate(o.createdAt).toLocaleDateString('en-IN')}</td>
+          <td>${convertToDate(o.updatedAt || o.createdAt).toLocaleDateString('en-IN')}</td>
           <td>${o.clientName}</td>
           <td>${o.company || 'Pooja Tekno Belt'}</td>
           <td style="text-align: right;">${formatCurrency(o.totalCost)}</td>
@@ -404,8 +450,8 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
             setSelectedPreset('this-month');
             setSelectedCompany('all');
             const d = new Date();
-            setStartDate(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]);
-            setEndDate(new Date().toISOString().split('T')[0]);
+            setStartDate(formatLocalDate(new Date(d.getFullYear(), d.getMonth(), 1)));
+            setEndDate(formatLocalDate(new Date()));
           }}
           className={`group w-full text-left p-6 rounded-2xl border-2 transition-all duration-300 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${
             activeReportCard === 'purchase'
@@ -439,8 +485,8 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
             setSelectedPreset('this-month');
             setSelectedCompany('all');
             const d = new Date();
-            setStartDate(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]);
-            setEndDate(new Date().toISOString().split('T')[0]);
+            setStartDate(formatLocalDate(new Date(d.getFullYear(), d.getMonth(), 1)));
+            setEndDate(formatLocalDate(new Date()));
           }}
           className={`group w-full text-left p-6 rounded-2xl border-2 transition-all duration-300 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${
             activeReportCard === 'profitability'
@@ -474,8 +520,8 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
             setSelectedPreset('this-month');
             setSelectedCompany('all');
             const d = new Date();
-            setStartDate(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]);
-            setEndDate(new Date().toISOString().split('T')[0]);
+            setStartDate(formatLocalDate(new Date(d.getFullYear(), d.getMonth(), 1)));
+            setEndDate(formatLocalDate(new Date()));
           }}
           className={`group w-full text-left p-6 rounded-2xl border-2 transition-all duration-300 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${
             activeReportCard === 'company'
@@ -764,7 +810,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
                                 {filteredOrders.map(o => (
                                   <TableRow key={o.id} className="hover:bg-zinc-50/35 transition-colors h-9">
                                     <TableCell className="font-mono font-bold text-zinc-950">#{o.orderNumber || ''}</TableCell>
-                                    <TableCell>{convertToDate(o.createdAt).toLocaleDateString('en-IN')}</TableCell>
+                                    <TableCell>{convertToDate(o.updatedAt || o.createdAt).toLocaleDateString('en-IN')}</TableCell>
                                     <TableCell className="font-bold text-zinc-900">{o.clientName}</TableCell>
                                     <TableCell className="text-right font-bold font-mono text-zinc-900">
                                       {formatCurrency(o.calculated?.summary?.subtotal || 0)}

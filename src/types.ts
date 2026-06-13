@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'sales' | 'production';
+export type UserRole = string;
 
 export interface User {
   id: string;
@@ -44,7 +44,7 @@ export interface BOMItem {
   unit: string;
   formula: string;
   isLocked?: boolean;
-  options?: { name: string, rate: number, unit?: string; linkedStockId?: string }[];
+  options?: { name: string, rate: number, unit?: string; linkedStockId?: string; formula?: string }[];
   linkedStockId?: string;
 }
 
@@ -87,6 +87,30 @@ export interface Client {
   profitMargins: Record<string, ProfitRange[]>; // beltType -> ranges
 }
 
+export interface QuotationItem {
+  id: string;
+  beltType: string;
+  beltStyle: string;
+  dimensions: {
+    length: number;
+    width: number;
+    unit?: 'mm' | 'ft' | 'mtr' | 'in';
+    lengthUnit?: string;
+    widthUnit?: string;
+    hasHoles?: boolean;
+    holeSize?: number;
+    holeDistHorizontal?: number;
+    holeDistVertical?: number;
+    pricePerHole?: number;
+    totalHoles?: number;
+  };
+  jointType?: string;
+  tapeType?: string;
+  totalCost: number;
+  selectedBOMOptions?: Record<string, any>;
+  calculated?: any; // Contains the full costing calculation breakdown/summary
+}
+
 export interface Quotation {
   id: string;
   clientId: string;
@@ -119,6 +143,7 @@ export interface Quotation {
   company?: string;
   beltStyle?: string;
   selectedBOMOptions?: Record<string, number>;
+  items?: QuotationItem[];
 }
 
 export interface AuditLog {

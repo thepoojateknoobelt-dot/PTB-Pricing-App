@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Config, Client, Quotation, ProfitRange } from '../types';
+import { Config, Client, Quotation, ProfitRange, QuotationItem } from '../types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -10,7 +10,7 @@ import { Button } from './ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { toast } from 'sonner';
 import { cn, formatCurrency } from '../lib/utils';
-import { Calculator as CalcIcon, Save, Send, AlertCircle } from 'lucide-react';
+import { Calculator as CalcIcon, Save, Send, AlertCircle, ChevronDown, ChevronUp, Plus, Trash2, ShoppingCart, Pencil, Check, X } from 'lucide-react';
 import { calculateCosting, toMeters } from '../lib/calculations';
 
 interface CalculatorProps {
@@ -38,7 +38,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
     widthUnit: 'mm',
     manualPackingCost: '',
     manualProfitMargin: '',
-    selectedBOMOptions: {} as Record<string, number>, // bomItemId -> optionIndex
+    selectedBOMOptions: {} as Record<string, any>,
     hasHoles: false,
     holeSize: '',
     holeDistHorizontal: '',
@@ -48,9 +48,14 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
 
   const [result, setResult] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [expandedRates, setExpandedRates] = useState<Record<string, boolean>>({});
   const [discountRequested, setDiscountRequested] = useState('');
   const [discountReason, setDiscountReason] = useState('');
   const [clientHistory, setClientHistory] = useState<Quotation[]>([]);
+  const [quotationItems, setQuotationItems] = useState<QuotationItem[]>([]);
+  const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
+  const [renameValues, setRenameValues] = useState<{ beltType: string; beltStyle: string }>({ beltType: '', beltStyle: '' });
   const [dimensionInsight, setDimensionInsight] = useState<string | null>(null);
   const [insightOrders, setInsightOrders] = useState<Quotation[]>([]);
   const selectedClient = clients?.find?.(c => c.id === formData.clientId) || null;
@@ -126,9 +131,19 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
     return () => clearInterval(interval);
   }, [formData.clientId]);
 
-  const handleCalculate = async () => {
+  const triggerCalculate = () => {
     if (!formData.clientId) {
       toast.error('Please select a client');
+      return;
+    }
+
+    if (!formData.beltType) {
+      toast.error('Please select a category');
+      return;
+    }
+
+    if (!formData.beltStyle) {
+      toast.error('Please select a style');
       return;
     }
 
@@ -158,8 +173,8 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
       return;
     }
 
-    if (widthInMeters > 100) {
-      toast.error('Width is too large (maximum 100 meters)');
+    if (widthInMeters > 150) { // Keep width limit aligned
+      toast.error('Width is too large (maximum 150 meters)');
       return;
     }
 
@@ -187,25 +202,67 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
       }
     }
 
+    setIsConfirmOpen(true);
+  };
+
+  const executeCalculate = async () => {
+    setIsConfirmOpen(false);
     setIsLoading(true);
     try {
       const selectedCategory = (Array.isArray(config?.beltTypes) ? config.beltTypes : [])?.find?.(t => t.name === formData.beltType) || null;
       const selectedStyle = (Array.isArray(selectedCategory?.styles) ? selectedCategory.styles : [])?.find?.(s => s.name === formData.beltStyle) || null;
       const clientProfitRanges = selectedClient?.profitMargins?.[formData.beltType] || [];
       
-      const customBOM = (selectedStyle?.bom || []).map(item => {
-        const selectedOptIdx = formData.selectedBOMOptions[item.id];
-        if (selectedOptIdx !== undefined && item.options && item.options[selectedOptIdx]) {
-          const opt = item.options[selectedOptIdx];
-          return {
-            ...item,
-            rate: opt.rate,
-            unit: opt.unit || item.unit,
-            name: opt.name ? `${item.name} (${opt.name})` : item.name
-          };
-        }
-        return item;
-      });
+      const included = formData.selectedBOMOptions?._included;
+      const customRates = formData.selectedBOMOptions?._customRates || {};
+      const customBOM = (selectedStyle?.bom || [])
+        .filter(item => !included || included[item.id] !== false)
+        .flatMap(item => {
+          // Support both old single-index and new multi-index formats
+          const rawSel = formData.selectedBOMOptions[item.id];
+          const selectedOptIndices: number[] = Array.isArray(rawSel)
+            ? rawSel
+            : rawSel !== undefined ? [rawSel] : [];
+
+          if (selectedOptIndices.length > 0 && Array.isArray(item.options) && item.options.length > 0) {
+            // Each selected option becomes a separate BOM line item
+            return selectedOptIndices
+              .map((optIdx: number) => {
+                const opt = item.options[optIdx];
+                if (!opt) return null;
+                let rate = opt.rate;
+                let unit = opt.unit || item.unit;
+                let name = opt.name ? opt.name.trim() : item.name;
+                let formula = opt.formula || item.formula;
+                // Custom rate override applies to first selected option only
+                if (customRates[item.id] !== undefined && selectedOptIndices[0] === optIdx) {
+                  rate = customRates[item.id];
+                }
+                return { ...item, rate, unit, name, formula, id: `${item.id}_opt${optIdx}` };
+              })
+              .filter(Boolean);
+          }
+
+          // No sub-category selected
+          let rate = item.rate;
+          let unit = item.unit;
+          let name = item.name;
+          let formula = item.formula;
+
+          if (Array.isArray(item.options) && item.options.length > 0 && (!item.rate || item.rate === 0)) {
+            // Fallback to first option rate if parent has no base rate (e.g. RED Bodar)
+            const firstOpt = item.options[0];
+            rate = firstOpt.rate;
+            unit = firstOpt.unit || item.unit;
+            formula = firstOpt.formula || item.formula;
+          }
+
+          if (customRates[item.id] !== undefined) {
+            rate = customRates[item.id];
+          }
+
+          return [{ ...item, rate, unit, name, formula }];
+        });
 
       const result = calculateCosting({
         length: parseFloat(formData.length),
@@ -251,11 +308,61 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
     } finally {
       setIsLoading(false);
     }
+  };
 
+  const handleAddItemToQuotation = () => {
+    if (!result) return;
+    if (!selectedClient) {
+      toast.error('Selected client not found');
+      return;
+    }
+
+    const newItem: QuotationItem = {
+      id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+      beltType: formData.beltType,
+      beltStyle: formData.beltStyle,
+      dimensions: {
+        length: parseFloat(formData.length),
+        lengthUnit: formData.lengthUnit,
+        width: parseFloat(formData.width),
+        widthUnit: formData.widthUnit,
+        hasHoles: formData.hasHoles,
+        holeSize: formData.hasHoles ? (parseFloat(formData.holeSize) || 0) : undefined,
+        holeDistHorizontal: formData.hasHoles ? (parseFloat(formData.holeDistHorizontal) || 0) : undefined,
+        holeDistVertical: formData.hasHoles ? (parseFloat(formData.holeDistVertical) || 0) : undefined,
+        pricePerHole: formData.hasHoles ? (parseFloat(formData.pricePerHole) || 0) : undefined,
+        totalHoles: formData.hasHoles ? (result.summary.totalHoles || 0) : undefined,
+      },
+      totalCost: result.summary.finalTotal,
+      selectedBOMOptions: JSON.parse(JSON.stringify(formData.selectedBOMOptions)),
+      calculated: JSON.parse(JSON.stringify(result))
+    };
+
+    setQuotationItems([...quotationItems, newItem]);
+    toast.success('Item added to quotation builder!');
+    
+    // Clear result and inputs
+    setResult(null);
+    setFormData({
+      ...formData,
+      length: '',
+      width: '',
+      manualPackingCost: '',
+      manualProfitMargin: '',
+      beltStyle: '',
+      hasHoles: false,
+      holeSize: '',
+      holeDistHorizontal: '',
+      holeDistVertical: '',
+      pricePerHole: '',
+    });
   };
 
   const handleSaveQuotation = async (status: 'draft' | 'pending_approval' = 'draft') => {
-    if (!result) return;
+    if (quotationItems.length === 0) {
+      toast.error('Please add at least one item to the quotation');
+      return;
+    }
 
     try {
       if (!selectedClient) {
@@ -263,30 +370,32 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
         return;
       }
 
+      // Sum totals across all items
+      const totalCostOfAllItems = quotationItems.reduce((sum, item) => sum + item.totalCost, 0);
+
+      // Create aggregated representation for backward compatibility with single-item layouts:
+      // We can use the first item's details for top-level columns, and the sum of all items for totalCost.
+      const firstItem = quotationItems[0];
+
       const quotationData = {
         clientId: formData.clientId,
         clientName: selectedClient.name,
-        beltType: formData.beltType,
-        beltStyle: formData.beltStyle,
-        selectedBOMOptions: formData.selectedBOMOptions,
-        dimensions: {
-          length: parseFloat(formData.length),
-          lengthUnit: formData.lengthUnit,
-          width: parseFloat(formData.width),
-          widthUnit: formData.widthUnit,
-          hasHoles: formData.hasHoles,
-          holeSize: formData.hasHoles ? (parseFloat(formData.holeSize) || 0) : undefined,
-          holeDistHorizontal: formData.hasHoles ? (parseFloat(formData.holeDistHorizontal) || 0) : undefined,
-          holeDistVertical: formData.hasHoles ? (parseFloat(formData.holeDistVertical) || 0) : undefined,
-          pricePerHole: formData.hasHoles ? (parseFloat(formData.pricePerHole) || 0) : undefined,
-          totalHoles: formData.hasHoles ? (result.summary.totalHoles || 0) : undefined,
+        beltType: quotationItems.length === 1 ? firstItem.beltType : `Multi-Item (${quotationItems.length})`,
+        beltStyle: quotationItems.length === 1 ? firstItem.beltStyle : 'Multiple Styles',
+        selectedBOMOptions: quotationItems.length === 1 ? firstItem.selectedBOMOptions : {},
+        dimensions: quotationItems.length === 1 ? firstItem.dimensions : {
+          length: 0,
+          lengthUnit: 'mm',
+          width: 0,
+          widthUnit: 'mm'
         },
-        totalCost: result.summary.finalTotal,
+        totalCost: totalCostOfAllItems,
         status,
-        discountRequested: parseFloat(discountRequested) || 0, // Now an amount
+        discountRequested: parseFloat(discountRequested) || 0, // overall discount
         discountReason: discountReason,
         createdBy: user?.id,
         createdByName: user?.name || user?.username,
+        items: quotationItems // Send the items array!
       };
 
       const saveRes = await fetch('/api/quotations', {
@@ -298,24 +407,13 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
       if (!saveRes.ok) throw new Error('Save failed');
       
       toast.success(status === 'pending_approval' ? 'Approval request sent!' : 'Quotation saved!');
-      setResult(null);
       
-      // Fetch history immediately to update the client history table without manual refresh
+      // Fetch history immediately to update the client history table
       fetchClientHistory(formData.clientId);
       
-      setFormData({
-        ...formData,
-        length: '',
-        width: '',
-        manualPackingCost: '',
-        manualProfitMargin: '',
-        beltStyle: '',
-        hasHoles: false,
-        holeSize: '',
-        holeDistHorizontal: '',
-        holeDistVertical: '',
-        pricePerHole: '',
-      });
+      // Clear state
+      setQuotationItems([]);
+      setResult(null);
       setDiscountRequested('');
       setDiscountReason('');
     } catch (err) {
@@ -353,7 +451,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                 <div className="grid gap-2.5">
                   <div className="space-y-1">
                     <Label className="text-xs font-medium">Client</Label>
-                    <Select value={formData.clientId} onValueChange={(val) => setFormData({ ...formData, clientId: val })}>
+                    <Select value={formData.clientId} onValueChange={(val) => { setFormData({ ...formData, clientId: val }); setQuotationItems([]); }}>
                       <SelectTrigger className="bg-white border-zinc-400 focus:ring-zinc-900 transition-all h-9 text-xs">
                         <SelectValue placeholder="Select Client">
                           {selectedClient ? selectedClient.name : undefined}
@@ -370,7 +468,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <Label className="text-xs font-medium">Category</Label>
-                      <Select value={formData.beltType} onValueChange={(val) => setFormData({ ...formData, beltType: val, beltStyle: '' })}>
+                      <Select value={formData.beltType} onValueChange={(val) => { setFormData({ ...formData, beltType: val, beltStyle: '', selectedBOMOptions: {} }); setExpandedRates({}); }}>
                         <SelectTrigger className="bg-white border-zinc-400 transition-all h-9 text-xs">
                           <SelectValue placeholder="Type" />
                         </SelectTrigger>
@@ -387,7 +485,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                       <Select 
                         disabled={!formData.beltType}
                         value={formData.beltStyle} 
-                        onValueChange={(val) => setFormData({ ...formData, beltStyle: val })}
+                        onValueChange={(val) => { setFormData({ ...formData, beltStyle: val, selectedBOMOptions: {} }); setExpandedRates({}); }}
                       >
                         <SelectTrigger className="bg-white border-zinc-400 transition-all h-9 text-xs">
                           <SelectValue placeholder="Style" />
@@ -594,58 +692,249 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                   </Dialog>
                 )}
               </div>
-
-
-              {/* Material Variants Selection (Dynamic) */}
+              {/* BOM Components Checklist (Dynamic with checkboxes and sub-categories selection) */}
               {(() => {
                 const category = (Array.isArray(config?.beltTypes) ? config.beltTypes : [])?.find?.(t => t.name === formData.beltType) || null;
                 const style = (Array.isArray(category?.styles) ? category.styles : [])?.find?.(s => s.name === formData.beltStyle) || null;
-                const showBOMOptions = formData.beltStyle && Array.isArray(style?.bom) && style.bom.some(item => Array.isArray(item.options) && item.options.length > 0);
+                const hasBOM = formData.beltStyle && Array.isArray(style?.bom) && style.bom.length > 0;
                 
-                return showBOMOptions && (
-                  <div className="space-y-1.5 pt-1.5 border-t border-zinc-100 animate-in fade-in slide-in-from-top-2">
-                    <Label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Material Specification</Label>
-                    <div className="grid gap-2">
-                      {(() => {
-                        const filteredBOM = (Array.isArray(style?.bom) ? style.bom : [])?.filter?.(item => Array.isArray(item.options) && item.options.length > 0) || [];
-                        return filteredBOM.map(item => (
-                          <div key={item.id} className="space-y-1">
-                            <Label className="text-[10px] font-medium text-zinc-400">{item.name}</Label>
-                            <Select 
-                              value={formData.selectedBOMOptions[item.id]?.toString()} 
-                              onValueChange={(val) => setFormData({ 
-                                ...formData, 
-                                selectedBOMOptions: { ...formData.selectedBOMOptions, [item.id]: parseInt(val) } 
-                              })}
-                            >
-                              <SelectTrigger className="bg-white border-zinc-400 h-9 text-xs">
-                                <SelectValue placeholder={`Select ${item.name}`}>
-                                  {(() => {
-                                    const idx = formData.selectedBOMOptions[item.id];
-                                    const opt = Array.isArray(item.options) ? item.options[idx] : null;
-                                    if (idx === undefined || !opt) return null;
-                                    return opt.name || `₹${opt.rate} / ${opt.unit || item.unit}`;
-                                  })()}
-                                </SelectValue>
-                              </SelectTrigger>
-                              <SelectContent>
-                                {(Array.isArray(item.options) ? item.options : [])?.map?.((opt: any, i: number) => (
-                                  <SelectItem key={i} value={i.toString()}>
-                                    {opt.name || `₹${opt.rate} / ${opt.unit || item.unit}`}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                return hasBOM && (
+                  <div className="space-y-2 pt-2.5 border-t border-zinc-100 animate-in fade-in slide-in-from-top-2">
+                    <Label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Include BOM Components</Label>
+                    <div className="grid gap-2 bg-zinc-50/50 p-3 rounded-xl border border-zinc-100">
+                      {style.bom.map((item: any) => {
+                        const isChecked = formData.selectedBOMOptions?._included?.[item.id] !== false; // Checked by default
+                        const hasOptions = Array.isArray(item.options) && item.options.length > 0;
+                        const isExpanded = !!expandedRates[item.id];
+                        
+                        // Support both old single-index and new multi-index array formats
+                        const rawSel = formData.selectedBOMOptions[item.id];
+                        const selectedOptIndices: number[] = Array.isArray(rawSel)
+                          ? rawSel
+                          : rawSel !== undefined ? [rawSel] : [];
+                        const firstSelIdx = selectedOptIndices[0];
+                        const defaultRate = hasOptions && firstSelIdx !== undefined && item.options[firstSelIdx]
+                          ? item.options[firstSelIdx].rate
+                          : item.rate;
+                        const defaultUnit = hasOptions && firstSelIdx !== undefined && item.options[firstSelIdx]
+                          ? (item.options[firstSelIdx].unit || item.unit)
+                          : item.unit;
+                        
+                        const currentRemark = formData.selectedBOMOptions?._remarks?.[item.id] || '';
+
+                        return (
+                          <div key={item.id} className="space-y-2 border-b border-zinc-150 pb-2.5 last:border-none last:pb-0">
+                            <div className="flex items-center space-x-2.5">
+                              <input
+                                type="checkbox"
+                                id={`bom-chk-${item.id}`}
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  const included = { 
+                                    ...(formData.selectedBOMOptions?._included || {}) 
+                                  };
+                                  // Initialize all other items to true if not present
+                                  style.bom.forEach((b: any) => {
+                                    if (included[b.id] === undefined) {
+                                      included[b.id] = true;
+                                    }
+                                  });
+                                  included[item.id] = e.target.checked;
+                                  setFormData({
+                                    ...formData,
+                                    selectedBOMOptions: {
+                                      ...formData.selectedBOMOptions,
+                                      _included: included
+                                    }
+                                  });
+                                }}
+                                className="h-4 w-4 rounded border-zinc-400 text-zinc-950 focus:ring-zinc-950 transition-colors cursor-pointer"
+                              />
+                              <Label htmlFor={`bom-chk-${item.id}`} className="text-xs font-bold cursor-pointer text-zinc-800 flex-1">
+                                {item.name}
+                              </Label>
+                            </div>
+                            {/* Remark field - always visible when checked */}
+                            {isChecked && (
+                              <div className="pl-6">
+                                <input
+                                  type="text"
+                                  placeholder="Add remark (optional)"
+                                  value={currentRemark}
+                                  onChange={(e) => {
+                                    const remarks = { ...(formData.selectedBOMOptions?._remarks || {}) };
+                                    if (e.target.value.trim() === '') {
+                                      delete remarks[item.id];
+                                    } else {
+                                      remarks[item.id] = e.target.value;
+                                    }
+                                    setFormData({
+                                      ...formData,
+                                      selectedBOMOptions: {
+                                        ...formData.selectedBOMOptions,
+                                        _remarks: remarks
+                                      }
+                                    });
+                                  }}
+                                  className="w-full text-[10px] px-2 py-1 border border-dashed border-zinc-300 rounded-lg bg-amber-50/40 focus:outline-none focus:border-amber-400 focus:bg-amber-50 placeholder:text-zinc-400 text-zinc-600 transition-all"
+                                />
+                              </div>
+                            )}
+                            
+                            {isChecked && (
+                               <div className="pl-6 space-y-2">
+                                 {/* Show sub-categories as flat checkboxes directly under the parent BOM item */}
+                                 {hasOptions && (
+                                   <div className="space-y-2.5 pl-6 pt-1 animate-in fade-in duration-200">
+                                     {item.options.map((opt: any, i: number) => {
+                                       const rawSel = formData.selectedBOMOptions[item.id];
+                                       const selectedOptIndices: number[] = Array.isArray(rawSel)
+                                         ? rawSel
+                                         : rawSel !== undefined ? [rawSel] : [];
+                                       const isOptSelected = selectedOptIndices.includes(i);
+                                       const optRemarkKey = `${item.id}_${i}`;
+                                       const optRemark = formData.selectedBOMOptions?._optRemarks?.[optRemarkKey] || '';
+                                       return (
+                                         <div key={i} className="space-y-1">
+                                           <div className="flex items-center space-x-2">
+                                             <input
+                                               type="checkbox"
+                                               id={`bom-opt-${item.id}-${i}`}
+                                               checked={isOptSelected}
+                                               onChange={(e) => {
+                                                 const currentSelected: number[] = Array.isArray(formData.selectedBOMOptions[item.id])
+                                                   ? [...formData.selectedBOMOptions[item.id]]
+                                                   : formData.selectedBOMOptions[item.id] !== undefined
+                                                     ? [formData.selectedBOMOptions[item.id]]
+                                                     : [];
+                                                 const newSelected = e.target.checked
+                                                   ? [...currentSelected, i]
+                                                   : currentSelected.filter((x: number) => x !== i);
+                                                 setFormData({
+                                                   ...formData,
+                                                   selectedBOMOptions: {
+                                                     ...formData.selectedBOMOptions,
+                                                     [item.id]: newSelected.length > 0 ? newSelected : undefined
+                                                   }
+                                                 });
+                                               }}
+                                               className="h-3.5 w-3.5 rounded border-zinc-400 text-zinc-950 focus:ring-zinc-950 transition-colors cursor-pointer"
+                                             />
+                                             <Label 
+                                                htmlFor={`bom-opt-${item.id}-${i}`} 
+                                                className={cn(
+                                                  "text-xs cursor-pointer select-none transition-colors flex-1 flex items-center justify-between gap-2 min-w-0",
+                                                  isOptSelected ? "font-bold text-zinc-900" : "font-medium text-zinc-650 hover:text-zinc-900"
+                                                )}
+                                              >
+                                                <span className="truncate">{opt.name || `Option ${i + 1}`}</span>
+                                                <span className={cn(
+                                                  "text-[9px] font-black px-1.5 py-0.5 rounded-md border shrink-0 tabular-nums transition-colors",
+                                                  isOptSelected
+                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                    : "bg-zinc-100 text-zinc-400 border-zinc-200"
+                                                )}>
+                                                  ₹{opt.rate}/{opt.unit || item.unit}
+                                                </span>
+                                              </Label>
+                                           </div>
+                                           {/* Remark field below selected sub-category */}
+                                           {isOptSelected && (
+                                              <div className="pl-5.5">
+                                                <input
+                                                  type="text"
+                                                  placeholder={`Remark for ${opt.name || 'this option'}...`}
+                                                  value={optRemark}
+                                                  onChange={(e) => {
+                                                    const optRemarks = { ...(formData.selectedBOMOptions?._optRemarks || {}) };
+                                                    if (e.target.value.trim() === '') {
+                                                      delete optRemarks[optRemarkKey];
+                                                    } else {
+                                                      optRemarks[optRemarkKey] = e.target.value;
+                                                    }
+                                                    setFormData({
+                                                      ...formData,
+                                                      selectedBOMOptions: {
+                                                        ...formData.selectedBOMOptions,
+                                                        _optRemarks: optRemarks
+                                                      }
+                                                    });
+                                                  }}
+                                                  className="w-full text-[10px] px-2 py-1 border border-dashed border-indigo-200 rounded-lg bg-indigo-50/30 focus:outline-none focus:border-indigo-400 focus:bg-indigo-50/60 placeholder:text-zinc-400 text-zinc-600 transition-all"
+                                                />
+                                              </div>
+                                            )}
+                                         </div>
+                                       );
+                                     })}
+                                   </div>
+                                 )}
+                                 
+                                 {/* Price Changer Accordion Toggle (Only visible for Admins) */}
+                                 {user?.role === 'admin' && (
+                                   <>
+                                     <div className="flex items-center justify-between">
+                                       <button
+                                         type="button"
+                                         onClick={() => setExpandedRates({
+                                           ...expandedRates,
+                                           [item.id]: !isExpanded
+                                         })}
+                                         className="text-[10px] text-zinc-500 hover:text-indigo-650 font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                       >
+                                         {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                         {isExpanded ? "Hide Price Adjustment" : `Adjust Price (Default: ₹${defaultRate}/${defaultUnit})`}
+                                       </button>
+                                     </div>
+
+                                     {/* Custom Rate Input Field */}
+                                     {isExpanded && (
+                                       <div className="animate-in fade-in slide-in-from-top-1 duration-150">
+                                         <div className="space-y-1 p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg max-w-full">
+                                           <Label className="text-[9px] font-black uppercase text-zinc-500">Custom Unit Rate (₹)</Label>
+                                           <div className="relative">
+                                             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-bold">₹</span>
+                                             <Input
+                                               type="number"
+                                               placeholder={defaultRate.toString()}
+                                               className="h-8 pl-6 text-xs bg-white border-zinc-300 font-bold text-zinc-800"
+                                               value={formData.selectedBOMOptions?._customRates?.[item.id] ?? ""}
+                                               onChange={(e) => {
+                                                 const customRates = {
+                                                   ...(formData.selectedBOMOptions?._customRates || {})
+                                                 };
+                                                 if (e.target.value === "") {
+                                                   delete customRates[item.id];
+                                                 } else {
+                                                   customRates[item.id] = parseFloat(e.target.value) || 0;
+                                                 }
+                                                 setFormData({
+                                                   ...formData,
+                                                   selectedBOMOptions: {
+                                                     ...formData.selectedBOMOptions,
+                                                     _customRates: customRates
+                                                   }
+                                                 });
+                                               }}
+                                             />
+                                           </div>
+                                         </div>
+                                       </div>
+                                     )}
+                                   </>
+                                 )}
+                               </div>
+                            )}
                           </div>
-                        ));
-                      })()}
+                        );
+                      })}
                     </div>
                   </div>
                 );
               })()}
 
-              {/* Overrides Section - Only visible after calculation */}
-              {result && (
+              {/* Overrides Section - Only visible after calculation for Admin */}
+              {result && user?.role === 'admin' && (
                 <div className="space-y-1.5 pt-1.5 border-t border-zinc-100 animate-in fade-in slide-in-from-top-2">
                   <Label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Manual Overrides</Label>
                   <div className="grid grid-cols-2 gap-2">
@@ -676,7 +965,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
 
             <Button 
               className="w-full bg-zinc-900 hover:bg-zinc-800 text-white mt-1 h-10 text-sm font-semibold rounded-lg shadow-md transition-all active:scale-[0.98]" 
-              onClick={handleCalculate}
+              onClick={triggerCalculate}
               disabled={isLoading}
             >
               {isLoading ? (
@@ -845,8 +1134,8 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-zinc-50 p-4 rounded-xl border border-zinc-100 shadow-inner">
-                  <div className="flex flex-col justify-center p-4 bg-zinc-900 rounded-lg text-white shadow-lg overflow-hidden relative">
-                    <p className="text-zinc-400 text-[9px] font-black uppercase tracking-[0.2em] mb-2">Price Breakdown</p>
+                  <div className="flex flex-col justify-center p-4 bg-zinc-900 rounded-lg text-white shadow-lg overflow-hidden relative col-span-2">
+                    <p className="text-zinc-400 text-[9px] font-black uppercase tracking-[0.2em] mb-2">Price Summary</p>
                     
                     {user?.role === 'admin' ? (
                       <div className="flex flex-col gap-0.5">
@@ -878,59 +1167,37 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                       </div>
                     </div>
                   </div>
-
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-bold uppercase text-zinc-500">Adjustment</Label>
-                      <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-xs">{config.currency || '₹'}</span>
-                        <Input 
-                          type="number" 
-                          placeholder="Adjust amount" 
-                          value={discountRequested}
-                          onChange={(e) => setDiscountRequested(e.target.value)}
-                          className="bg-white border-zinc-400 pl-7 h-10 focus:ring-zinc-900 text-base font-bold"
-                        />
-                      </div>
-                    </div>
-                    {discountRequested && parseFloat(discountRequested) > 0 && (
-                      <div className="space-y-1 animate-in fade-in slide-in-from-top-1">
-                        <Label className="text-[10px] font-bold uppercase text-zinc-500">Clarification</Label>
-                        <Input 
-                          placeholder="Reason..." 
-                          value={discountReason}
-                          onChange={(e) => setDiscountReason(e.target.value)}
-                          className="bg-white border-zinc-400 h-8 text-xs italic"
-                        />
-                      </div>
-                    )}
-                  </div>
                 </div>
-
-                {user?.permission === 'read' && (
-                  <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-medium animate-in fade-in duration-300">
-                    <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-                    <span>Your account is in read-only mode. You cannot save or submit quotations.</span>
-                  </div>
-                )}
 
                 <div className="flex gap-3">
                   <Button 
                     variant="outline" 
-                    className="flex-1 gap-1.5 h-10 border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition-all disabled:opacity-50" 
-                    onClick={() => handleSaveQuotation('draft')}
-                    disabled={user?.permission === 'read'}
+                    className="flex-1 gap-1.5 h-10 border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition-all" 
+                    onClick={() => {
+                      setResult(null);
+                      setFormData({
+                        ...formData,
+                        length: '',
+                        width: '',
+                        manualPackingCost: '',
+                        manualProfitMargin: '',
+                        beltStyle: '',
+                        hasHoles: false,
+                        holeSize: '',
+                        holeDistHorizontal: '',
+                        holeDistVertical: '',
+                        pricePerHole: '',
+                      });
+                    }}
                   >
-                    <Save className="h-3.5 w-3.5" />
-                    Save Draft
+                    Reset Form
                   </Button>
                   <Button 
-                    className="flex-2 gap-1.5 bg-zinc-900 hover:bg-zinc-800 text-white h-10 text-xs font-bold shadow-md transition-all active:scale-[0.98] disabled:opacity-50"
-                    onClick={() => handleSaveQuotation(discountRequested ? 'pending_approval' : 'draft')}
-                    disabled={user?.permission === 'read'}
+                    className="flex-2 gap-1.5 bg-zinc-900 hover:bg-zinc-800 text-white h-10 text-xs font-bold shadow-md transition-all active:scale-[0.98]"
+                    onClick={handleAddItemToQuotation}
                   >
-                    <Send className="h-3.5 w-3.5" />
-                    {discountRequested ? 'Submit Review' : 'Finalize'}
+                    <Plus className="h-3.5 w-3.5" />
+                    Add to Quotation
                   </Button>
                 </div>
               </div>
@@ -938,6 +1205,332 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
           </CardContent>
         </Card>
       </div>
+
+      {formData.clientId && quotationItems.length > 0 && (
+        <Card className="border-zinc-300 shadow-xl bg-white/80 backdrop-blur-sm mt-4 overflow-hidden animate-in fade-in slide-in-from-top-3 duration-250">
+          <CardHeader className="bg-zinc-50/50 border-b border-zinc-100 py-3 flex flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <div className="h-7 w-7 rounded bg-zinc-900 flex items-center justify-center">
+                <ShoppingCart className="h-3.5 w-3.5 text-white" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Current Quotation Builder ({quotationItems.length} {quotationItems.length === 1 ? 'item' : 'items'})</CardTitle>
+                <CardDescription className="text-[10px] font-medium">Review added items, apply adjustment, and finalize the quotation.</CardDescription>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs h-8 border-rose-200 text-rose-650 hover:bg-rose-50 hover:text-rose-700 font-bold gap-1 cursor-pointer"
+              onClick={() => {
+                setQuotationItems([]);
+                toast.success('Cleared all items');
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Clear Cart
+            </Button>
+          </CardHeader>
+          <CardContent className="p-4 space-y-4">
+            <div className="rounded-md border border-zinc-200 overflow-hidden bg-white">
+              <Table>
+                <TableHeader className="bg-zinc-50/50">
+                  <TableRow>
+                    <TableHead className="w-[50px] font-bold text-center">No.</TableHead>
+                    <TableHead className="font-bold">Belt Details</TableHead>
+                    <TableHead className="font-bold">Dimensions</TableHead>
+                    <TableHead className="font-bold">BOM & Customizations</TableHead>
+                    <TableHead className="font-bold text-right">Selling Price</TableHead>
+                    <TableHead className="w-[110px] font-bold text-center">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {quotationItems.map((item, index) => {
+                    const isRenaming = renamingItemId === item.id;
+                    return (
+                      <TableRow key={item.id} className="hover:bg-zinc-50/50 transition-colors text-xs">
+                        <TableCell className="text-center font-bold text-zinc-500">{index + 1}</TableCell>
+                        <TableCell className="font-semibold text-zinc-900">
+                          {isRenaming ? (
+                            <div className="space-y-1.5 py-1">
+                              <input
+                                autoFocus
+                                type="text"
+                                value={renameValues.beltType}
+                                onChange={e => setRenameValues(v => ({ ...v, beltType: e.target.value }))}
+                                placeholder="Belt Type Name"
+                                className="w-full text-xs px-2 py-1.5 border border-indigo-300 rounded-lg bg-indigo-50/50 focus:outline-none focus:ring-2 focus:ring-indigo-400 font-semibold text-zinc-900"
+                              />
+                              <input
+                                type="text"
+                                value={renameValues.beltStyle}
+                                onChange={e => setRenameValues(v => ({ ...v, beltStyle: e.target.value }))}
+                                placeholder="Style Name"
+                                className="w-full text-[10px] px-2 py-1 border border-indigo-200 rounded-lg bg-indigo-50/30 focus:outline-none focus:ring-2 focus:ring-indigo-300 text-zinc-600"
+                              />
+                            </div>
+                          ) : (
+                            <>
+                              <span className="font-semibold text-zinc-900">{item.beltType}</span>
+                              <div className="text-[10px] text-zinc-400 font-medium">Style: {item.beltStyle}</div>
+                            </>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-mono text-zinc-650">
+                          L {item.dimensions.length} {item.dimensions.lengthUnit || 'mm'} x W {item.dimensions.width} {item.dimensions.widthUnit || 'mm'}
+                          {item.dimensions.hasHoles && (
+                            <div className="text-[10px] text-indigo-600 font-bold">Holes: {item.dimensions.totalHoles} pcs</div>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-[250px] text-[11px] text-zinc-650">
+                          {(() => {
+                            const included = item.selectedBOMOptions?._included || {};
+                            const customRates = item.selectedBOMOptions?._customRates || {};
+                            const remarks = item.selectedBOMOptions?._remarks || {};
+                            const optRemarks = item.selectedBOMOptions?._optRemarks || {};
+
+                            const category = (Array.isArray(config?.beltTypes) ? config.beltTypes : [])?.find?.(t => t.name === item.beltType) || null;
+                            const style = (Array.isArray(category?.styles) ? category.styles : [])?.find?.(s => s.name === item.beltStyle) || null;
+                            const bomItems = style?.bom || [];
+
+                            const includedItems = bomItems.filter(b => included[b.id] !== false);
+                            const adjustedItems = bomItems.filter(b => customRates[b.id] !== undefined).map(b => `${b.name} (₹${customRates[b.id]})`);
+                            const hasRemarks = includedItems.some(b => remarks[b.id]);
+
+                            // Collect sub-category remarks (support multi-select array)
+                            const subRemarkEntries: { label: string; text: string }[] = [];
+                            includedItems.forEach(b => {
+                              const rawSel = item.selectedBOMOptions?.[b.id];
+                              const selIndices: number[] = Array.isArray(rawSel)
+                                ? rawSel
+                                : rawSel !== undefined ? [rawSel] : [];
+                              selIndices.forEach((optIdx: number) => {
+                                if (b.options?.[optIdx]) {
+                                  const optKey = `${b.id}_${optIdx}`;
+                                  if (optRemarks[optKey]) {
+                                    subRemarkEntries.push({
+                                      label: `${b.name} › ${b.options[optIdx].name || ''}`,
+                                      text: optRemarks[optKey]
+                                    });
+                                  }
+                                }
+                              });
+                            });
+
+                            return (
+                              <div className="space-y-0.5">
+                                <div className="truncate"><span className="font-bold">BOM:</span> {includedItems.map(b => b.name).join(', ') || 'None'}</div>
+                                {adjustedItems.length > 0 && (
+                                  <div className="text-[10px] text-indigo-650 font-bold truncate">
+                                    <span className="font-extrabold">Adjusted:</span> {adjustedItems.join(', ')}
+                                  </div>
+                                )}
+                                {hasRemarks && (
+                                  <div className="text-[10px] text-amber-700 font-medium mt-0.5 space-y-0.5">
+                                    {includedItems.filter(b => remarks[b.id]).map(b => (
+                                      <div key={b.id} className="flex items-start gap-1">
+                                        <span className="font-bold text-amber-600 shrink-0">{b.name}:</span>
+                                        <span className="truncate italic">{remarks[b.id]}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {subRemarkEntries.length > 0 && (
+                                  <div className="text-[10px] text-indigo-700 font-medium mt-0.5 space-y-0.5">
+                                    {subRemarkEntries.map((e, i) => (
+                                      <div key={i} className="flex items-start gap-1">
+                                        <span className="font-bold text-indigo-500 shrink-0">{e.label}:</span>
+                                        <span className="truncate italic">{e.text}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-bold text-zinc-900 text-sm">
+                          {formatCurrency(item.totalCost)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {isRenaming ? (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Save rename"
+                                  className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-md cursor-pointer"
+                                  onClick={() => {
+                                    setQuotationItems(quotationItems.map(q =>
+                                      q.id === item.id
+                                        ? { ...q, beltType: renameValues.beltType || q.beltType, beltStyle: renameValues.beltStyle || q.beltStyle }
+                                        : q
+                                    ));
+                                    setRenamingItemId(null);
+                                    toast.success('Item renamed!');
+                                  }}
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Cancel"
+                                  className="h-7 w-7 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-md cursor-pointer"
+                                  onClick={() => setRenamingItemId(null)}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Rename item"
+                                  className="h-7 w-7 text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md cursor-pointer"
+                                  onClick={() => {
+                                    setRenamingItemId(item.id);
+                                    setRenameValues({ beltType: item.beltType, beltStyle: item.beltStyle });
+                                  }}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Remove item"
+                                  className="h-7 w-7 text-zinc-400 hover:text-rose-650 hover:bg-zinc-100 rounded-md cursor-pointer"
+                                  onClick={() => {
+                                    setQuotationItems(quotationItems.filter(q => q.id !== item.id));
+                                    toast.success('Item removed');
+                                  }}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Aggregated Totals and Action Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+              <div className="border border-zinc-200 bg-white/70 p-4 rounded-xl space-y-2.5 shadow-sm">
+                <h3 className="text-xs font-black uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                  <ShoppingCart className="h-3.5 w-3.5 text-zinc-650" />
+                  Aggregate Pricing Summary
+                </h3>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between border-b border-zinc-150 pb-1.5">
+                    <span className="text-zinc-500">Material Subtotal</span>
+                    <span className="font-mono font-bold">{formatCurrency(quotationItems.reduce((sum, item) => sum + (item.calculated?.summary?.subtotal || 0), 0))}</span>
+                  </div>
+                  {user?.role === 'admin' && (
+                    <>
+                      <div className="flex justify-between border-b border-zinc-150 pb-1.5">
+                        <span className="text-zinc-500">Landed Cost (Incl. purchase GST)</span>
+                        <span className="font-mono font-bold">{formatCurrency(quotationItems.reduce((sum, item) => sum + (item.calculated?.summary?.totalWithPurchaseGst || 0), 0))}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-zinc-150 pb-1.5">
+                        <span className="text-zinc-500">Aggregate Profit Margin</span>
+                        <span className="font-mono font-bold text-emerald-600">{formatCurrency(quotationItems.reduce((sum, item) => sum + (item.calculated?.summary?.profit || 0), 0))}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-zinc-150 pb-1.5">
+                        <span className="text-zinc-500">Aggregate Sales GST</span>
+                        <span className="font-mono font-bold">{formatCurrency(quotationItems.reduce((sum, item) => sum + (item.calculated?.summary?.saleGst || 0), 0))}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-zinc-150 pb-1.5">
+                        <span className="text-zinc-500">Aggregate Packing Charges</span>
+                        <span className="font-mono font-bold">{formatCurrency(quotationItems.reduce((sum, item) => sum + (item.calculated?.summary?.packingCost || 0), 0))}</span>
+                      </div>
+                    </>
+                  )}
+                  
+                  {discountRequested && parseFloat(discountRequested) > 0 && (
+                    <div className="flex justify-between border-b border-zinc-150 pb-1.5 text-amber-600 font-bold">
+                      <span>Adjustment (Discount)</span>
+                      <span className="font-mono">- {formatCurrency(parseFloat(discountRequested) || 0)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between pt-1.5 text-sm font-black border-t border-zinc-300">
+                    <span className="text-zinc-900">Combined Net Selling Price</span>
+                    <span className="font-mono text-emerald-650 text-base">
+                      {formatCurrency(
+                        Math.max(0, quotationItems.reduce((sum, item) => sum + item.totalCost, 0) - (parseFloat(discountRequested) || 0))
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Save actions panel */}
+              <div className="space-y-4 flex flex-col justify-between">
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold uppercase text-zinc-500">Quotation Level Adjustment</Label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-xs">{config.currency || '₹'}</span>
+                      <Input 
+                        type="number" 
+                        placeholder="Overall discount amount" 
+                        value={discountRequested}
+                        onChange={(e) => setDiscountRequested(e.target.value)}
+                        className="bg-white border-zinc-450 pl-7 h-10 focus:ring-zinc-900 text-sm font-bold"
+                      />
+                    </div>
+                  </div>
+                  {discountRequested && parseFloat(discountRequested) > 0 && (
+                    <div className="space-y-1 animate-in fade-in slide-in-from-top-1">
+                      <Label className="text-[10px] font-bold uppercase text-zinc-500">Discount Clarification Reason</Label>
+                      <Input 
+                        placeholder="Provide details about why discount is requested..." 
+                        value={discountReason}
+                        onChange={(e) => setDiscountReason(e.target.value)}
+                        className="bg-white border-zinc-450 h-9 text-xs italic"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {user?.permission === 'read' && (
+                  <div className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-medium">
+                    <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                    <span>Read-only mode: saving disabled.</span>
+                  </div>
+                )}
+
+                <div className="flex gap-3 mt-auto">
+                  <Button 
+                    variant="outline" 
+                    className="flex-1 gap-1.5 h-10 border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer" 
+                    onClick={() => handleSaveQuotation('draft')}
+                    disabled={user?.permission === 'read'}
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                    Save Draft
+                  </Button>
+                  <Button 
+                    className="flex-2 gap-1.5 bg-zinc-900 hover:bg-zinc-800 text-white h-10 text-xs font-bold shadow-md transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                    onClick={() => handleSaveQuotation(discountRequested && parseFloat(discountRequested) > 0 ? 'pending_approval' : 'draft')}
+                    disabled={user?.permission === 'read'}
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    {discountRequested && parseFloat(discountRequested) > 0 ? 'Submit Review' : 'Finalize'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {formData.clientId && (
         <Card className="border-zinc-300 shadow-xl bg-white/80 backdrop-blur-sm mt-4 overflow-hidden">
@@ -1004,6 +1597,134 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
           </CardContent>
         </Card>
       )}
+
+      {/* Dialog Confirmation Modal */}
+      <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+        <DialogContent className="max-w-md mx-auto p-6 bg-white/95 backdrop-blur-md rounded-2xl border border-zinc-200 shadow-2xl animate-in zoom-in-95 duration-200">
+          <DialogHeader className="pb-3 border-b border-zinc-100">
+            <DialogTitle className="text-lg font-black text-zinc-900 flex items-center gap-2">
+              <CalcIcon className="h-5 w-5 text-indigo-600" />
+              Confirm Costing Parameters
+            </DialogTitle>
+            <DialogDescription className="text-xs text-zinc-500 font-medium">
+              Please verify the entered configuration parameters before calculating the costing.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-3.5 text-sm">
+            <div className="grid grid-cols-3 gap-1">
+              <span className="text-xs font-black uppercase text-zinc-400">Client:</span>
+              <span className="col-span-2 font-bold text-zinc-800">{selectedClient?.name || 'N/A'}</span>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-1">
+              <span className="text-xs font-black uppercase text-zinc-400">Category:</span>
+              <span className="col-span-2 font-bold text-zinc-800">{formData.beltType || 'N/A'}</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1">
+              <span className="text-xs font-black uppercase text-zinc-400">Style:</span>
+              <span className="col-span-2 font-bold text-zinc-800">{formData.beltStyle || 'N/A'}</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1">
+              <span className="text-xs font-black uppercase text-zinc-400">Dimensions:</span>
+              <span className="col-span-2 font-black text-indigo-700">
+                {formData.length} {formData.lengthUnit} × {formData.width} {formData.widthUnit}
+              </span>
+            </div>
+
+            <div className="border-t border-zinc-100 pt-3 space-y-2">
+              <span className="text-xs font-black uppercase text-zinc-400 block mb-1">Included BOM Components:</span>
+              <div className="bg-zinc-50/80 rounded-xl p-3 border border-zinc-150 max-h-[160px] overflow-y-auto space-y-1.5 custom-scrollbar">
+                {(() => {
+                  const category = (Array.isArray(config?.beltTypes) ? config.beltTypes : [])?.find?.(t => t.name === formData.beltType) || null;
+                  const style = (Array.isArray(category?.styles) ? category.styles : [])?.find?.(s => s.name === formData.beltStyle) || null;
+                  if (!style || !Array.isArray(style.bom) || style.bom.length === 0) {
+                    return <p className="text-xs text-zinc-400 italic">No BOM components found.</p>;
+                  }
+                  
+                  const included = formData.selectedBOMOptions?._included;
+                  const checkedItems = style.bom.filter((item: any) => !included || included[item.id] !== false);
+                  
+                  if (checkedItems.length === 0) {
+                    return <p className="text-xs text-rose-500 font-bold italic">No BOM components selected!</p>;
+                  }
+
+                   const remarks = formData.selectedBOMOptions?._remarks || {};
+                  const optRemarks = formData.selectedBOMOptions?._optRemarks || {};
+                  return checkedItems.map((item: any) => {
+                    const hasOptions = Array.isArray(item.options) && item.options.length > 0;
+                    const rawSel = formData.selectedBOMOptions[item.id];
+                    const selectedOptIndices: number[] = Array.isArray(rawSel)
+                      ? rawSel
+                      : rawSel !== undefined ? [rawSel] : [];
+                    const itemRemark = remarks[item.id];
+                    return (
+                      <div key={item.id} className="flex flex-col gap-0.5 border-b border-zinc-100/50 pb-1.5 last:border-none last:pb-0">
+                        <div className="flex justify-between items-baseline text-xs">
+                          <span className="font-bold text-zinc-700">{item.name}</span>
+                          {selectedOptIndices.length === 0 && (
+                            <span className="text-[10px] text-zinc-400 italic">
+                              {hasOptions ? `Default (₹${item.options[0]?.rate ?? item.rate}/${item.options[0]?.unit ?? item.unit})` : 'Default'}
+                            </span>
+                          )}
+                        </div>
+                        {/* Show each selected sub-category option */}
+                        {selectedOptIndices.map((optIdx: number) => {
+                          const opt = hasOptions ? item.options[optIdx] : null;
+                          if (!opt) return null;
+                          const optRemarkKey = `${item.id}_${optIdx}`;
+                          const optRemark = optRemarks[optRemarkKey];
+                          return (
+                            <div key={optIdx} className="pl-2 flex flex-col gap-0.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] text-zinc-600 flex items-center gap-1">
+                                  <span className="text-zinc-400">↳</span>
+                                  <span className="font-semibold">{opt.name}</span>
+                                </span>
+                                <span className="text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md shrink-0">
+                                  ₹{opt.rate}/{opt.unit || item.unit}
+                                </span>
+                              </div>
+                              {optRemark && (
+                                <div className="text-[10px] text-indigo-700 italic bg-indigo-50/60 px-1.5 py-0.5 rounded border border-indigo-100 ml-3">
+                                  📝 {optRemark}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {itemRemark && (
+                          <div className="text-[10px] text-amber-700 italic bg-amber-50/60 px-1.5 py-0.5 rounded border border-amber-100">
+                            📝 {itemRemark}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-zinc-100 flex gap-3">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsConfirmOpen(false)}
+              className="flex-1 border-zinc-200 text-zinc-700 h-10 font-bold text-xs rounded-xl"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={executeCalculate}
+              className="flex-1 bg-zinc-900 hover:bg-zinc-800 text-white h-10 font-bold text-xs rounded-xl shadow-md"
+            >
+              Confirm & Calculate
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

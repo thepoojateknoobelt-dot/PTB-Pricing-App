@@ -76,16 +76,25 @@ export const findGlobalBestPlacement = (rolls: Roll[], order: Order): Optimizati
     return uniqueRollCandidates;
   };
 
-  // 1. First search in remnants (isReuse === true or ID starts with REUSE-)
-  const remnants = compatibleRolls.filter(r => r.isReuse === true || (r.id && r.id.startsWith('REUSE-')));
-  const remnantCandidates = getCandidatesForRolls(remnants);
-  if (remnantCandidates.length > 0) {
-    return remnantCandidates.slice(0, 10);
+  // 1. First search in Group A: Existing open inventory (remnants or rolls with existing cuts)
+  const openRolls = compatibleRolls.filter(r => 
+    r.isReuse === true || 
+    (r.id && (r.id.startsWith('REUSE-') || r.id.startsWith('INV-') || r.id.startsWith('SCRAP-'))) ||
+    (r.cuts && r.cuts.length > 0)
+  );
+  const openCandidates = getCandidatesForRolls(openRolls);
+  if (openCandidates.length > 0) {
+    return openCandidates.slice(0, 10);
   }
 
-  // 2. If no remnants fit, search all compatible rolls
-  const allCandidates = getCandidatesForRolls(compatibleRolls);
-  return allCandidates.slice(0, 10);
+  // 2. If no open rolls/remnants fit, search in Group B: Fresh uncut master rolls
+  const freshRolls = compatibleRolls.filter(r => 
+    !(r.isReuse === true) && 
+    !(r.id && (r.id.startsWith('REUSE-') || r.id.startsWith('INV-') || r.id.startsWith('SCRAP-'))) &&
+    (!r.cuts || r.cuts.length === 0)
+  );
+  const freshCandidates = getCandidatesForRolls(freshRolls);
+  return freshCandidates.slice(0, 10);
 };
 
 const calculatePrecisionScore = (roll: Roll, order: Order, placement: { x: number; y: number }) => {
@@ -94,6 +103,29 @@ const calculatePrecisionScore = (roll: Roll, order: Order, placement: { x: numbe
 
   const { x, y } = placement;
   const { requiredWidth, requiredLength } = order;
+
+  // Remnant Size Match Check (Hinglish: "phelee inventory m check karne ke is size ka koi hai ki nhi")
+  const isRemnant = roll.isReuse === true || (roll.id && (roll.id.startsWith('REUSE-') || roll.id.startsWith('INV-') || roll.id.startsWith('SCRAP-')));
+  if (isRemnant) {
+    const widthDiff = roll.fullWidth - requiredWidth;
+    const lengthDiff = roll.fullLength - requiredLength;
+
+    // Perfect Match: within 2cm in both dimensions
+    if (Math.abs(widthDiff) < 0.02 && Math.abs(lengthDiff) < 0.02) {
+      score += 20000; // Put at the absolute top
+      reasons.push("PERFECT REMNANT MATCH (Zero Waste)");
+    }
+    // Close Match: within 10% extra width and length
+    else if (widthDiff >= 0 && widthDiff < 0.1 * requiredWidth && lengthDiff >= 0 && lengthDiff < 0.1 * requiredLength) {
+      score += 10000;
+      reasons.push("EXACT SIZE REMNANT MATCH");
+    }
+    // Close length match with exact width
+    else if (Math.abs(widthDiff) < 0.02 && lengthDiff >= 0 && lengthDiff < 0.5) {
+      score += 8000;
+      reasons.push("NEAR-PERFECT REMNANT MATCH");
+    }
+  }
 
   // 1. Position Penalty (Heavy preference for the start of the roll)
   // Every meter further into the roll reduces the score

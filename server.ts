@@ -117,12 +117,13 @@ async function initializeDatabase() {
       console.warn('Failed to add company column to quotations table:', alterErr);
     }
 
-    // Ensure belt_style and selected_bom_options columns exist on quotations table
+    // Ensure belt_style, selected_bom_options and items columns exist on quotations table
     try {
       await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS belt_style VARCHAR(255)`);
       await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS selected_bom_options JSONB DEFAULT '{}'::jsonb`);
+      await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS items JSONB DEFAULT '[]'::jsonb`);
     } catch (alterErr) {
-      console.warn('Failed to add belt_style and selected_bom_options columns to quotations table:', alterErr);
+      console.warn('Failed to add columns to quotations table:', alterErr);
     }
 
     // Create Companies table
@@ -186,6 +187,25 @@ async function initializeDatabase() {
       )
     `);
 
+     // Create Material Requests table
+     await pool.query(`
+       CREATE TABLE IF NOT EXISTS material_requests (
+         id VARCHAR(255) PRIMARY KEY,
+         material_id VARCHAR(255),
+         material_name VARCHAR(255) NOT NULL,
+         requested_quantity NUMERIC NOT NULL,
+         unit VARCHAR(50),
+         requested_by VARCHAR(255) NOT NULL,
+         notes TEXT,
+         status VARCHAR(50) DEFAULT 'pending' NOT NULL,
+         approved_quantity NUMERIC,
+         approved_by VARCHAR(255),
+         approval_notes TEXT,
+         requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+         approved_at TIMESTAMP WITH TIME ZONE
+       )
+     `);
+
     // Create Audit Logs table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS audit_logs (
@@ -233,9 +253,49 @@ async function initializeDatabase() {
       await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS is_reuse BOOLEAN DEFAULT FALSE`);
       await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS parent_roll_id VARCHAR(255)`);
       await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active'`);
+      await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS reorder_level NUMERIC DEFAULT 0 NOT NULL`);
       await pool.query(`UPDATE rolls SET is_reuse = TRUE WHERE id LIKE 'REUSE-%' AND is_reuse = FALSE`);
     } catch (alterErr) {
       console.warn('Failed to add columns to rolls table:', alterErr);
+    }
+
+    // Schema alterations for material type reorder levels
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS material_type_reorders (
+          material_type VARCHAR(255) PRIMARY KEY,
+          reorder_level NUMERIC DEFAULT 0 NOT NULL
+        )
+      `);
+    } catch (alterErr) {
+      console.warn('Failed to create material_type_reorders table:', alterErr);
+    }
+
+    // Create Custom Material Types table
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS custom_material_types (
+          name VARCHAR(255) PRIMARY KEY
+        )
+      `);
+
+      // Prepopulate default material types if table is empty
+      const typeCheck = await pool.query('SELECT COUNT(*) FROM custom_material_types');
+      if (parseInt(typeCheck.rows[0].count, 10) === 0) {
+        const defaultTypes = [
+          'PVC - Green Rough Top',
+          'PVC - White Food Grade',
+          'Rubber - Heavy Duty Black',
+          'PU - Blue Heat Resistant',
+          'Fabric Reinforcement Grade'
+        ];
+        for (const t of defaultTypes) {
+          await pool.query('INSERT INTO custom_material_types (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [t]);
+        }
+        console.log('Seeded default material types into custom_material_types.');
+      }
+    } catch (typeErr) {
+      console.warn('Failed to initialize custom_material_types table:', typeErr);
     }
 
     console.log('Database schema checked/created successfully.');
@@ -350,84 +410,330 @@ const evaluateFormulaBackend = (formula: string, L: number, W: number) => {
   }
 };
 
+async function deductStockForSingleItem(
+  quote: any,
+  itemData: {
+    beltType: string;
+    beltStyle: string;
+    dimensions: any;
+    selectedBOMOptions: any;
+  },
+  config: any
+) {
+  const { beltType, beltStyle, dimensions, selectedBOMOptions } = itemData;
+  if (!dimensions || !beltType || !beltStyle) {
+    return;
+  }
+
+  const length = parseFloat(dimensions.length);
+  const width = parseFloat(dimensions.width);
+  const lengthUnit = dimensions.lengthUnit || dimensions.unit || 'mm';
+  const widthUnit = dimensions.widthUnit || dimensions.unit || 'mm';
+
+  const lMtr = toMetersBackend(length, lengthUnit);
+  const wMtr = toMetersBackend(width, widthUnit);
+
+  if (!config || !Array.isArray(config.beltTypes)) return;
+
+  const category = config.beltTypes.find((t: any) => t.name === beltType);
+  if (!category || !Array.isArray(category.styles)) return;
+  const style = category.styles.find((s: any) => s.name === beltStyle);
+  if (!style || !Array.isArray(style.bom)) return;
+
+  const included = selectedBOMOptions?._included;
+
+  for (const item of style.bom) {
+    if (included && included[item.id] === false) {
+      continue;
+    }
+    let linkedStockId = item.linkedStockId;
+    let selectedOptionName = '';
+    let activeFormula = item.formula;
+    
+    const optIdx = selectedBOMOptions[item.id];
+    if (optIdx !== undefined && Array.isArray(item.options) && item.options[optIdx]) {
+      const opt = item.options[optIdx];
+      if (opt.linkedStockId) {
+        linkedStockId = opt.linkedStockId;
+      }
+      selectedOptionName = opt.name || '';
+      if (opt.formula) {
+        activeFormula = opt.formula;
+      }
+    }
+
+    if (!linkedStockId) continue;
+
+    let consumption = evaluateFormulaBackend(activeFormula || '', lMtr, wMtr);
+    const u = (item.unit || '').toLowerCase();
+    if (u === 'ft' || u === 'feet') consumption = consumption / 0.3048;
+    else if (u === 'in' || u === 'inch' || u === 'inches') consumption = consumption / 0.0254;
+    else if (u === 'mm' || u === 'millimeters') consumption = consumption * 1000;
+    else if (u.includes('sq')) {
+      if (u.includes('ft') || u.includes('feet')) consumption = consumption / (0.3048 * 0.3048);
+      else if (u.includes('in') || u.includes('inch') || u.includes('inches')) consumption = consumption / (0.0254 * 0.0254);
+      else if (u.includes('mm') || u.includes('millimeters')) consumption = consumption * (1000 * 1000);
+    }
+
+    const stockRes = await pool.query('SELECT * FROM material_stocks WHERE id = $1', [linkedStockId]);
+    if (stockRes.rowCount === 0) continue;
+    const stock = stockRes.rows[0];
+
+    const deductQty = parseFloat(consumption.toFixed(4));
+    const newQty = Math.max(0, parseFloat(stock.quantity) - deductQty);
+    await pool.query('UPDATE material_stocks SET quantity = $1 WHERE id = $2', [newQty, linkedStockId]);
+
+    const issueId = 'issue-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+    const issuedTo = `Order #${quote.id} (${quote.client_name})`;
+    const note = `Auto-deducted on execution. Style: ${beltStyle}, BOM Component: ${item.name}${selectedOptionName ? ` (${selectedOptionName})` : ''}`;
+    
+    await pool.query(
+      `INSERT INTO material_issues (id, material_id, material_name, quantity, unit, issued_to, notes, issued_at) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
+      [issueId, linkedStockId, stock.name, deductQty, stock.unit, issuedTo, note]
+    );
+  }
+}
+
+// ─── Smart Multi-Item Cutting Optimizer ────────────────────────────────────
+// Greedy Best-Fit-Decreasing bin packing across belt rolls.
+// Priority: use existing inventory rolls first, then fresh rolls.
+// Goal: minimise total scrap (remaining_sqm loss).
+
+interface CutAllocation {
+  itemIndex: number;
+  itemLabel: string;
+  beltType: string;
+  widthM: number;  // meters
+  lengthM: number; // meters
+  areaSqm: number;
+  rollId: string;
+  x: number;
+  y: number;
+  source: 'inventory' | 'fresh_roll';
+  scrapAfter: number; // remaining_sqm on the roll after this cut
+}
+
+interface SmartCutPlan {
+  allocations: CutAllocation[];
+  rollsUsed: string[];
+  totalScrapSqm: number;
+  warnings: string[];
+}
+
+async function smartCutForQuotation(quotationId: string, clientName: string): Promise<SmartCutPlan> {
+  // 1. Load quotation items
+  const quoteRes = await pool.query('SELECT * FROM quotations WHERE id = $1', [quotationId]);
+  if (quoteRes.rowCount === 0) throw new Error('Quotation not found');
+  const quote = quoteRes.rows[0];
+
+  const rawItems: any[] = quote.items
+    ? (typeof quote.items === 'string' ? JSON.parse(quote.items) : quote.items)
+    : [];
+
+  const warnings: string[] = [];
+  const allocations: CutAllocation[] = [];
+
+  if (rawItems.length === 0) {
+    // Single-item fallback — read top-level columns
+    const dims = typeof quote.dimensions === 'string' ? JSON.parse(quote.dimensions) : (quote.dimensions || {});
+    rawItems.push({
+      beltType: quote.belt_type,
+      beltStyle: quote.belt_style,
+      dimensions: dims
+    });
+  }
+
+  // 2. Convert all items to metres and compute area
+  const items = rawItems.map((item: any, idx: number) => {
+    const dims = item.dimensions || {};
+    const lM = toMetersBackend(parseFloat(dims.length) || 0, dims.lengthUnit || dims.unit || 'mm');
+    const wM = toMetersBackend(parseFloat(dims.width)  || 0, dims.widthUnit  || dims.unit || 'mm');
+    return {
+      index: idx,
+      label: `Item ${idx + 1} (${item.beltType || 'Unknown'} / ${item.beltStyle || ''})`,
+      beltType: (item.beltType || '').trim(),
+      lengthM: lM,
+      widthM: wM,
+      areaSqm: lM * wM
+    };
+  });
+
+  // 3. Sort largest area first (Best-Fit Decreasing)
+  items.sort((a, b) => b.areaSqm - a.areaSqm);
+
+  // 4. Load all active rolls from DB
+  const rollsRes = await pool.query(
+    `SELECT * FROM rolls WHERE is_archived = false AND status != 'archived' ORDER BY remaining_sqm ASC`
+  );
+  // Working copy of roll state (so we can simulate without committing yet)
+  const rollState: Map<string, { 
+    remainingSqm: number; 
+    fullWidth: number; 
+    fullLength: number; 
+    materialType: string;
+    currentY: number; // next available Y position within the roll (metres)
+  }> = new Map();
+
+  for (const r of rollsRes.rows) {
+    rollState.set(r.id, {
+      remainingSqm: parseFloat(r.remaining_sqm),
+      fullWidth: parseFloat(r.full_width),
+      fullLength: parseFloat(r.full_length),
+      materialType: r.material_type,
+      currentY: 0
+    });
+  }
+
+  // Helper — does a roll's materialType match the item's beltType?
+  // We do a case-insensitive substring match to handle slight naming differences.
+  const rollMatchesItem = (materialType: string, beltType: string): boolean => {
+    if (!beltType) return true; // no filter
+    const mt = materialType.toLowerCase();
+    const bt = beltType.toLowerCase();
+    return mt.includes(bt) || bt.includes(mt);
+  };
+
+  // 5. Best-Fit heuristic: for each item find the roll where it fits and leaves least remaining space
+  for (const item of items) {
+    let bestRollId: string | null = null;
+    let bestRemaining = Infinity;
+
+    for (const [rid, rState] of rollState) {
+      if (!rollMatchesItem(rState.materialType, item.beltType)) continue;
+      // Check if item physically fits in roll dimensions
+      if (item.widthM > rState.fullWidth) continue;
+      const remainingAfter = rState.remainingSqm - item.areaSqm;
+      if (remainingAfter < 0) continue; // not enough area
+      // Prefer the roll that leaves the LEAST remaining (Best Fit)
+      if (remainingAfter < bestRemaining) {
+        bestRemaining = remainingAfter;
+        bestRollId = rid;
+      }
+    }
+
+    if (bestRollId) {
+      // Use existing roll
+      const rState = rollState.get(bestRollId)!;
+      const x = 0;
+      const y = rState.currentY;
+      const newCurrentY = y + item.lengthM;
+      const newRemaining = rState.remainingSqm - item.areaSqm;
+
+      rollState.set(bestRollId, {
+        ...rState,
+        remainingSqm: newRemaining,
+        currentY: newCurrentY
+      });
+
+      allocations.push({
+        itemIndex: item.index,
+        itemLabel: item.label,
+        beltType: item.beltType,
+        widthM: item.widthM,
+        lengthM: item.lengthM,
+        areaSqm: item.areaSqm,
+        rollId: bestRollId,
+        x,
+        y,
+        source: 'inventory',
+        scrapAfter: Math.max(0, newRemaining)
+      });
+    } else {
+      // No matching roll had enough space — mark as needing fresh roll
+      warnings.push(`⚠️ ${item.label}: No existing roll found. Will cut from a fresh roll (add one manually in Nesting Portal).`);
+      allocations.push({
+        itemIndex: item.index,
+        itemLabel: item.label,
+        beltType: item.beltType,
+        widthM: item.widthM,
+        lengthM: item.lengthM,
+        areaSqm: item.areaSqm,
+        rollId: 'FRESH_ROLL_NEEDED',
+        x: 0,
+        y: 0,
+        source: 'fresh_roll',
+        scrapAfter: 0
+      });
+    }
+  }
+
+  // 6. Persist cuts in DB for rolls that were matched (non-fresh)
+  const rollsUsed: Set<string> = new Set();
+  const COLORS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#ef4444','#8b5cf6','#14b8a6'];
+
+  for (const alloc of allocations) {
+    if (alloc.rollId === 'FRESH_ROLL_NEEDED') continue;
+
+    const cutId = `cut-smartq-${quotationId}-${alloc.itemIndex}-${Date.now()}`;
+    const color = COLORS[alloc.itemIndex % COLORS.length];
+
+    await pool.query(
+      `INSERT INTO cuts (id, roll_id, order_id, customer_name, width, length, x, y, status, color, is_inventory_cut)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        cutId, alloc.rollId, quotationId, clientName,
+        alloc.widthM, alloc.lengthM,
+        alloc.x, alloc.y,
+        'planned', color, false
+      ]
+    );
+
+    // Update roll remaining_sqm
+    await pool.query(
+      'UPDATE rolls SET remaining_sqm = $1 WHERE id = $2',
+      [alloc.scrapAfter, alloc.rollId]
+    );
+
+    rollsUsed.add(alloc.rollId);
+  }
+
+  const totalScrapSqm = Array.from(rollState.values())
+    .filter(r => rollsUsed.has([...rollState.entries()].find(([,v]) => v === r)?.[0] ?? ''))
+    .reduce((sum, r) => sum + r.remainingSqm, 0);
+
+  return {
+    allocations,
+    rollsUsed: Array.from(rollsUsed),
+    totalScrapSqm: Math.max(0, parseFloat(totalScrapSqm.toFixed(4))),
+    warnings
+  };
+}
+
 async function deductStockForQuotation(quotationId: string, updateData: any) {
   try {
     const quoteRes = await pool.query('SELECT * FROM quotations WHERE id = $1', [quotationId]);
     if (quoteRes.rowCount === 0) return;
     const quote = quoteRes.rows[0];
 
-    const beltType = updateData.beltType || quote.belt_type;
-    const beltStyle = updateData.beltStyle || quote.belt_style;
-    const dimensions = typeof quote.dimensions === 'string' ? JSON.parse(quote.dimensions) : quote.dimensions;
-    const selectedBOMOptions = updateData.selectedBOMOptions || quote.selected_bom_options || {};
-
-    if (!dimensions || !beltType || !beltStyle) {
-      console.warn(`Cannot deduct stock for quotation ${quotationId}: missing dimensions, belt_type, or belt_style`);
-      return;
-    }
-
-    const length = parseFloat(dimensions.length);
-    const width = parseFloat(dimensions.width);
-    const lengthUnit = dimensions.lengthUnit || dimensions.unit || 'mm';
-    const widthUnit = dimensions.widthUnit || dimensions.unit || 'mm';
-
-    const lMtr = toMetersBackend(length, lengthUnit);
-    const wMtr = toMetersBackend(width, widthUnit);
-
     const configRes = await pool.query('SELECT data FROM system_config WHERE id = $1', ['default']);
     if (configRes.rowCount === 0) return;
     const config = configRes.rows[0].data;
 
-    if (!config || !Array.isArray(config.beltTypes)) return;
-
-    const category = config.beltTypes.find((t: any) => t.name === beltType);
-    if (!category || !Array.isArray(category.styles)) return;
-    const style = category.styles.find((s: any) => s.name === beltStyle);
-    if (!style || !Array.isArray(style.bom)) return;
-
-    for (const item of style.bom) {
-      let linkedStockId = item.linkedStockId;
-      let selectedOptionName = '';
-      
-      const optIdx = selectedBOMOptions[item.id];
-      if (optIdx !== undefined && Array.isArray(item.options) && item.options[optIdx]) {
-        const opt = item.options[optIdx];
-        if (opt.linkedStockId) {
-          linkedStockId = opt.linkedStockId;
-        }
-        selectedOptionName = opt.name || '';
+    const items = updateData.items || (typeof quote.items === 'string' ? JSON.parse(quote.items) : quote.items) || [];
+    
+    if (items.length > 0) {
+      for (const item of items) {
+        await deductStockForSingleItem(quote, {
+          beltType: item.beltType,
+          beltStyle: item.beltStyle,
+          dimensions: item.dimensions,
+          selectedBOMOptions: item.selectedBOMOptions
+        }, config);
       }
-
-      if (!linkedStockId) continue;
-
-      let consumption = evaluateFormulaBackend(item.formula || '', lMtr, wMtr);
-      const u = (item.unit || '').toLowerCase();
-      if (u === 'ft' || u === 'feet') consumption = consumption / 0.3048;
-      else if (u === 'in' || u === 'inch' || u === 'inches') consumption = consumption / 0.0254;
-      else if (u === 'mm' || u === 'millimeters') consumption = consumption * 1000;
-      else if (u.includes('sq')) {
-        if (u.includes('ft') || u.includes('feet')) consumption = consumption / (0.3048 * 0.3048);
-        else if (u.includes('in') || u.includes('inch') || u.includes('inches')) consumption = consumption / (0.0254 * 0.0254);
-        else if (u.includes('mm') || u.includes('millimeters')) consumption = consumption * (1000 * 1000);
-      }
-
-      const stockRes = await pool.query('SELECT * FROM material_stocks WHERE id = $1', [linkedStockId]);
-      if (stockRes.rowCount === 0) continue;
-      const stock = stockRes.rows[0];
-
-      const deductQty = parseFloat(consumption.toFixed(4));
-      const newQty = Math.max(0, parseFloat(stock.quantity) - deductQty);
-      await pool.query('UPDATE material_stocks SET quantity = $1 WHERE id = $2', [newQty, linkedStockId]);
-
-      const issueId = 'issue-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
-      const issuedTo = `Order #${quote.id} (${quote.client_name})`;
-      const note = `Auto-deducted on execution. Style: ${beltStyle}, BOM Component: ${item.name}${selectedOptionName ? ` (${selectedOptionName})` : ''}`;
+    } else {
+      const beltType = updateData.beltType || quote.belt_type;
+      const beltStyle = updateData.beltStyle || quote.belt_style;
+      const dimensions = typeof quote.dimensions === 'string' ? JSON.parse(quote.dimensions) : quote.dimensions;
+      const selectedBOMOptions = updateData.selectedBOMOptions || quote.selected_bom_options || {};
       
-      await pool.query(
-        `INSERT INTO material_issues (id, material_id, material_name, quantity, unit, issued_to, notes, issued_at) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
-        [issueId, linkedStockId, stock.name, deductQty, stock.unit, issuedTo, note]
-      );
+      await deductStockForSingleItem(quote, {
+        beltType,
+        beltStyle,
+        dimensions,
+        selectedBOMOptions
+      }, config);
     }
   } catch (err) {
     console.error('Error in deductStockForQuotation:', err);
@@ -565,7 +871,7 @@ app.post('/api/auth/login', async (req, res) => {
       role: 'admin', 
       name: 'System Admin', 
       permission: 'write',
-      allowedPages: ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production']
+      allowedPages: ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production', 'nesting_dashboard', 'nesting_cutting', 'nesting_rolls_map', 'nesting_details', 'nesting_stock', 'nesting_production', 'nesting_scrub']
     }, JWT_SECRET);
     return res.cookie('token', token, { httpOnly: true }).json({ 
       user: { 
@@ -574,7 +880,7 @@ app.post('/api/auth/login', async (req, res) => {
         role: 'admin', 
         name: 'System Admin', 
         permission: 'write',
-        allowedPages: ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production']
+        allowedPages: ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production', 'nesting_dashboard', 'nesting_cutting', 'nesting_rolls_map', 'nesting_details', 'nesting_stock', 'nesting_production', 'nesting_scrub']
       } 
     });
   }
@@ -610,7 +916,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     console.log('Login successful for:', username);
     const userPages = user.role === 'admin'
-      ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production']
+      ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production', 'nesting_dashboard', 'nesting_cutting', 'nesting_rolls_map', 'nesting_details', 'nesting_stock', 'nesting_production', 'nesting_scrub']
       : (user.allowed_pages || 'dashboard,calculator,quotations,clients').split(',');
     
     const token = jwt.sign({ 
@@ -884,6 +1190,140 @@ app.delete('/api/material-issues/:id', async (req: any, res) => {
   }
 });
 
+// ─── Material Requests / Approval Routes ───────────────────────────────────
+
+app.post('/api/material-requests', async (req: any, res) => {
+  try {
+    const { materialId, materialName, requestedQuantity, unit, requestedBy, notes } = req.body;
+    if (!materialName || !requestedQuantity || !requestedBy) {
+      return res.status(400).json({ error: 'Material name, quantity, and requester name are required' });
+    }
+    const id = 'req-' + Date.now();
+    await pool.query(
+      `INSERT INTO material_requests (id, material_id, material_name, requested_quantity, unit, requested_by, notes) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, materialId || null, materialName.trim(), parseFloat(requestedQuantity), (unit || 'pcs').trim(), requestedBy.trim(), notes || '']
+    );
+    res.json({ id, success: true });
+  } catch (err) {
+    console.error('Failed to create material request', err);
+    res.status(500).json({ error: 'Failed to create request' });
+  }
+});
+
+app.get('/api/material-requests', async (req, res) => {
+  try {
+    const { status } = req.query;
+    let queryStr = 'SELECT * FROM material_requests';
+    const params: any[] = [];
+    if (status) {
+      queryStr += ' WHERE status = $1';
+      params.push(status);
+    }
+    queryStr += ' ORDER BY requested_at DESC';
+    const result = await pool.query(queryStr, params);
+    res.json(result.rows.map((row: any) => ({
+      id: row.id,
+      materialId: row.material_id,
+      materialName: row.material_name,
+      requestedQuantity: parseFloat(row.requested_quantity),
+      unit: row.unit,
+      requestedBy: row.requested_by,
+      notes: row.notes || '',
+      status: row.status,
+      approvedQuantity: row.approved_quantity ? parseFloat(row.approved_quantity) : null,
+      approvedBy: row.approved_by || '',
+      approvalNotes: row.approval_notes || '',
+      requestedAt: row.requested_at,
+      approvedAt: row.approved_at
+    })));
+  } catch (err) {
+    console.error('Failed to fetch material requests', err);
+    res.status(500).json({ error: 'Failed to fetch requests' });
+  }
+});
+
+app.post('/api/material-requests/:id/approve', async (req: any, res) => {
+  const { id } = req.params;
+  const { approvedQuantity, approvalNotes, approvedBy } = req.body;
+  if (approvedQuantity === undefined || isNaN(approvedQuantity) || parseFloat(approvedQuantity) <= 0) {
+    return res.status(400).json({ error: 'Valid approved quantity is required' });
+  }
+  try {
+    const reqRes = await pool.query('SELECT * FROM material_requests WHERE id = $1', [id]);
+    if (reqRes.rowCount === 0) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+    const request = reqRes.rows[0];
+    if (request.status !== 'pending') {
+      return res.status(400).json({ error: 'Request is already processed' });
+    }
+
+    const appQty = parseFloat(approvedQuantity);
+    const appNotes = approvalNotes || '';
+    const appBy = approvedBy || 'Admin';
+
+    await pool.query(
+      `UPDATE material_requests 
+       SET status = 'approved', approved_quantity = $1, approved_by = $2, approval_notes = $3, approved_at = CURRENT_TIMESTAMP
+       WHERE id = $4`,
+      [appQty, appBy, appNotes, id]
+    );
+
+    const materialId = request.material_id;
+    if (materialId) {
+      const stockRes = await pool.query('SELECT quantity FROM material_stocks WHERE id = $1', [materialId]);
+      if (stockRes.rowCount! > 0) {
+        const currentStock = parseFloat(stockRes.rows[0].quantity);
+        const newQty = Math.max(0, currentStock - appQty);
+        await pool.query('UPDATE material_stocks SET quantity = $1 WHERE id = $2', [newQty, materialId]);
+      }
+    }
+
+    const issueId = 'issue-' + Date.now();
+    const issuedTo = `Approved Req for ${request.requested_by}`;
+    const issueNote = `Approved Qty: ${appQty} (Requested: ${request.requested_quantity}). Note: ${appNotes}`;
+
+    await pool.query(
+      `INSERT INTO material_issues (id, material_id, material_name, quantity, unit, issued_to, notes, issued_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
+      [issueId, materialId || '', request.material_name, appQty, request.unit || 'pcs', issuedTo, issueNote]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to approve request', err);
+    res.status(500).json({ error: 'Failed to approve request' });
+  }
+});
+
+app.post('/api/material-requests/:id/reject', async (req: any, res) => {
+  const { id } = req.params;
+  const { approvalNotes, approvedBy } = req.body;
+  try {
+    const reqRes = await pool.query('SELECT * FROM material_requests WHERE id = $1', [id]);
+    if (reqRes.rowCount === 0) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+    const request = reqRes.rows[0];
+    if (request.status !== 'pending') {
+      return res.status(400).json({ error: 'Request is already processed' });
+    }
+
+    await pool.query(
+      `UPDATE material_requests 
+       SET status = 'rejected', approved_by = $1, approval_notes = $2, approved_at = CURRENT_TIMESTAMP
+       WHERE id = $3`,
+      [approvedBy || 'Admin', approvalNotes || '', id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to reject request', err);
+    res.status(500).json({ error: 'Failed to reject request' });
+  }
+});
+
 // Proxy endpoint to bypass CORS for AWS Lambda status verification
 app.get('/api/aws-ping', async (req: any, res) => {
   const target = req.query.url;
@@ -979,9 +1419,10 @@ app.get('/api/rolls', async (req, res) => {
       totalSqm: parseFloat(r.total_sqm),
       remainingSqm: parseFloat(r.remaining_sqm),
       isArchived: r.is_archived,
-      isReuse: r.is_reuse || (r.id && r.id.startsWith('REUSE-')) || false,
+      isReuse: r.is_reuse || (r.id && (r.id.startsWith('REUSE-') || r.id.startsWith('INV-') || r.id.startsWith('SCRAP-'))) || false,
       parentRollId: r.parent_roll_id || null,
       status: r.status || 'active',
+      reorderLevel: parseFloat(r.reorder_level || 0),
       cuts: cutsRes.rows
         .filter(c => c.roll_id === r.id)
         .map(c => ({
@@ -1041,6 +1482,123 @@ app.put('/api/rolls/:id', async (req, res) => {
   }
 });
 
+app.patch('/api/rolls/:id/reorder', async (req, res) => {
+  const { reorderLevel } = req.body;
+  try {
+    await pool.query(
+      'UPDATE rolls SET reorder_level = $1 WHERE id = $2',
+      [parseFloat(reorderLevel) || 0, req.params.id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to update roll reorder level', err);
+    res.status(500).json({ error: 'Failed to update reorder level' });
+  }
+});
+
+app.get('/api/material-type-reorders', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM material_type_reorders');
+    res.json(result.rows.map(r => ({ materialType: r.material_type, reorderLevel: parseFloat(r.reorder_level || 0) })));
+  } catch (err) {
+    console.error('Failed to fetch material type reorders', err);
+    res.status(500).json({ error: 'Failed to fetch material type reorders' });
+  }
+});
+
+app.patch('/api/material-type-reorders', async (req, res) => {
+  const { materialType, reorderLevel } = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO material_type_reorders (material_type, reorder_level)
+       VALUES ($1, $2)
+       ON CONFLICT (material_type)
+       DO UPDATE SET reorder_level = EXCLUDED.reorder_level`,
+      [materialType, parseFloat(reorderLevel) || 0]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to update material type reorder level', err);
+    res.status(500).json({ error: 'Failed to update material type reorder level' });
+  }
+});
+
+// GET custom material types
+app.get('/api/material-types', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT name FROM custom_material_types ORDER BY name ASC');
+    res.json(result.rows.map(r => r.name));
+  } catch (err) {
+    console.error('Failed to fetch custom material types', err);
+    res.status(500).json({ error: 'Failed to fetch custom material types' });
+  }
+});
+
+// POST custom material type
+app.post('/api/material-types', async (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Material type name is required' });
+  }
+  try {
+    await pool.query(
+      'INSERT INTO custom_material_types (name) VALUES ($1) ON CONFLICT (name) DO NOTHING',
+      [name.trim()]
+    );
+    res.json({ success: true, name: name.trim() });
+  } catch (err) {
+    console.error('Failed to save custom material type', err);
+    res.status(500).json({ error: 'Failed to save custom material type' });
+  }
+});
+
+// PUT (update) custom material type
+app.put('/api/material-types/:oldName', async (req, res) => {
+  const { oldName } = req.params;
+  const { newName } = req.body;
+  if (!newName || !newName.trim()) {
+    return res.status(400).json({ error: 'New name is required' });
+  }
+  try {
+    const result = await pool.query(
+      'UPDATE custom_material_types SET name = $1 WHERE name = $2 RETURNING *',
+      [newName.trim(), oldName]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Material type not found' });
+    }
+    
+    // Also update existing rolls using this material type
+    await pool.query(
+      'UPDATE rolls SET material_type = $1 WHERE material_type = $2',
+      [newName.trim(), oldName]
+    );
+
+    res.json({ success: true, name: newName.trim() });
+  } catch (err) {
+    console.error('Failed to update custom material type', err);
+    res.status(500).json({ error: 'Failed to update custom material type' });
+  }
+});
+
+// DELETE custom material type
+app.delete('/api/material-types/:name', async (req, res) => {
+  const { name } = req.params;
+  try {
+    const result = await pool.query(
+      'DELETE FROM custom_material_types WHERE name = $1 RETURNING *',
+      [name]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Material type not found' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to delete custom material type', err);
+    res.status(500).json({ error: 'Failed to delete custom material type' });
+  }
+});
+
 app.delete('/api/rolls/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM rolls WHERE id = $1', [req.params.id]);
@@ -1096,6 +1654,24 @@ app.delete('/api/rolls/:rollId/cuts/:cutId', async (req, res) => {
 });
 
 
+
+// ─── Smart Cut API Endpoint ──────────────────────────────────────────────────
+app.post('/api/quotations/:id/smart-cut', authenticate, async (req: any, res) => {
+  const quotationId = req.params.id;
+  try {
+    const quoteRes = await pool.query('SELECT client_name FROM quotations WHERE id = $1', [quotationId]);
+    if (quoteRes.rowCount === 0) {
+      return res.status(404).json({ error: 'Quotation not found' });
+    }
+    const clientName = quoteRes.rows[0].client_name || 'Unknown';
+    const plan = await smartCutForQuotation(quotationId, clientName);
+    res.json(plan);
+  } catch (err: any) {
+    console.error('Smart cut failed:', err);
+    res.status(500).json({ error: err.message || 'Smart cut failed' });
+  }
+});
+
 // Quotations Routes
 app.get('/api/quotations', async (req, res) => {
   try {
@@ -1119,7 +1695,8 @@ app.get('/api/quotations', async (req, res) => {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       auditLogs: typeof row.audit_logs === 'string' ? JSON.parse(row.audit_logs) : row.audit_logs,
-      company: row.company
+      company: row.company,
+      items: typeof row.items === 'string' ? JSON.parse(row.items) : (row.items || [])
     }));
     res.json(quotations);
   } catch (err) {
@@ -1131,25 +1708,26 @@ app.get('/api/quotations', async (req, res) => {
 app.post('/api/quotations', authenticate, async (req, res) => {
   try {
     const id = Date.now().toString();
-    const { clientId, clientName, beltType, beltStyle = '', selectedBOMOptions = {}, dimensions, jointType = '', tapeType = '', totalCost, status, discountRequested, discountReason, rejectionReason, createdBy, auditLogs, company } = req.body;
+    const { clientId, clientName, beltType = '', beltStyle = '', selectedBOMOptions = {}, dimensions = {}, jointType = '', tapeType = '', totalCost, status, discountRequested, discountReason, rejectionReason, createdBy, auditLogs, company, items = [] } = req.body;
     const now = new Date();
     await pool.query(
       `INSERT INTO quotations (
         id, client_id, client_name, belt_type, dimensions, joint_type, tape_type, 
         total_cost, status, discount_requested, discount_reason, rejection_reason, 
-        created_by, created_at, updated_at, audit_logs, company, belt_style, selected_bom_options
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+        created_by, created_at, updated_at, audit_logs, company, belt_style, selected_bom_options, items
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
       [
         id, clientId, clientName, beltType, JSON.stringify(dimensions), jointType || '', tapeType || '',
         totalCost, status, discountRequested || null, discountReason || null, rejectionReason || null,
-        createdBy, now, now, JSON.stringify(auditLogs || []), company || null, beltStyle || '', JSON.stringify(selectedBOMOptions || {})
+        createdBy, now, now, JSON.stringify(auditLogs || []), company || null, beltStyle || '', JSON.stringify(selectedBOMOptions || {}),
+        JSON.stringify(items || [])
       ]
     );
     res.json({
       id, clientId, clientName, beltType, beltStyle: beltStyle || '', selectedBOMOptions: selectedBOMOptions || {}, dimensions, jointType: jointType || '', tapeType: tapeType || '',
       totalCost, status, discountRequested, discountReason, rejectionReason,
       createdBy, createdAt: now.toISOString(), updatedAt: now.toISOString(), auditLogs: auditLogs || [],
-      company
+      company, items: items || []
     });
   } catch (err) {
     console.error('Failed to create quotation', err);
@@ -1181,6 +1759,7 @@ app.put('/api/quotations/:id', authenticate, async (req, res) => {
     const createdBy = req.body.createdBy !== undefined ? req.body.createdBy : existing.created_by;
     const auditLogs = req.body.auditLogs !== undefined ? req.body.auditLogs : existing.audit_logs;
     const company = req.body.company !== undefined ? req.body.company : existing.company;
+    const items = req.body.items !== undefined ? req.body.items : existing.items;
 
     const oldStatus = existing.status;
     const newStatus = req.body.status !== undefined ? req.body.status : existing.status;
@@ -1202,8 +1781,8 @@ app.put('/api/quotations/:id', authenticate, async (req, res) => {
         joint_type = $5, tape_type = $6, total_cost = $7, status = $8, 
         discount_requested = $9, discount_reason = $10, rejection_reason = $11, 
         created_by = $12, updated_at = $13, audit_logs = $14, company = $15,
-        belt_style = $16, selected_bom_options = $17
-      WHERE id = $18 RETURNING *`,
+        belt_style = $16, selected_bom_options = $17, items = $18
+      WHERE id = $19 RETURNING *`,
       [
         clientId, clientName, beltType, typeof dimensions === 'string' ? dimensions : JSON.stringify(dimensions),
         jointType || '', tapeType || '', totalCost, status,
@@ -1213,6 +1792,7 @@ app.put('/api/quotations/:id', authenticate, async (req, res) => {
         company || null,
         beltStyle || '',
         typeof selectedBOMOptions === 'string' ? selectedBOMOptions : JSON.stringify(selectedBOMOptions || {}),
+        typeof items === 'string' ? items : JSON.stringify(items || []),
         req.params.id
       ]
     );
@@ -1238,7 +1818,8 @@ app.put('/api/quotations/:id', authenticate, async (req, res) => {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       auditLogs: typeof row.audit_logs === 'string' ? JSON.parse(row.audit_logs) : row.audit_logs,
-      company: row.company
+      company: row.company,
+      items: typeof row.items === 'string' ? JSON.parse(row.items) : (row.items || [])
     });
   } catch (err) {
     console.error('Failed to update quotation', err);
@@ -1259,7 +1840,7 @@ app.get('/api/users', authenticate, async (req: any, res) => {
       usernameLower: row.username_lower,
       permission: row.permission || 'write',
       allowedPages: row.role === 'admin'
-        ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production']
+        ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production', 'nesting_dashboard', 'nesting_cutting', 'nesting_rolls_map', 'nesting_details', 'nesting_stock', 'nesting_production', 'nesting_scrub']
         : (row.allowed_pages || 'dashboard,calculator,quotations,clients').split(',')
     })));
   } catch (err) {
@@ -1294,7 +1875,7 @@ app.post('/api/users', authenticate, async (req: any, res) => {
       usernameLower: normalizedUsername,
       permission,
       allowedPages: role === 'admin'
-        ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production']
+        ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production', 'nesting_dashboard', 'nesting_cutting', 'nesting_rolls_map', 'nesting_details', 'nesting_stock', 'nesting_production', 'nesting_scrub']
         : allowedPages
     });
   } catch (err) {
@@ -1305,12 +1886,22 @@ app.post('/api/users', authenticate, async (req: any, res) => {
 
 app.put('/api/users/:id', authenticate, async (req: any, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-  const { name, role, permission, allowedPages } = req.body;
+  const { name, role, permission, allowedPages, password } = req.body;
   try {
     const allowedPagesStr = Array.isArray(allowedPages) ? allowedPages.join(',') : 'dashboard,calculator,quotations,clients';
+    
+    let query = 'UPDATE users SET name = $1, role = $2, permission = $3, allowed_pages = $4 WHERE id = $5';
+    let params = [name, role, permission, allowedPagesStr, req.params.id];
+
+    if (password && password.trim() !== '') {
+      const passwordHash = bcrypt.hashSync(password, 10);
+      query = 'UPDATE users SET name = $1, role = $2, permission = $3, allowed_pages = $4, password = $5 WHERE id = $6';
+      params = [name, role, permission, allowedPagesStr, passwordHash, req.params.id];
+    }
+
     const result = await pool.query(
-      'UPDATE users SET name = $1, role = $2, permission = $3, allowed_pages = $4 WHERE id = $5 RETURNING id, username, name, role, permission, allowed_pages',
-      [name, role, permission, allowedPagesStr, req.params.id]
+      query + ' RETURNING id, username, name, role, permission, allowed_pages',
+      params
     );
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'User not found' });
@@ -1323,7 +1914,7 @@ app.put('/api/users/:id', authenticate, async (req: any, res) => {
       role: row.role,
       permission: row.permission,
       allowedPages: row.role === 'admin'
-        ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production']
+        ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production', 'nesting_dashboard', 'nesting_cutting', 'nesting_rolls_map', 'nesting_details', 'nesting_stock', 'nesting_production', 'nesting_scrub']
         : (row.allowed_pages || '').split(',')
     });
   } catch (err) {

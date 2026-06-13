@@ -4,13 +4,14 @@ import {
   ChevronRight, ChevronLeft, TrendingDown, Info,
   RotateCcw, Wand2, BarChart3, Loader2, Warehouse, User,
   ArrowLeft, X, Menu, Search, Printer, Download, Edit2, Check,
-  ClipboardList, Send, Clock, ArrowDownCircle
+  ClipboardList, Send, Clock, ArrowDownCircle, ExternalLink
 } from 'lucide-react';
 import {
   saveRoll, updateRoll, deleteRoll, saveCut, deleteCut, fetchRolls, OperationType
 } from './services/firebase';
 import { toast } from 'sonner';
-import { Roll, Cut, Order, OptimizationCandidate, Unit, MaterialStock, MaterialIssue } from './types';
+import { useAuth } from '../../contexts/AuthContext';
+import { Roll, Cut, Order, OptimizationCandidate, Unit, MaterialStock, MaterialIssue, MaterialRequest } from './types';
 import {
   MATERIAL_TYPES,
   CUT_COLORS
@@ -28,7 +29,49 @@ const CONVERSIONS: Record<Unit, number> = {
 };
 
 const isRollReuse = (roll: Roll) => {
-  return !!(roll.isReuse || (roll.id && roll.id.startsWith('REUSE-')));
+  return !!(roll.isReuse || (roll.id && (roll.id.startsWith('REUSE-') || roll.id.startsWith('INV-') || roll.id.startsWith('SCRAP-'))));
+};
+
+const isInventoryCutName = (name?: string) => {
+  if (!name) return false;
+  const upper = name.toUpperCase().trim();
+  return upper === 'INTERNAL STOCK' || upper === 'REUSE STOCK';
+};
+
+const findInventoryRollForCut = (rolls: Roll[], parentRollId: string, cut: Cut) => {
+  // 1. Try exact ID match: REUSE-parentRollId-cutId, INV-parentRollId-cutId or ending with cutId
+  let matchedRoll = rolls.find(r => 
+    r.id === `REUSE-${parentRollId}-${cut.id}` || 
+    r.id === `INV-${parentRollId}-${cut.id}` || 
+    r.id.endsWith(cut.id)
+  );
+  if (matchedRoll) return matchedRoll;
+
+  // 2. Fallback: Search by parentRollId, dimensions (within small tolerance), and material type
+  const parentRoll = rolls.find(r => r.id === parentRollId);
+  const materialType = parentRoll?.materialType;
+
+  const candidates = rolls.filter(r => 
+    r.parentRollId === parentRollId &&
+    (!materialType || r.materialType === materialType) &&
+    Math.abs(r.fullWidth - cut.width) < 0.01 &&
+    Math.abs(r.fullLength - cut.length) < 0.01
+  );
+
+  if (candidates.length === 1) {
+    return candidates[0];
+  } else if (candidates.length > 1) {
+    // try timestamp portion match (C-<timestamp>-<rand>) with suffix
+    const tsParts = cut.id.split('-');
+    if (tsParts.length >= 2) {
+      const cutTimestampStr = tsParts[1];
+      const lastFour = cutTimestampStr.slice(-4);
+      const subCandidate = candidates.find(r => r.id.endsWith(lastFour));
+      if (subCandidate) return subCandidate;
+    }
+    return candidates[0];
+  }
+  return null;
 };
 
 interface BeltcutProProps {
@@ -36,6 +79,26 @@ interface BeltcutProProps {
 }
 
 export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
+  const { user } = useAuth();
+  
+  const tabPermissionMap = {
+    dashboard: 'nesting_dashboard',
+    cutting: 'nesting_cutting',
+    rolls_map: 'nesting_rolls_map',
+    details: 'nesting_details',
+    stock: 'nesting_stock',
+    production: 'nesting_production',
+    scrub: 'nesting_scrub'
+  };
+
+  const getInitialTab = () => {
+    if (user?.role === 'admin') return 'dashboard';
+    const allowed = ['dashboard', 'cutting', 'rolls_map', 'details', 'stock', 'production', 'scrub'].filter(t => 
+      user?.allowedPages?.includes((tabPermissionMap as any)[t])
+    );
+    return (allowed[0] as any) || 'dashboard';
+  };
+
   const [currentUnit, setCurrentUnit] = useState<Unit>('m');
   const [rolls, setRolls] = useState<Roll[]>([]);
   const [newRoll, setNewRoll] = useState({
@@ -46,7 +109,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cutting' | 'rolls_map' | 'details' | 'stock' | 'scrub' | 'production'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cutting' | 'rolls_map' | 'details' | 'stock' | 'scrub' | 'production'>(getInitialTab);
   const [detailsSubTab, setDetailsSubTab] = useState<'clients' | 'rolls'>('clients');
   const [selectedClientName, setSelectedClientName] = useState<string | null>(null);
   const [selectedRollId, setSelectedRollId] = useState<string | null>(null);
@@ -93,22 +156,51 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   };
   const [editingMaterialStock, setEditingMaterialStock] = useState<MaterialStock | null>(null);
   const [showAddMaterialForm, setShowAddMaterialForm] = useState(false);
-  const [activeInventoryCard, setActiveInventoryCard] = useState<'materials' | 'remnants' | 'fresh' | 'reorder' | null>(null);
+  const [activeInventoryCard, setActiveInventoryCard] = useState<'materials' | 'remnants' | 'fresh' | 'reorder' | 'requests' | null>(null);
   const [editingReorderLevel, setEditingReorderLevel] = useState<Record<string, string>>({}); // stockId -> input value
   const [savingReorderLevel, setSavingReorderLevel] = useState<string | null>(null); // stockId being saved
+  const [editingRollReorderLevel, setEditingRollReorderLevel] = useState<Record<string, string>>({}); // rollId -> input value
+  const [savingRollReorderLevel, setSavingRollReorderLevel] = useState<string | null>(null); // rollId being saved
+  const [materialTypeReorders, setMaterialTypeReorders] = useState<Record<string, number>>({});
+  const [editingMaterialTypeReorder, setEditingMaterialTypeReorder] = useState<Record<string, string>>({});
+  const [savingMaterialTypeReorder, setSavingMaterialTypeReorder] = useState<string | null>(null);
 
   // Search states for individual Inventory Tables
   const [materialSearchQuery, setMaterialSearchQuery] = useState('');
   const [remnantSearchQuery, setRemnantSearchQuery] = useState('');
   const [freshRollSearchQuery, setFreshRollSearchQuery] = useState('');
   const [reorderSearchQuery, setReorderSearchQuery] = useState('');
+  const [rollReorderSearchQuery, setRollReorderSearchQuery] = useState('');
 
   // Production / Material Issues states
   const [materialIssues, setMaterialIssues] = useState<MaterialIssue[]>([]);
-  const [showIssueModal, setShowIssueModal] = useState(false);
-  const [issuingStock, setIssuingStock] = useState<MaterialStock | null>(null);
-  const [issueForm, setIssueForm] = useState({ quantity: '', issuedTo: '', notes: '' });
-  const [isSubmittingIssue, setIsSubmittingIssue] = useState(false);
+
+
+  // Material Requests states
+  const [materialRequests, setMaterialRequests] = useState<MaterialRequest[]>([]);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [requestForm, setRequestForm] = useState({ materialId: '', quantity: '', notes: '' });
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+
+  const [approvingRequest, setApprovingRequest] = useState<MaterialRequest | null>(null);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [approvalForm, setApprovalForm] = useState({ approvedQuantity: '', approvalNotes: '' });
+  const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
+  const [requestsSubTab, setRequestsSubTab] = useState<'pending' | 'history'>('pending');
+  const [reorderSubTab, setReorderSubTab] = useState<'materials' | 'rolls' | 'remnants'>('materials');
+
+  // Custom Material Types states
+  const [materialTypes, setMaterialTypes] = useState<string[]>(MATERIAL_TYPES);
+  const [showAddMaterialModal, setShowAddMaterialModal] = useState(false);
+  const [newMaterialTypeName, setNewMaterialTypeName] = useState('');
+  const [materialTypeAddSource, setMaterialTypeAddSource] = useState<'selectedOrder' | 'newRoll' | null>(null);
+  const [previousMaterialTypeVal, setPreviousMaterialTypeVal] = useState<string>('');
+  const [editingMaterialType, setEditingMaterialType] = useState<string | null>(null);
+  const [editingMaterialTypeName, setEditingMaterialTypeName] = useState<string>('');
+  const [isOrderDimensionsUnlocked, setIsOrderDimensionsUnlocked] = useState(false);
+  const [selectedOrderData, setSelectedOrderData] = useState<any | null>(null);
+  const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
+  const [justCutExecuted, setJustCutExecuted] = useState(false);
 
   const loadMaterialStocksData = async () => {
     try {
@@ -119,6 +211,137 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       }
     } catch (err) {
       console.error("Failed to fetch material stocks:", err);
+    }
+  };
+
+  const loadMaterialTypesData = async () => {
+    try {
+      const res = await fetch('/api/material-types');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setMaterialTypes(data);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch material types:", err);
+    }
+  };
+
+  const handleAddCustomMaterialType = async () => {
+    const trimmed = newMaterialTypeName.trim();
+    if (!trimmed) return;
+    try {
+      const res = await fetch('/api/material-types', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (res.ok) {
+        await loadMaterialTypesData();
+        if (materialTypeAddSource === 'selectedOrder') {
+          setSelectedOrder(prev => ({ ...prev, materialType: trimmed }));
+        } else if (materialTypeAddSource === 'newRoll') {
+          setNewRoll(prev => ({ ...prev, materialType: trimmed }));
+        }
+        setNewMaterialTypeName('');
+        setShowAddMaterialModal(false);
+        setMaterialTypeAddSource(null);
+        toast.success(`Material type "${trimmed}" added successfully!`);
+      } else {
+        const errData = await res.json();
+        alert(errData.error || "Failed to add material type");
+      }
+    } catch (err) {
+      console.error("Error adding material type:", err);
+      alert("Failed to add material type due to a network error.");
+    }
+  };
+
+  const handleCancelAddMaterialType = () => {
+    if (materialTypeAddSource === 'selectedOrder') {
+      setSelectedOrder(prev => ({ ...prev, materialType: previousMaterialTypeVal || materialTypes[0] }));
+    } else if (materialTypeAddSource === 'newRoll') {
+      setNewRoll(prev => ({ ...prev, materialType: previousMaterialTypeVal || materialTypes[0] }));
+    }
+    setNewMaterialTypeName('');
+    setShowAddMaterialModal(false);
+    setMaterialTypeAddSource(null);
+    setEditingMaterialType(null);
+  };
+
+  const handleUpdateMaterialType = async (oldName: string) => {
+    const trimmed = editingMaterialTypeName.trim();
+    if (!trimmed) return;
+    if (trimmed === oldName) {
+      setEditingMaterialType(null);
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to rename "${oldName}" to "${trimmed}"? This will also update all existing rolls using this type.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/material-types/${encodeURIComponent(oldName)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newName: trimmed }),
+      });
+      if (res.ok) {
+        await loadMaterialTypesData();
+        if (selectedOrder.materialType === oldName) {
+          setSelectedOrder(prev => ({ ...prev, materialType: trimmed }));
+        }
+        if (newRoll.materialType === oldName) {
+          setNewRoll(prev => ({ ...prev, materialType: trimmed }));
+        }
+        setEditingMaterialType(null);
+        toast.success(`Material type renamed to "${trimmed}" successfully!`);
+      } else {
+        const errData = await res.json();
+        alert(errData.error || "Failed to update material type");
+      }
+    } catch (err) {
+      console.error("Error updating material type:", err);
+      alert("Failed to update material type.");
+    }
+  };
+
+  const handleDeleteMaterialType = async (name: string) => {
+    if (!window.confirm(`Are you sure you want to delete the material type "${name}"? It will be removed from future selection options.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/material-types/${encodeURIComponent(name)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        await loadMaterialTypesData();
+        if (selectedOrder.materialType === name) {
+          setSelectedOrder(prev => ({ ...prev, materialType: materialTypes.find(t => t !== name) || '' }));
+        }
+        if (newRoll.materialType === name) {
+          setNewRoll(prev => ({ ...prev, materialType: materialTypes.find(t => t !== name) || '' }));
+        }
+        toast.success(`Material type "${name}" deleted successfully!`);
+      } else {
+        const errData = await res.json();
+        alert(errData.error || "Failed to delete material type");
+      }
+    } catch (err) {
+      console.error("Error deleting material type:", err);
+      alert("Failed to delete material type.");
+    }
+  };
+
+  const loadMaterialRequestsData = async () => {
+    try {
+      const res = await fetch('/api/material-requests');
+      if (res.ok) {
+        const data = await res.json();
+        setMaterialRequests(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch material requests:", err);
     }
   };
 
@@ -217,6 +440,72 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     }
   };
 
+  const handleSaveRollReorderLevel = async (rollId: string) => {
+    const val = editingRollReorderLevel[rollId];
+    if (val === undefined || val === '') return;
+    setSavingRollReorderLevel(rollId);
+    try {
+      const res = await fetch(`/api/rolls/${rollId}/reorder`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reorderLevel: parseFloat(val) || 0 })
+      });
+      if (res.ok) {
+        toast.success('Roll reorder level saved!');
+        setEditingRollReorderLevel(prev => { const next = { ...prev }; delete next[rollId]; return next; });
+        loadRollsData();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(errData.error || 'Failed to save reorder level');
+      }
+    } catch (err) {
+      toast.error('Failed to save reorder level');
+    } finally {
+      setSavingRollReorderLevel(null);
+    }
+  };
+
+  const loadMaterialTypeReorders = async () => {
+    try {
+      const res = await fetch('/api/material-type-reorders');
+      if (res.ok) {
+        const data = await res.json();
+        const mapping: Record<string, number> = {};
+        data.forEach((item: any) => {
+          mapping[item.materialType] = item.reorderLevel;
+        });
+        setMaterialTypeReorders(mapping);
+      }
+    } catch (err) {
+      console.error("Failed to fetch material type reorders:", err);
+    }
+  };
+
+  const handleSaveMaterialTypeReorder = async (materialType: string) => {
+    const val = editingMaterialTypeReorder[materialType];
+    if (val === undefined || val === '') return;
+    setSavingMaterialTypeReorder(materialType);
+    try {
+      const res = await fetch('/api/material-type-reorders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ materialType, reorderLevel: parseFloat(val) || 0 })
+      });
+      if (res.ok) {
+        toast.success('Material type reorder level saved!');
+        setEditingMaterialTypeReorder(prev => { const next = { ...prev }; delete next[materialType]; return next; });
+        loadMaterialTypeReorders();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(errData.error || 'Failed to save reorder level');
+      }
+    } catch (err) {
+      toast.error('Failed to save reorder level');
+    } finally {
+      setSavingMaterialTypeReorder(null);
+    }
+  };
+
 
   // â”€â”€ Production / Material Issues functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const loadMaterialIssues = async () => {
@@ -231,52 +520,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     }
   };
 
-  const handleOpenIssueModal = (stock: MaterialStock) => {
-    setIssuingStock(stock);
-    setIssueForm({ quantity: '', issuedTo: '', notes: '' });
-    setShowIssueModal(true);
-  };
 
-  const handleSubmitIssue = async () => {
-    if (!issuingStock) return;
-    if (!issueForm.issuedTo.trim()) { toast.error('Please enter who this is being issued to'); return; }
-    const qty = parseFloat(issueForm.quantity);
-    if (isNaN(qty) || qty <= 0) { toast.error('Please enter a valid quantity'); return; }
-    if (qty > issuingStock.quantity) {
-      toast.error(`Cannot issue more than available stock (${issuingStock.quantity} ${issuingStock.unit})`);
-      return;
-    }
-    setIsSubmittingIssue(true);
-    try {
-      const res = await fetch('/api/material-issues', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          materialId: issuingStock.id,
-          materialName: issuingStock.name,
-          quantity: parseFloat(issueForm.quantity),
-          unit: issuingStock.unit,
-          issuedTo: issueForm.issuedTo.trim(),
-          notes: issueForm.notes.trim()
-        })
-      });
-      if (res.ok) {
-        toast.success(`âœ… ${issueForm.quantity} ${issuingStock.unit} of ${issuingStock.name} issued to ${issueForm.issuedTo}`);
-        setShowIssueModal(false);
-        setIssuingStock(null);
-        setIssueForm({ quantity: '', issuedTo: '', notes: '' });
-        loadMaterialIssues();
-        loadMaterialStocksData();
-      } else {
-        const err = await res.json();
-        toast.error(err.error || 'Failed to issue material');
-      }
-    } catch (err) {
-      toast.error('Failed to issue material');
-    } finally {
-      setIsSubmittingIssue(false);
-    }
-  };
 
   const handleDeleteIssue = async (id: string) => {
     if (!window.confirm('Remove this issue record?')) return;
@@ -284,6 +528,123 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       const res = await fetch(`/api/material-issues/${id}`, { method: 'DELETE' });
       if (res.ok) { toast.success('Record removed'); loadMaterialIssues(); }
     } catch (err) { toast.error('Failed to delete record'); }
+  };
+
+  // ─── Material Requests handlers ───
+  const handleSubmitRequest = async () => {
+    if (!requestForm.materialId) {
+      toast.error('Please select a material');
+      return;
+    }
+    const qty = parseFloat(requestForm.quantity);
+    if (isNaN(qty) || qty <= 0) {
+      toast.error('Please enter a valid quantity');
+      return;
+    }
+    const mat = materialStocks.find(s => s.id === requestForm.materialId);
+    if (!mat) return;
+
+    setIsSubmittingRequest(true);
+    try {
+      const requesterName = user?.name || user?.username || 'Production Team';
+      const res = await fetch('/api/material-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          materialId: mat.id,
+          materialName: mat.name,
+          requestedQuantity: qty,
+          unit: mat.unit,
+          requestedBy: requesterName,
+          notes: requestForm.notes.trim()
+        })
+      });
+      if (res.ok) {
+        toast.success('Material request sent successfully!');
+        setShowRequestModal(false);
+        setRequestForm({ materialId: '', quantity: '', notes: '' });
+        await loadMaterialRequestsData();
+      } else {
+        toast.error('Failed to send request');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to send request');
+    } finally {
+      setIsSubmittingRequest(false);
+    }
+  };
+
+  const handleOpenApprovalModal = (req: MaterialRequest) => {
+    setApprovingRequest(req);
+    setApprovalForm({
+      approvedQuantity: req.requestedQuantity.toString(),
+      approvalNotes: ''
+    });
+    setShowApprovalModal(true);
+  };
+
+  const handleSubmitApproval = async () => {
+    if (!approvingRequest) return;
+    const qty = parseFloat(approvalForm.approvedQuantity);
+    if (isNaN(qty) || qty <= 0) {
+      toast.error('Please enter a valid approved quantity');
+      return;
+    }
+    setIsSubmittingApproval(true);
+    try {
+      const approvedByName = user?.name || user?.username || 'Admin';
+      const res = await fetch(`/api/material-requests/${approvingRequest.id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          approvedQuantity: qty,
+          approvalNotes: approvalForm.approvalNotes.trim(),
+          approvedBy: approvedByName
+        })
+      });
+      if (res.ok) {
+        toast.success('Request approved successfully!');
+        setShowApprovalModal(false);
+        setApprovingRequest(null);
+        await loadMaterialRequestsData();
+        await loadMaterialStocksData();
+        await loadMaterialIssues();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(errData.error || 'Failed to approve request');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to approve request');
+    } finally {
+      setIsSubmittingApproval(false);
+    }
+  };
+
+  const handleRejectRequest = async (req: MaterialRequest) => {
+    const reason = window.prompt('Enter rejection reason (optional):');
+    if (reason === null) return; // cancelled
+    try {
+      const rejectedByName = user?.name || user?.username || 'Admin';
+      const res = await fetch(`/api/material-requests/${req.id}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          approvalNotes: reason.trim(),
+          approvedBy: rejectedByName
+        })
+      });
+      if (res.ok) {
+        toast.success('Request rejected');
+        await loadMaterialRequestsData();
+      } else {
+        toast.error('Failed to reject request');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to reject request');
+    }
   };
 
   const loadOrdersData = async () => {
@@ -309,6 +670,14 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
           mapping[q.id.toString()] = `#${q.orderNumber}`;
         });
         setAllOrdersMap(mapping);
+
+        // Sync selectedOrderData with the latest data
+        if (selectedOrderNumber) {
+          const latestOrder = withOrderNumbers.find(o => o.orderNumber.toString() === selectedOrderNumber);
+          if (latestOrder) {
+            setSelectedOrderData(latestOrder);
+          }
+        }
       }
     } catch (err) {
       console.error("Failed to fetch active orders for optimizer:", err);
@@ -321,6 +690,9 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     loadMaterialStocksData();
     loadMaterialIssues();
     loadConfigData();
+    loadMaterialRequestsData();
+    loadMaterialTypeReorders();
+    loadMaterialTypesData();
   }, []);
 
   const bomComponentNames = useMemo(() => {
@@ -334,7 +706,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                 if (item.name) names.add(item.name);
                 if (Array.isArray(item.options)) {
                   item.options.forEach((opt: any) => {
-                    if (opt.name) names.add(`${item.name} (${opt.name})`);
+                    if (opt.name) names.add(opt.name.trim());
                   });
                 }
               });
@@ -357,6 +729,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   const [leftoverWidthInput2, setLeftoverWidthInput2] = useState<string>('0');
   const [leftoverLengthInput2, setLeftoverLengthInput2] = useState<string>('0');
   const [productionSearchQuery, setProductionSearchQuery] = useState<string>('');
+  // Multi-cut sequential progress
+  const [cutProgress, setCutProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Tick every minute so Entry Date stays fresh
   useEffect(() => {
@@ -423,6 +797,127 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     setCuttingSelectedRollId('');
     setRollSearchQuery('');
   }, [selectedOrder.materialType]);
+
+  useEffect(() => {
+    setIsOrderDimensionsUnlocked(false);
+  }, [selectedOrderNumber]);
+
+  useEffect(() => {
+    if (!selectedOrderNumber) {
+      setSelectedOrderData(null);
+      setSelectedItemIndex(null);
+    }
+  }, [selectedOrderNumber]);
+
+  // Collect all cuts across all rolls
+  const allCuts = useMemo(() => {
+    const list: Cut[] = [];
+    rolls.forEach(r => {
+      if (r.cuts) {
+        list.push(...r.cuts);
+      }
+    });
+    return list;
+  }, [rolls]);
+
+  // Filter cuts for the current selected order
+  const selectedOrderCuts = useMemo(() => {
+    if (!selectedOrder.id) return [];
+    return allCuts.filter(c => c.orderId === selectedOrder.id);
+  }, [allCuts, selectedOrder.id]);
+
+  // Check which items are completed
+  const completedItemIndices = useMemo(() => {
+    if (!selectedOrderData || !Array.isArray(selectedOrderData.items)) return new Set<number>();
+    
+    const completedSet = new Set<number>();
+    const remainingCuts = [...selectedOrderCuts];
+
+    const convertToMeters = (val: number, unit?: string) => {
+      const u = (unit || 'mm').toLowerCase();
+      if (u === 'mm') return val / 1000;
+      if (u === 'ft') return val * 0.3048;
+      if (u === 'in') return val * 0.0254;
+      if (u === 'mtr' || u === 'm') return val;
+      return val / 1000;
+    };
+
+    selectedOrderData.items.forEach((item: any, idx: number) => {
+      const wMtr = convertToMeters(item.dimensions.width, item.dimensions.widthUnit || item.dimensions.unit);
+      const lMtr = convertToMeters(item.dimensions.length, item.dimensions.lengthUnit || item.dimensions.unit);
+
+      const matchIdx = remainingCuts.findIndex(c => 
+        Math.abs(c.width - wMtr) < 0.002 && 
+        Math.abs(c.length - lMtr) < 0.002
+      );
+
+      if (matchIdx !== -1) {
+        completedSet.add(idx);
+        remainingCuts.splice(matchIdx, 1);
+      }
+    });
+
+    return completedSet;
+  }, [selectedOrderData, selectedOrderCuts]);
+
+  // Automatically select the next pending item when completedItemIndices or selectedOrderData updates
+  useEffect(() => {
+    if (cutPurpose === 'order' && selectedOrderData && Array.isArray(selectedOrderData.items) && selectedOrderData.items.length > 0) {
+      if (justCutExecuted) {
+        setJustCutExecuted(false);
+        const nextPendingIdx = selectedOrderData.items.findIndex((_: any, idx: number) => !completedItemIndices.has(idx));
+        
+        if (nextPendingIdx !== -1) {
+          setSelectedItemIndex(nextPendingIdx);
+          const nextItem = selectedOrderData.items[nextPendingIdx];
+          
+          const convertToMeters = (val: number, unit?: string) => {
+            const u = (unit || 'mm').toLowerCase();
+            if (u === 'mm') return val / 1000;
+            if (u === 'ft') return val * 0.3048;
+            if (u === 'in') return val * 0.0254;
+            if (u === 'mtr' || u === 'm') return val;
+            return val / 1000;
+          };
+          const matchMaterialType = (bType: string) => {
+            const bt = (bType || '').toLowerCase();
+            if (bt.includes('pvc') && bt.includes('food')) return 'PVC - White Food Grade';
+            if (bt.includes('pvc')) return 'PVC - Green Rough Top';
+            if (bt.includes('rubber') || bt.includes('black')) return 'Rubber - Heavy Duty Black';
+            if (bt.includes('pu') || bt.includes('heat')) return 'PU - Blue Heat Resistant';
+            return MATERIAL_TYPES[0];
+          };
+          
+          const w = convertToMeters(nextItem.dimensions.width, nextItem.dimensions.widthUnit || nextItem.dimensions.unit || 'mm');
+          const l = convertToMeters(nextItem.dimensions.length, nextItem.dimensions.lengthUnit || nextItem.dimensions.unit || 'mm');
+          
+          setSelectedOrder(prev => ({
+            ...prev,
+            requiredWidth: w,
+            requiredLength: l,
+            materialType: matchMaterialType(nextItem.beltType)
+          }));
+          toast.success(`Loaded next pending item #${nextPendingIdx + 1}: ${nextItem.dimensions.width}x${nextItem.dimensions.length}`);
+        } else {
+          toast.success(`All items in order ${selectedOrderNumber} have been successfully cut!`);
+          setSelectedOrder({
+            id: `O-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            customerName: '',
+            requiredWidth: 0,
+            requiredLength: 0,
+            quantity: 1,
+            materialType: selectedOrder.materialType,
+            date: new Date().toISOString(),
+            isInventoryCut: false
+          });
+          setSelectedOrderNumber('');
+          setOrderSearchQuery('');
+          setSelectedOrderData(null);
+          setSelectedItemIndex(null);
+        }
+      }
+    }
+  }, [selectedOrderData, completedItemIndices, cutPurpose, justCutExecuted]);
 
   // Cut rotation & orientation state
   const [cutOrientation, setCutOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
@@ -698,19 +1193,14 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       alert("No placement has been selected. Please choose a placement first.");
       return;
     }
-    const { rollId } = currentResult as any;
-    const targetRoll = rolls.find(r => r.id === rollId);
-    if (!targetRoll) return;
 
     const isInventory = !!selectedOrder.isInventoryCut;
     const clientName = (selectedOrder.customerName || '').trim();
-
     if (!isInventory && cutPurpose !== 'scrap' && !clientName) {
       alert("Party Name is compulsory for Client Cuts. Please enter a Customer Name in the left panel.");
       return;
     }
 
-    // Double check space availability using final execution dimensions
     const reqWidth = activeOrderDimensions.width || 0;
     const reqLength = activeOrderDimensions.length || 0;
     if (reqWidth <= 0 || reqLength <= 0) {
@@ -718,26 +1208,141 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       return;
     }
 
-    if (!isSpaceAvailable(targetRoll, currentResult.placement.x, currentResult.placement.y, reqWidth, reqLength)) {
-      alert("Selected placement is no longer valid for the current dimensions. Please re-calculate the fit.");
+    const quantity = Math.max(1, selectedOrder.quantity || 1);
+
+    // ── Single piece: existing flow ──────────────────────────────────────────
+    if (quantity === 1) {
+      const { rollId } = currentResult as any;
+      const targetRoll = rolls.find(r => r.id === rollId);
+      if (!targetRoll) return;
+
+      if (!isSpaceAvailable(targetRoll, currentResult.placement.x, currentResult.placement.y, reqWidth, reqLength)) {
+        alert("Selected placement is no longer valid for the current dimensions. Please re-calculate the fit.");
+        return;
+      }
+
+      const remainingSqm = targetRoll.remainingSqm - (reqWidth * reqLength);
+      const suggestedWidth = targetRoll.fullWidth || 0;
+      const suggestedLength = suggestedWidth > 0 ? Math.max(0, remainingSqm / suggestedWidth) : 0;
+      let autoAction: 'keep_roll' | 'scrub' | 'inventory' = 'keep_roll';
+      if (remainingSqm < 0.5 || suggestedLength < 0.3) autoAction = 'scrub';
+      else if (isRollReuse(targetRoll)) autoAction = 'inventory';
+
+      await confirmExecuteCut(targetRoll, currentResult, autoAction);
       return;
     }
 
-    // Automatically determine the leftover action
-    const remainingSqm = targetRoll.remainingSqm - (reqWidth * reqLength);
-    const suggestedWidth = targetRoll.fullWidth || 0;
-    const suggestedLength = suggestedWidth > 0 ? Math.max(0, remainingSqm / suggestedWidth) : 0;
-    let autoAction: 'keep_roll' | 'scrub' | 'inventory' = 'keep_roll';
+    // ── Multiple pieces: sequential one-by-one cutting ────────────────────────
+    // Work on an in-memory copy so each iteration sees the updated cuts
+    // without waiting for a server round-trip → minimizes scrap.
+    setIsSyncing(true);
+    setCutProgress({ current: 0, total: quantity });
 
-    if (remainingSqm < 0.5 || suggestedLength < 0.3) {
-      autoAction = 'scrub';
-    } else if (isRollReuse(targetRoll)) {
-      autoAction = 'inventory';
-    } else {
-      autoAction = 'keep_roll';
+    let activeRolls = rolls
+      .filter(r => r.status !== 'refused')
+      .map(r => ({ ...r, cuts: [...r.cuts] }));
+
+    if ((cutPurpose === 'scrap' || cutPurpose === 'inventory') && cuttingSelectedRollId) {
+      activeRolls = activeRolls.filter(r => r.id === cuttingSelectedRollId);
     }
 
-    await confirmExecuteCut(targetRoll, currentResult, autoAction);
+    let cutsMade = 0;
+    let lastUsedRollId: string | null = null;
+    const cutColor = isInventory ? '#1e293b' : (cutPurpose === 'scrap' ? '#ef4444' : CUT_COLORS[Math.floor(Math.random() * CUT_COLORS.length)]);
+    const customerName = isInventory ? 'REUSE STOCK' : (cutPurpose === 'scrap' ? 'SCRAP WASTE' : clientName);
+
+    try {
+      for (let i = 0; i < quantity; i++) {
+        setCutProgress({ current: i + 1, total: quantity });
+
+        // Re-optimise on the current in-memory roll state
+        const candidates = findGlobalBestPlacement(activeRolls, {
+          ...selectedOrder,
+          requiredWidth: reqWidth,
+          requiredLength: reqLength
+        });
+
+        if (candidates.length === 0) {
+          toast.error(`Only ${cutsMade} of ${quantity} pieces could be cut — no space left for piece ${i + 1}.`);
+          break;
+        }
+
+        const best = candidates[0];
+        const { rollId, placement } = best;
+        lastUsedRollId = rollId;
+
+        const newCut: Cut = {
+          id: `C-${Date.now()}-${i}-${Math.floor(Math.random() * 10000)}`,
+          orderId: selectedOrder.id,
+          customerName,
+          width: reqWidth,
+          length: reqLength,
+          x: placement.x,
+          y: placement.y,
+          status: 'completed',
+          color: cutColor,
+          isInventoryCut: isInventory
+        };
+
+        const liveRoll = activeRolls.find(r => r.id === rollId);
+        if (!liveRoll) break;
+
+        const newRemaining = Math.max(0, liveRoll.remainingSqm - (reqWidth * reqLength));
+        const shouldRefuse = newRemaining < 0.5 || (liveRoll.fullWidth > 0 && (newRemaining / liveRoll.fullWidth) < 0.3);
+
+        // Persist to database
+        await updateRoll(rollId, {
+          remainingSqm: newRemaining,
+          status: shouldRefuse ? 'refused' : 'active'
+        });
+        await saveCut(rollId, newCut);
+
+        // Update in-memory state for next iteration
+        liveRoll.cuts.push(newCut);
+        liveRoll.remainingSqm = newRemaining;
+        if (shouldRefuse) liveRoll.status = 'refused';
+
+        cutsMade++;
+      }
+
+      // One reload after all cuts
+      await loadRollsData();
+      if (lastUsedRollId) setLastCutRollId(lastUsedRollId);
+
+      const allDone = cutsMade === quantity;
+      if (allDone) {
+        toast.success(`✅ ${cutsMade} piece${cutsMade > 1 ? 's' : ''} cut successfully from Roll ${lastUsedRollId}!`);
+      } else {
+        toast.warning(`⚠️ ${cutsMade} of ${quantity} pieces cut — insufficient space for remaining pieces.`);
+      }
+      setJustCutExecuted(true);
+    } catch (err) {
+      console.error('Error in multi-cut execution:', err);
+      toast.error('Failed to execute cuts. Please try again.');
+    } finally {
+      setCutProgress(null);
+      setIsSyncing(false);
+      setOptimizationResults([]);
+      setCurrentOptionIndex(0);
+      setManualPlacement(null);
+      if (cutPurpose === 'order' && selectedOrderData && Array.isArray(selectedOrderData.items) && selectedOrderData.items.length > 0) {
+        await loadOrdersData();
+      } else {
+        setSelectedOrder({
+          id: `O-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          customerName: '',
+          requiredWidth: 0,
+          requiredLength: 0,
+          quantity: 1,
+          materialType: selectedOrder.materialType,
+          date: new Date().toISOString(),
+          isInventoryCut: false
+        });
+        setSelectedOrderNumber('');
+        setOrderSearchQuery('');
+        await loadOrdersData();
+      }
+    }
   };
 
   const confirmExecuteCut = async (
@@ -757,7 +1362,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     const newCut: Cut = {
       id: `C-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
       orderId: selectedOrder.id,
-      customerName: selectedOrder.isInventoryCut ? 'INTERNAL STOCK' : (cutPurpose === 'scrap' ? 'SCRAP WASTE' : (selectedOrder.customerName || '').trim()),
+      customerName: selectedOrder.isInventoryCut ? 'REUSE STOCK' : (cutPurpose === 'scrap' ? 'SCRAP WASTE' : (selectedOrder.customerName || '').trim()),
       width: activeOrderDimensions.width,
       length: activeOrderDimensions.length,
       x: placement.x,
@@ -783,11 +1388,17 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       await saveCut(rollId, newCut);
 
       if (cutPurpose === 'order' && selectedOrderNumber) {
-        await fetch(`/api/quotations/${selectedOrder.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'executed' })
-        });
+        const itemsList = selectedOrderData?.items || [];
+        const nextCutsCount = selectedOrderCuts.length + 1;
+        const totalItemsCount = itemsList.length > 0 ? itemsList.length : 1;
+
+        if (nextCutsCount >= totalItemsCount) {
+          await fetch(`/api/quotations/${selectedOrder.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'executed' })
+          });
+        }
       }
 
       // 3. If action is inventory, create new remnant reusable roll in stock
@@ -815,7 +1426,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
 
       // 4. If it's an inventory cut, create a new roll in stock representing this cut
       if (selectedOrder.isInventoryCut && cutPurpose !== 'scrap') {
-        const newInvRollId = `INV-${rollId}-${Date.now().toString().slice(-4)}`;
+        const newInvRollId = `REUSE-${rollId}-${newCut.id}`;
         const newInvRoll = {
           id: newInvRollId,
           materialType: currentRoll.materialType,
@@ -824,11 +1435,33 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
           totalSqm: newCut.width * newCut.length,
           remainingSqm: newCut.width * newCut.length,
           isArchived: false,
-          isReuse: false,
+          isReuse: true,
           parentRollId: rollId,
           status: 'active'
         };
         await saveRoll(newInvRoll);
+
+        // Also log a material issue to Production (Beltcut) for inventory cuts
+        const matchingStock = materialStocks.find(s => s.name === currentRoll.materialType);
+        const cutArea = parseFloat((newCut.width * newCut.length).toFixed(4));
+        try {
+          await fetch('/api/material-issues', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              materialId: matchingStock?.id || '',
+              materialName: currentRoll.materialType,
+              quantity: cutArea,
+              unit: matchingStock?.unit || 'sqm',
+              issuedTo: 'REUSE STOCK',
+              notes: `Auto-logged on inventory cut from parent Roll ${rollId}`
+            })
+          });
+          await loadMaterialStocksData();
+          await loadMaterialIssues();
+        } catch (issueErr) {
+          console.error("Failed to auto-log material issue for inventory cut:", issueErr);
+        }
       }
 
       // 5. If it's a scrap cut, create a new refused roll in stock representing this scrap piece
@@ -852,6 +1485,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       toast.success("Cut executed and saved successfully!");
       await loadRollsData();
       setLastCutRollId(rollId);
+      setJustCutExecuted(true);
     } catch (err) {
       console.error("Error executing cut:", err);
       alert("Failed to execute cut. Please try again.");
@@ -866,19 +1500,23 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       setIsSplitLeftover(false);
       setLeftoverWidthInput2('0');
       setLeftoverLengthInput2('0');
-      setSelectedOrder({
-        id: `O-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        customerName: '',
-        requiredWidth: 0,
-        requiredLength: 0,
-        quantity: 1,
-        materialType: selectedOrder.materialType,
-        date: new Date().toISOString(),
-        isInventoryCut: false
-      });
-      setSelectedOrderNumber('');
-      setOrderSearchQuery('');
-      await loadOrdersData();
+      if (cutPurpose === 'order' && selectedOrderData && Array.isArray(selectedOrderData.items) && selectedOrderData.items.length > 0) {
+        await loadOrdersData();
+      } else {
+        setSelectedOrder({
+          id: `O-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          customerName: '',
+          requiredWidth: 0,
+          requiredLength: 0,
+          quantity: 1,
+          materialType: selectedOrder.materialType,
+          date: new Date().toISOString(),
+          isInventoryCut: false
+        });
+        setSelectedOrderNumber('');
+        setOrderSearchQuery('');
+        await loadOrdersData();
+      }
     }
   };
 
@@ -997,10 +1635,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       return `
         <tr>
           <td>#${idx + 1}</td>
-          <td>${cut.customerName || 'N/A'}</td>
+          <td>${isInventoryCutName(cut.customerName) ? 'REUSE STOCK' : (cut.customerName || 'N/A')}</td>
           <td>${cut.id.substring(0, 12)}</td>
           <td>${lenVal}${currentUnit} x ${widVal}${currentUnit}</td>
-          <td>${cut.isInventoryCut ? 'STOCK' : 'CLIENT'}</td>
+          <td>${cut.isInventoryCut ? 'REUSE' : 'CLIENT'}</td>
           <td>${dateStr}</td>
         </tr>
       `;
@@ -1127,12 +1765,12 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       }
       return [
         idx + 1,
-        `"${cut.customerName || ''}"`,
+        `"${isInventoryCutName(cut.customerName) ? 'REUSE STOCK' : (cut.customerName || '')}"`,
         cut.id,
         fromMeters(cut.length).toFixed(2),
         fromMeters(cut.width).toFixed(2),
         currentUnit,
-        cut.isInventoryCut ? 'STOCK' : 'CLIENT',
+        cut.isInventoryCut ? 'REUSE' : 'CLIENT',
         `"${dateStr}"`
       ];
     });
@@ -1334,7 +1972,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     rolls.forEach(r => {
       r.cuts.forEach(c => {
         const trimmedName = (c.customerName || '').trim();
-        if (!trimmedName || trimmedName === 'INTERNAL STOCK' || trimmedName === 'SCRAP WASTE') {
+        if (!trimmedName || isInventoryCutName(trimmedName) || trimmedName === 'SCRAP WASTE') {
           return;
         }
         const clientKey = trimmedName;
@@ -1411,9 +2049,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
 
   const filteredFreshRollsList = useMemo(() => {
     const activeFresh = rolls.filter(r => r.status !== 'refused' && !isRollReuse(r));
-    if (!freshRollSearchQuery) return activeFresh;
+    const sorted = [...activeFresh].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+    if (!freshRollSearchQuery) return sorted;
     const query = freshRollSearchQuery.toLowerCase().trim();
-    return activeFresh.filter(roll =>
+    return sorted.filter(roll =>
       roll.id.toLowerCase().includes(query) ||
       roll.materialType.toLowerCase().includes(query) ||
       fromMeters(roll.fullLength).toFixed(1).includes(query) ||
@@ -1429,6 +2068,38 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       (stock.unit || '').toLowerCase().includes(query)
     );
   }, [materialStocks, reorderSearchQuery]);
+
+  const filteredRollReorderList = useMemo(() => {
+    const activeFresh = rolls.filter(r => r.status !== 'refused' && !isRollReuse(r));
+    const sorted = [...activeFresh].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+    if (!rollReorderSearchQuery) return sorted;
+    const query = rollReorderSearchQuery.toLowerCase().trim();
+    return sorted.filter(roll =>
+      (roll.id || '').toLowerCase().includes(query) ||
+      (roll.materialType || '').toLowerCase().includes(query)
+    );
+  }, [rolls, rollReorderSearchQuery]);
+
+  const materialTypeStocks = useMemo(() => {
+    const activeFresh = rolls.filter(r => r.status !== 'refused' && !isRollReuse(r));
+    const types = new Set<string>(MATERIAL_TYPES);
+    activeFresh.forEach(r => {
+      if (r.materialType) types.add(r.materialType);
+    });
+
+    return Array.from(types).map(type => {
+      const typeRolls = activeFresh.filter(r => r.materialType === type);
+      const totalSqm = typeRolls.reduce((sum, r) => sum + r.remainingSqm, 0);
+      const trigger = materialTypeReorders[type] || 0;
+      const isLow = trigger > 0 && totalSqm <= trigger;
+      return {
+        materialType: type,
+        totalSqm,
+        reorderLevel: trigger,
+        isLow
+      };
+    }).sort((a, b) => a.materialType.localeCompare(b.materialType));
+  }, [rolls, materialTypeReorders]);
 
   const filteredMaterialIssues = useMemo(() => {
     if (!productionSearchQuery) return materialIssues;
@@ -1538,7 +2209,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
         )}
 
         {/* Navigation Tabs */}
-        <nav className="flex-1 px-4 space-y-1 mt-4">
+        <nav className="flex-1 px-4 space-y-1 mt-4 overflow-y-auto">
           {[
             { id: 'dashboard', label: 'Overview', icon: BarChart3 },
             { id: 'cutting', label: 'Cutting System', icon: Scissors },
@@ -1547,7 +2218,11 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
             { id: 'stock', label: 'Inventory', icon: Package },
             { id: 'production', label: 'Production Log', icon: ClipboardList },
             { id: 'scrub', label: 'Scrap Registry', icon: Trash2 },
-          ].map((tab) => {
+          ].filter(tab => {
+            if (user?.role === 'admin') return true;
+            const perm = (tabPermissionMap as any)[tab.id];
+            return user?.allowedPages?.includes(perm);
+          }).map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
@@ -1578,7 +2253,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
         </nav>
 
         {/* Sidebar Footer with Unit Selector */}
-        <div className="p-4 border-t border-white/5 space-y-3">
+        <div className="p-4 border-t border-white/5 space-y-3 shrink-0">
           <div className="px-4">
             <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500 block mb-2">Display Unit</span>
             <div className="grid grid-cols-5 gap-1 bg-zinc-900 p-1 rounded-xl border border-white/5">
@@ -1671,6 +2346,15 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     >
                       <RotateCcw size={13} />
                     </button>
+                    <button
+                      onClick={() => {
+                        setRequestForm({ materialId: materialStocks[0]?.id || '', quantity: '', notes: '' });
+                        setShowRequestModal(true);
+                      }}
+                      className="px-2.5 py-1 bg-zinc-950 hover:bg-zinc-800 text-white rounded-lg text-[10px] font-black transition flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
+                    >
+                      <Plus size={11} /> REQUEST MATERIAL
+                    </button>
                   </div>
                 )}
               </div>
@@ -1732,7 +2416,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                   setSelectedOrder(prev => ({ ...prev, isInventoryCut: true, customerName: 'SCRAP' }));
                                   setSelectedOrderNumber('');
                                 } else if (purpose === 'inventory') {
-                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: true, customerName: 'INTERNAL STOCK' }));
+                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: true, customerName: 'REUSE STOCK' }));
                                   setSelectedOrderNumber('');
                                 }
                               }}
@@ -1821,14 +2505,32 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                         setSelectedOrderNumber(o.orderNumber.toString());
                                         setOrderSearchQuery(`#${o.orderNumber}`);
                                         setShowOrderDropdown(false);
-                                        setSelectedOrder(prev => ({
-                                          ...prev,
-                                          id: o.id,
-                                          customerName: (o.clientName || '').trim(),
-                                          requiredWidth: wMtr,
-                                          requiredLength: lMtr,
-                                          materialType: matchMaterialType(o.beltType)
-                                        }));
+                                        setSelectedOrderData(o);
+                                        const itemsList = o.items || [];
+                                        if (itemsList.length > 0) {
+                                          setSelectedItemIndex(0);
+                                          const firstItem = itemsList[0];
+                                          const firstWidth = convertToMeters(firstItem.dimensions.width, firstItem.dimensions.widthUnit || firstItem.dimensions.unit);
+                                          const firstLength = convertToMeters(firstItem.dimensions.length, firstItem.dimensions.lengthUnit || firstItem.dimensions.unit);
+                                          setSelectedOrder(prev => ({
+                                            ...prev,
+                                            id: o.id,
+                                            customerName: (o.clientName || '').trim(),
+                                            requiredWidth: firstWidth,
+                                            requiredLength: firstLength,
+                                            materialType: matchMaterialType(firstItem.beltType)
+                                          }));
+                                        } else {
+                                          setSelectedItemIndex(null);
+                                          setSelectedOrder(prev => ({
+                                            ...prev,
+                                            id: o.id,
+                                            customerName: (o.clientName || '').trim(),
+                                            requiredWidth: wMtr,
+                                            requiredLength: lMtr,
+                                            materialType: matchMaterialType(o.beltType)
+                                          }));
+                                        }
                                         toast.success(`Order #${o.orderNumber} loaded: ${(o.clientName || '').trim()}`);
                                       }}
                                       className={`w-full text-left px-2.5 py-1.5 hover:bg-slate-50 transition-colors flex items-center justify-between gap-2 ${isSelected ? 'bg-zinc-50' : ''}`}
@@ -1907,6 +2609,107 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                   ))}
                                 </div>
                               )}
+                            </div>
+                          )}
+
+                          {/* Display Order Items Checklist for Multi-Item Orders */}
+                          {cutPurpose === 'order' && selectedOrderData && Array.isArray(selectedOrderData.items) && selectedOrderData.items.length > 0 && (
+                            <div className="space-y-1.5 p-2.5 bg-slate-50 border border-slate-200 rounded-xl mt-2.5">
+                              <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                                <ClipboardList size={11} className="text-indigo-650" />
+                                Order Items Checklist ({selectedOrderData.items.length})
+                              </label>
+                              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
+                                {selectedOrderData.items.map((item: any, idx: number) => {
+                                  const isSelected = selectedItemIndex === idx;
+                                  const isCompleted = completedItemIndices.has(idx);
+                                  
+                                  const itemWidth = item.dimensions.width;
+                                  const itemLength = item.dimensions.length;
+                                  const itemUnit = item.dimensions.unit || 'mm';
+
+                                  const convertToMeters = (val: number, unit?: string) => {
+                                    const u = (unit || 'mm').toLowerCase();
+                                    if (u === 'mm') return val / 1000;
+                                    if (u === 'ft') return val * 0.3048;
+                                    if (u === 'in') return val * 0.0254;
+                                    if (u === 'mtr' || u === 'm') return val;
+                                    return val / 1000;
+                                  };
+
+                                  const w = convertToMeters(itemWidth, item.dimensions.widthUnit || itemUnit);
+                                  const l = convertToMeters(itemLength, item.dimensions.lengthUnit || itemUnit);
+
+                                  return (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedItemIndex(idx);
+                                        const matchMaterialType = (bType: string) => {
+                                          const bt = (bType || '').toLowerCase();
+                                          if (bt.includes('pvc') && bt.includes('food')) return 'PVC - White Food Grade';
+                                          if (bt.includes('pvc')) return 'PVC - Green Rough Top';
+                                          if (bt.includes('rubber') || bt.includes('black')) return 'Rubber - Heavy Duty Black';
+                                          if (bt.includes('pu') || bt.includes('heat')) return 'PU - Blue Heat Resistant';
+                                          return MATERIAL_TYPES[0];
+                                        };
+                                        setSelectedOrder(prev => ({
+                                          ...prev,
+                                          requiredWidth: w,
+                                          requiredLength: l,
+                                          materialType: matchMaterialType(item.beltType)
+                                        }));
+                                      }}
+                                      className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all duration-200 flex items-center justify-between gap-3 cursor-pointer shadow-sm ${
+                                        isCompleted
+                                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100/50'
+                                          : isSelected
+                                            ? 'border-zinc-950 bg-zinc-950 text-white font-bold'
+                                            : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                                      }`}
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                            isSelected ? 'bg-zinc-800 text-zinc-300' : 'bg-slate-200 text-slate-500'
+                                          }`}>
+                                            Item #{idx + 1}
+                                          </span>
+                                          {isCompleted ? (
+                                            <span className="text-[7.5px] font-black text-emerald-700 bg-emerald-100 px-1 py-0.2 rounded uppercase">✓ Done</span>
+                                          ) : (
+                                            <span className={`text-[7.5px] font-black uppercase px-1 py-0.2 rounded ${
+                                              isSelected ? 'bg-indigo-900/50 text-indigo-200' : 'bg-amber-50 text-amber-700'
+                                            }`}>Pending</span>
+                                          )}
+                                        </div>
+                                        <p className={`font-black text-xs mt-1.5 ${isSelected ? 'text-white' : 'text-zinc-900'}`}>
+                                          {itemWidth} {itemUnit} × {itemLength} {itemUnit}
+                                          <span className={`text-[9.5px] font-medium ml-1.5 ${isSelected ? 'text-zinc-300' : 'text-slate-400'}`}>
+                                            ({fromMeters(w).toFixed(2)}{currentUnit} × {fromMeters(l).toFixed(2)}{currentUnit})
+                                          </span>
+                                        </p>
+                                        <p className={`text-[9px] mt-0.5 ${isSelected ? 'text-zinc-400' : 'text-slate-400'} font-bold truncate`}>
+                                          {item.beltType}
+                                        </p>
+                                      </div>
+                                      <div className="shrink-0">
+                                        {!isCompleted && !isSelected && (
+                                          <span className="text-[8px] font-black text-indigo-750 bg-indigo-50 border border-indigo-200 px-2 py-1 rounded-lg uppercase">
+                                            Cut Item
+                                          </span>
+                                        )}
+                                        {isSelected && (
+                                          <span className="text-[8px] font-black text-white bg-indigo-650 px-2 py-1 rounded-lg uppercase flex items-center gap-1">
+                                            Active
+                                          </span>
+                                        )}
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
 
@@ -2025,46 +2828,78 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
 
                           <div className="grid grid-cols-2 gap-1.5">
                             <div className="space-y-1">
-                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                                Width ({currentUnit})
+                              <div className="flex items-center justify-between w-full">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                  Width ({currentUnit})
+                                </label>
                                 {cutPurpose === 'order' && selectedOrderNumber && (
-                                  <span className="text-[7.5px] font-black text-orange-600 bg-orange-50 border border-orange-200 px-1 py-0.2 rounded uppercase flex items-center gap-0.5">🔒 Locked</span>
+                                  isOrderDimensionsUnlocked ? (
+                                    <span className="text-[7.5px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-1 py-0.2 rounded uppercase flex items-center gap-0.5">🔓 Unlocked</span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (window.confirm("Are you sure you want to unlock and edit these dimensions?")) {
+                                          setIsOrderDimensionsUnlocked(true);
+                                        }
+                                      }}
+                                      className="text-[7.5px] font-black text-orange-600 bg-orange-50 hover:bg-orange-100 border border-orange-200 px-1.5 py-0.5 rounded uppercase flex items-center gap-0.5 transition cursor-pointer"
+                                    >
+                                      🔒 Locked
+                                    </button>
+                                  )
                                 )}
-                              </label>
+                              </div>
                               <input
                                 type="number"
                                 step="0.01"
                                 value={selectedOrder.requiredWidth === 0 ? '' : fromMeters(selectedOrder.requiredWidth)}
                                 onChange={(e) => {
-                                  if (cutPurpose === 'order' && selectedOrderNumber) return;
+                                  if (cutPurpose === 'order' && selectedOrderNumber && !isOrderDimensionsUnlocked) return;
                                   const val = parseFloat(e.target.value);
                                   setSelectedOrder({ ...selectedOrder, requiredWidth: isNaN(val) ? 0 : toMeters(val) });
                                 }}
-                                readOnly={cutPurpose === 'order' && !!selectedOrderNumber}
-                                className={`w-full px-2.5 py-1 border rounded-lg focus:outline-none font-bold text-xs ${cutPurpose === 'order' && selectedOrderNumber
+                                readOnly={cutPurpose === 'order' && !!selectedOrderNumber && !isOrderDimensionsUnlocked}
+                                className={`w-full px-2.5 py-1 border rounded-lg focus:outline-none font-bold text-xs ${cutPurpose === 'order' && selectedOrderNumber && !isOrderDimensionsUnlocked
                                   ? 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
                                   : 'border-slate-200 focus:border-zinc-950 bg-white'
                                   }`}
                               />
                             </div>
                             <div className="space-y-1">
-                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                                Length ({currentUnit})
+                              <div className="flex items-center justify-between w-full">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                  Length ({currentUnit})
+                                </label>
                                 {cutPurpose === 'order' && selectedOrderNumber && (
-                                  <span className="text-[7.5px] font-black text-orange-600 bg-orange-50 border border-orange-200 px-1 py-0.2 rounded uppercase flex items-center gap-0.5">🔒 Locked</span>
+                                  isOrderDimensionsUnlocked ? (
+                                    <span className="text-[7.5px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-1 py-0.2 rounded uppercase flex items-center gap-0.5">🔓 Unlocked</span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (window.confirm("Are you sure you want to unlock and edit these dimensions?")) {
+                                          setIsOrderDimensionsUnlocked(true);
+                                        }
+                                      }}
+                                      className="text-[7.5px] font-black text-orange-600 bg-orange-50 hover:bg-orange-100 border border-orange-200 px-1.5 py-0.5 rounded uppercase flex items-center gap-0.5 transition cursor-pointer"
+                                    >
+                                      🔒 Locked
+                                    </button>
+                                  )
                                 )}
-                              </label>
+                              </div>
                               <input
                                 type="number"
                                 step="0.01"
                                 value={selectedOrder.requiredLength === 0 ? '' : fromMeters(selectedOrder.requiredLength)}
                                 onChange={(e) => {
-                                  if (cutPurpose === 'order' && selectedOrderNumber) return;
+                                  if (cutPurpose === 'order' && selectedOrderNumber && !isOrderDimensionsUnlocked) return;
                                   const val = parseFloat(e.target.value);
                                   setSelectedOrder({ ...selectedOrder, requiredLength: isNaN(val) ? 0 : toMeters(val) });
                                 }}
-                                readOnly={cutPurpose === 'order' && !!selectedOrderNumber}
-                                className={`w-full px-2.5 py-1 border rounded-lg focus:outline-none font-bold text-xs ${cutPurpose === 'order' && selectedOrderNumber
+                                readOnly={cutPurpose === 'order' && !!selectedOrderNumber && !isOrderDimensionsUnlocked}
+                                className={`w-full px-2.5 py-1 border rounded-lg focus:outline-none font-bold text-xs ${cutPurpose === 'order' && selectedOrderNumber && !isOrderDimensionsUnlocked
                                   ? 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
                                   : 'border-slate-200 focus:border-zinc-950 bg-white'
                                   }`}
@@ -2072,14 +2907,55 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             </div>
                           </div>
 
+                          {/* Quantity stepper — only shown for manual / scrap / inventory purposes */}
+                          {cutPurpose !== 'order' && (
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                                <Layers size={10} /> Quantity (Pieces)
+                              </label>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => setSelectedOrder({ ...selectedOrder, quantity: Math.max(1, (selectedOrder.quantity || 1) - 1) })}
+                                  className="w-8 h-8 rounded-lg bg-slate-100 font-black text-base hover:bg-slate-200 transition flex items-center justify-center shrink-0"
+                                >−</button>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={selectedOrder.quantity || 1}
+                                  onChange={(e) => setSelectedOrder({ ...selectedOrder, quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                                  className="flex-1 px-2.5 py-1 border border-slate-200 rounded-lg focus:border-zinc-950 focus:outline-none font-black text-xs text-center bg-white"
+                                />
+                                <button
+                                  onClick={() => setSelectedOrder({ ...selectedOrder, quantity: (selectedOrder.quantity || 1) + 1 })}
+                                  className="w-8 h-8 rounded-lg bg-slate-100 font-black text-base hover:bg-slate-200 transition flex items-center justify-center shrink-0"
+                                >+</button>
+                              </div>
+                              {(selectedOrder.quantity || 1) > 1 && (
+                                <p className="text-[8.5px] text-emerald-600 font-bold flex items-center gap-1">
+                                  <Scissors size={9} /> Will cut {selectedOrder.quantity} pieces sequentially — minimum scrap
+                                </p>
+                              )}
+                            </div>
+                          )}
+
                           <div className="space-y-1">
                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Belt Material Type</label>
                             <select
                               value={selectedOrder.materialType}
-                              onChange={(e) => setSelectedOrder({ ...selectedOrder, materialType: e.target.value })}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '__ADD_NEW__') {
+                                  setPreviousMaterialTypeVal(selectedOrder.materialType);
+                                  setMaterialTypeAddSource('selectedOrder');
+                                  setShowAddMaterialModal(true);
+                                } else {
+                                  setSelectedOrder({ ...selectedOrder, materialType: val });
+                                }
+                              }}
                               className="w-full px-2.5 py-1 border border-slate-200 rounded-lg focus:border-zinc-950 focus:outline-none font-bold text-xs bg-white cursor-pointer"
                             >
-                              {MATERIAL_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+                              {materialTypes.map(type => <option key={type} value={type}>{type}</option>)}
+                              <option value="__ADD_NEW__" className="text-indigo-600 font-bold bg-indigo-50 font-black">+ Add Custom Material Type...</option>
                             </select>
                           </div>
                         </>
@@ -2192,9 +3068,18 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                     <span className="font-black text-[11px] uppercase tracking-tight flex items-center gap-1 flex-wrap">
                                       <span>{candidate.rollId}</span>
                                       {matchRoll && (
-                                        <span className={`text-[8px] font-black uppercase tracking-wider px-1 py-0.2 rounded ${isSelected ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-600'}`}>
-                                          {fromMeters(matchRoll.fullLength).toFixed(1)}{currentUnit}x{fromMeters(matchRoll.fullWidth).toFixed(1)}{currentUnit}
-                                        </span>
+                                        <>
+                                          <span className={`text-[8px] font-black uppercase tracking-wider px-1 py-0.2 rounded ${isSelected ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-600'}`}>
+                                            {fromMeters(matchRoll.fullLength).toFixed(1)}{currentUnit}x{fromMeters(matchRoll.fullWidth).toFixed(1)}{currentUnit}
+                                          </span>
+                                          <span className={`text-[7.5px] font-black uppercase tracking-wider px-1 py-0.2 rounded ${
+                                            isRollReuse(matchRoll)
+                                              ? (isSelected ? 'bg-amber-900 text-amber-200' : 'bg-amber-50 text-amber-700')
+                                              : (isSelected ? 'bg-blue-900 text-blue-200' : 'bg-blue-50 text-blue-700')
+                                          }`}>
+                                            {isRollReuse(matchRoll) ? 'Remnant' : 'Fresh'}
+                                          </span>
+                                        </>
                                       )}
                                       <span className={`text-[7.5px] font-black tracking-widest px-1 py-0.2 rounded-md leading-none ${badgeStyle}`}>
                                         {badgeText}
@@ -2260,7 +3145,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                               onClick={handleExecuteCut}
                               className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-1.5 rounded-lg transition shadow-md active:scale-95 text-[10.5px] uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5"
                             >
-                              <Scissors size={14} /> EXECUTE SELECTED CUT
+                              <Scissors size={14} />
+                              {(selectedOrder.quantity || 1) > 1
+                                ? `EXECUTE ALL CUTS (${selectedOrder.quantity}×)`
+                                : 'EXECUTE SELECTED CUT'}
                             </button>
                           </div>
                         )}
@@ -2319,8 +3207,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
           {activeTab === 'stock' && (
             <div className="space-y-5">
 
-              {/* ── TOP: Four summary selector tiles ── */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* ── TOP: Five summary selector tiles ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
 
                 {/* Tile 1 – Material Stocks */}
                 <button
@@ -2400,30 +3288,73 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                 {/* Tile 4 - Reorder Level */}
                 {(() => {
                   const alertCount = materialStocks.filter(s => s.reorderLevel > 0 && s.quantity <= s.reorderLevel).length;
+                  const lowFreshRollsCount = rolls.filter(r => r.status !== 'refused' && !isRollReuse(r) && r.reorderLevel > 0 && r.remainingSqm <= r.reorderLevel).length;
+                  const lowRemnantsCount = rolls.filter(r => r.status !== 'refused' && isRollReuse(r) && r.remainingSqm <= 0.01).length;
+                  const lowMaterialTypesCount = materialTypeStocks.filter(m => m.isLow).length;
+                  const totalAlerts = alertCount + lowFreshRollsCount + lowRemnantsCount + lowMaterialTypesCount;
                   return (
                     <button
                       type="button"
                       onClick={() => setActiveInventoryCard(activeInventoryCard === 'reorder' ? null : 'reorder')}
                       className={`group w-full text-left p-4 rounded-2xl border-2 transition-all duration-200 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${activeInventoryCard === 'reorder'
                           ? 'bg-amber-500 border-amber-500 text-white shadow-lg'
-                          : alertCount > 0
+                          : totalAlerts > 0
                             ? 'bg-amber-50 border-amber-300 text-slate-800 hover:border-amber-500'
                             : 'bg-white border-zinc-200 text-slate-800 hover:border-amber-400'
                         }`}
                     >
-                      <div className={`p-2.5 rounded-xl shrink-0 ${activeInventoryCard === 'reorder' ? 'bg-white/15' : alertCount > 0 ? 'bg-amber-100' : 'bg-amber-50'
+                      <div className={`p-2.5 rounded-xl shrink-0 ${activeInventoryCard === 'reorder' ? 'bg-white/15' : totalAlerts > 0 ? 'bg-amber-100' : 'bg-amber-50'
                         }`}>
                         <AlertTriangle size={20} className={activeInventoryCard === 'reorder' ? 'text-white' : 'text-amber-500'} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className={`text-[9px] font-black uppercase tracking-widest ${activeInventoryCard === 'reorder' ? 'text-amber-100' : 'text-slate-400'
                           }`}>Reorder Level</p>
-                        <p className={`text-xl font-black leading-none mt-0.5 ${activeInventoryCard === 'reorder' ? 'text-white' : alertCount > 0 ? 'text-amber-600' : 'text-zinc-950'
-                          }`}>{alertCount}</p>
-                        <p className={`text-[9px] font-bold mt-1 ${activeInventoryCard === 'reorder' ? 'text-amber-100' : alertCount > 0 ? 'text-amber-500 font-black' : 'text-slate-400'
-                          }`}>{alertCount > 0 ? '⚠️ items need refill' : 'all levels OK'}</p>
+                        <p className={`text-xl font-black leading-none mt-0.5 ${activeInventoryCard === 'reorder' ? 'text-white' : totalAlerts > 0 ? 'text-amber-600' : 'text-zinc-950'
+                          }`}>{totalAlerts}</p>
+                        <p className={`text-[9px] font-bold mt-1 ${activeInventoryCard === 'reorder' ? 'text-amber-100' : totalAlerts > 0 ? 'text-amber-500 font-black' : 'text-slate-400'
+                          }`}>{totalAlerts > 0 ? '⚠️ items/rolls alert' : 'all levels OK'}</p>
                       </div>
-                      <ChevronRight size={16} className={`shrink-0 transition-transform duration-200 ${activeInventoryCard === 'reorder' ? 'text-white rotate-90' : alertCount > 0 ? 'text-amber-400 group-hover:text-amber-600' : 'text-slate-300 group-hover:text-amber-400'
+                      <ChevronRight size={16} className={`shrink-0 transition-transform duration-200 ${activeInventoryCard === 'reorder' ? 'text-white rotate-90' : totalAlerts > 0 ? 'text-amber-400 group-hover:text-amber-600' : 'text-slate-300 group-hover:text-amber-400'
+                        }`} />
+                    </button>
+                  );
+                })()}
+
+                {/* Tile 5 - Request For Approval */}
+                {(() => {
+                  const pendingCount = materialRequests.filter(r => r.status === 'pending').length;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setActiveInventoryCard(activeInventoryCard === 'requests' ? null : 'requests')}
+                      className={`group w-full text-left p-4 rounded-2xl border-2 transition-all duration-200 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${activeInventoryCard === 'requests'
+                          ? 'bg-violet-600 border-violet-600 text-white shadow-lg'
+                          : pendingCount > 0
+                            ? 'bg-violet-50 border-violet-300 text-slate-800 hover:border-violet-500'
+                            : 'bg-white border-zinc-200 text-slate-800 hover:border-violet-400'
+                        }`}
+                    >
+                      <div className={`p-2.5 rounded-xl shrink-0 ${activeInventoryCard === 'requests' ? 'bg-white/15' : pendingCount > 0 ? 'bg-violet-100' : 'bg-violet-50'
+                        }`}>
+                        <ClipboardList size={20} className={activeInventoryCard === 'requests' ? 'text-white' : 'text-violet-600'} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className={`text-[9px] font-black uppercase tracking-widest ${activeInventoryCard === 'requests' ? 'text-violet-100' : 'text-slate-400'
+                            }`}>Request For Approval</p>
+                          {pendingCount > 0 && activeInventoryCard !== 'requests' && (
+                            <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-extrabold leading-none text-white bg-rose-500 rounded-full animate-pulse">
+                              {pendingCount}
+                            </span>
+                          )}
+                        </div>
+                        <p className={`text-xl font-black leading-none mt-0.5 ${activeInventoryCard === 'requests' ? 'text-white' : 'text-zinc-950'
+                          }`}>{pendingCount}</p>
+                        <p className={`text-[9px] font-bold mt-1 ${activeInventoryCard === 'requests' ? 'text-violet-100' : pendingCount > 0 ? 'text-violet-600 font-black' : 'text-slate-400'
+                          }`}>{pendingCount > 0 ? 'pending action' : 'no pending requests'}</p>
+                      </div>
+                      <ChevronRight size={16} className={`shrink-0 transition-transform duration-200 ${activeInventoryCard === 'requests' ? 'text-white rotate-90' : pendingCount > 0 ? 'text-violet-400 group-hover:text-violet-600' : 'text-slate-300 group-hover:text-violet-400'
                         }`} />
                     </button>
                   );
@@ -2480,7 +3411,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                                 }
                                                 if (Array.isArray(item.options)) {
                                                   item.options.forEach((opt: any) => {
-                                                    if (`${item.name} (${opt.name})` === val) {
+                                                    if (opt.name && opt.name.trim() === val) {
                                                       defaultUnit = opt.unit || item.unit || 'pcs';
                                                     }
                                                   });
@@ -2635,6 +3566,34 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                               const inputEl = document.getElementById(`refill-qty-${item.id}`) as HTMLInputElement;
                                               const val = parseFloat(inputEl?.value || '');
                                               if (val > 0) {
+                                                if (window.confirm(`Are you sure you want to refill ${item.name} by ${val} ${item.unit}?`)) {
+                                                  try {
+                                                    const res = await fetch(`/api/material-stocks/${item.id}/refill`, {
+                                                      method: 'PATCH',
+                                                      headers: { 'Content-Type': 'application/json' },
+                                                      body: JSON.stringify({ addQuantity: val })
+                                                    });
+                                                    if (res.ok) {
+                                                      toast.success(`Refilled ${val} ${item.unit} to ${item.name}!`);
+                                                      inputEl.value = '';
+                                                      loadMaterialStocksData();
+                                                    } else {
+                                                      toast.error("Failed to refill stock");
+                                                    }
+                                                  } catch (err) {
+                                                    toast.error("Failed to refill stock");
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }}
+                                        />
+                                        <button
+                                          onClick={async () => {
+                                            const inputEl = document.getElementById(`refill-qty-${item.id}`) as HTMLInputElement;
+                                            const val = parseFloat(inputEl?.value || '');
+                                            if (val > 0) {
+                                              if (window.confirm(`Are you sure you want to refill ${item.name} by ${val} ${item.unit}?`)) {
                                                 try {
                                                   const res = await fetch(`/api/material-stocks/${item.id}/refill`, {
                                                     method: 'PATCH',
@@ -2652,30 +3611,6 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                                   toast.error("Failed to refill stock");
                                                 }
                                               }
-                                            }
-                                          }}
-                                        />
-                                        <button
-                                          onClick={async () => {
-                                            const inputEl = document.getElementById(`refill-qty-${item.id}`) as HTMLInputElement;
-                                            const val = parseFloat(inputEl?.value || '');
-                                            if (val > 0) {
-                                              try {
-                                                const res = await fetch(`/api/material-stocks/${item.id}/refill`, {
-                                                  method: 'PATCH',
-                                                  headers: { 'Content-Type': 'application/json' },
-                                                  body: JSON.stringify({ addQuantity: val })
-                                                });
-                                                if (res.ok) {
-                                                  toast.success(`Refilled ${val} ${item.unit} to ${item.name}!`);
-                                                  inputEl.value = '';
-                                                  loadMaterialStocksData();
-                                                } else {
-                                                  toast.error("Failed to refill stock");
-                                                }
-                                              } catch (err) {
-                                                toast.error("Failed to refill stock");
-                                              }
                                             } else {
                                               toast.error("Enter a valid quantity to refill");
                                             }
@@ -2688,13 +3623,6 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                     </td>
                                     <td className="px-4 py-3 text-right">
                                       <div className="flex gap-2 justify-end items-center">
-                                        <button
-                                          onClick={() => handleOpenIssueModal(item)}
-                                          className="px-3 py-1.5 text-emerald-700 bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 rounded-lg transition-all font-black uppercase text-[10px] flex items-center gap-1 cursor-pointer"
-                                          title="Issue to Production"
-                                        >
-                                          <Send size={11} /> Issue
-                                        </button>
                                         <button
                                           onClick={() => setEditingMaterialStock(item)}
                                           className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
@@ -2873,10 +3801,20 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider">Material Type</label>
                             <select
                               value={newRoll.materialType}
-                              onChange={(e) => setNewRoll({ ...newRoll, materialType: e.target.value })}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '__ADD_NEW__') {
+                                  setPreviousMaterialTypeVal(newRoll.materialType);
+                                  setMaterialTypeAddSource('newRoll');
+                                  setShowAddMaterialModal(true);
+                                } else {
+                                  setNewRoll({ ...newRoll, materialType: val });
+                                }
+                              }}
                               className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             >
-                              {MATERIAL_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+                              {materialTypes.map(type => <option key={type} value={type}>{type}</option>)}
+                              <option value="__ADD_NEW__" className="text-indigo-600 font-bold bg-indigo-50 font-black">+ Add Custom Material Type...</option>
                             </select>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
@@ -3004,132 +3942,608 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                 {/* CARD 4: Reorder Level Monitor */}
                 {activeInventoryCard === 'reorder' && (() => {
                   const lowItems = materialStocks.filter(s => s.reorderLevel > 0 && s.quantity <= s.reorderLevel);
+                  const lowFreshRolls = rolls.filter(r => r.status !== 'refused' && !isRollReuse(r) && r.reorderLevel > 0 && r.remainingSqm <= r.reorderLevel);
+                  const consumedRemnantRolls = rolls.filter(r => r.status !== 'refused' && isRollReuse(r) && r.remainingSqm <= 0.01);
+                  
                   return (
                     <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-4 animate-in fade-in duration-300 flex flex-col w-full">
-                      <div className="flex justify-between items-center mb-3">
+                      <div className="flex justify-between items-center mb-3 border-b border-zinc-100 pb-2">
                         <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                           <div className="p-1.5 rounded-lg bg-amber-50 shrink-0">
                             <AlertTriangle size={14} className="text-amber-500" />
                           </div>
-                          Reorder Level Monitor
-                          {lowItems.length > 0 ? (
-                            <span className="text-[10px] font-black text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full ml-1.5">
-                              {lowItems.length} low stock
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full ml-1.5">
-                              Stock levels OK
-                            </span>
-                          )}
+                          Reorder & Roll Alerts Manager
                         </h3>
                       </div>
 
-                      {/* Alert Banner if any item is low */}
-                      {lowItems.length > 0 && (
-                        <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 flex items-start gap-2 mb-3">
-                          <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5 animate-bounce" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-[10px] font-bold text-amber-800 leading-tight">
-                              {lowItems.length} {lowItems.length === 1 ? 'item requires' : 'items require'} immediate refill.
-                            </p>
+                      {/* Sub-tabs row */}
+                      <div className="flex border-b border-zinc-150 mb-4">
+                        <button
+                          type="button"
+                          onClick={() => setReorderSubTab('materials')}
+                          className={`px-4 py-2 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                            reorderSubTab === 'materials'
+                              ? 'border-amber-500 text-amber-600'
+                              : 'border-transparent text-slate-400 hover:text-slate-600'
+                          }`}
+                        >
+                          Material Stocks ({lowItems.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReorderSubTab('rolls')}
+                          className={`px-4 py-2 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                            reorderSubTab === 'rolls'
+                              ? 'border-amber-500 text-amber-600'
+                              : 'border-transparent text-slate-400 hover:text-slate-600'
+                          }`}
+                        >
+                          Fresh Rolls ({lowFreshRolls.length + materialTypeStocks.filter(m => m.isLow).length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReorderSubTab('remnants')}
+                          className={`px-4 py-2 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                            reorderSubTab === 'remnants'
+                              ? 'border-amber-500 text-amber-600'
+                              : 'border-transparent text-slate-400 hover:text-slate-600'
+                          }`}
+                        >
+                          Cutting Belt ({consumedRemnantRolls.length})
+                        </button>
+                      </div>
+
+                      {/* Sub-tab contents */}
+                      {reorderSubTab === 'materials' && (
+                        <div className="space-y-4 animate-in fade-in duration-200">
+                          {/* Alert Banner if any item is low */}
+                          {lowItems.length > 0 && (
+                            <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 flex items-start gap-2">
+                              <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5 animate-bounce" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[10px] font-bold text-amber-800 leading-tight">
+                                  {lowItems.length} {lowItems.length === 1 ? 'item requires' : 'items require'} immediate refill.
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Searcher */}
+                          <div className="relative">
+                            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                            <input
+                              type="text"
+                              placeholder="Search Reorder Levels..."
+                              value={reorderSearchQuery}
+                              onChange={(e) => setReorderSearchQuery(e.target.value)}
+                              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-zinc-200 rounded-lg text-[11px] font-bold text-zinc-950 focus:outline-none focus:ring-1 focus:ring-zinc-950 placeholder-zinc-400 shadow-sm text-left"
+                            />
+                          </div>
+
+                          {/* Table */}
+                          <div className="overflow-x-auto border border-zinc-150 rounded-xl">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead className="bg-slate-50 border-b border-zinc-150">
+                                <tr>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Material Name</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Current Stock</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest w-24">Reorder Trigger</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {filteredReorderItemsList.map((item) => {
+                                  const isLow = item.reorderLevel > 0 && item.quantity <= item.reorderLevel;
+                                  const isOut = item.quantity <= 0;
+                                  const currentEdit = editingReorderLevel[item.id];
+                                  return (
+                                    <tr
+                                      key={item.id}
+                                      className={`border-b border-zinc-100 hover:bg-slate-50/50 transition-colors ${
+                                        isOut
+                                          ? 'bg-rose-50/30 border-l-2 border-l-rose-500'
+                                          : isLow
+                                            ? 'bg-amber-50/30 border-l-2 border-l-amber-500'
+                                            : ''
+                                      }`}
+                                    >
+                                      <td className="px-3 py-2 font-black text-slate-800">{item.name}</td>
+                                      <td className="px-3 py-2 font-bold">
+                                        <span className={isLow ? (isOut ? 'text-rose-600 font-extrabold' : 'text-amber-600') : 'text-slate-700'}>
+                                          {item.quantity} {item.unit}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <div className="flex items-center gap-1">
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            placeholder={item.reorderLevel > 0 ? item.reorderLevel.toString() : '0'}
+                                            value={currentEdit !== undefined ? currentEdit : (item.reorderLevel > 0 ? item.reorderLevel.toString() : '')}
+                                            onChange={(e) => setEditingReorderLevel(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                            className="w-12 px-1 py-0.5 border border-zinc-200 rounded text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                          />
+                                          <button
+                                            onClick={() => handleSaveReorderLevel(item.id)}
+                                            disabled={savingReorderLevel === item.id || currentEdit === undefined}
+                                            className={`p-0.5 rounded text-[10px] font-black transition cursor-pointer ${
+                                              savingReorderLevel === item.id
+                                                ? 'bg-slate-100 text-slate-300'
+                                                : currentEdit !== undefined
+                                                  ? 'bg-amber-500 hover:bg-amber-400 text-white shadow-sm'
+                                                  : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                                            }`}
+                                            title="Save reorder level"
+                                          >
+                                            {savingReorderLevel === item.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+                                          </button>
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {isOut ? (
+                                          <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200">OUT OF STOCK</span>
+                                        ) : isLow ? (
+                                          <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">LOW STOCK</span>
+                                        ) : (
+                                          <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">OK</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+
+                                {filteredReorderItemsList.length === 0 && (
+                                  <tr>
+                                    <td colSpan={4} className="py-10 text-center text-zinc-400 font-semibold text-xs italic">
+                                      No materials found.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
                           </div>
                         </div>
                       )}
 
-                      {/* Searcher */}
-                      <div className="relative mb-3">
-                        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
-                        <input
-                          type="text"
-                          placeholder="Search Reorder Levels..."
-                          value={reorderSearchQuery}
-                          onChange={(e) => setReorderSearchQuery(e.target.value)}
-                          className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-zinc-200 rounded-lg text-[11px] font-bold text-zinc-950 focus:outline-none focus:ring-1 focus:ring-zinc-950 placeholder-zinc-400 shadow-sm text-left"
-                        />
-                      </div>
-
-                      {/* Table */}
-                      <div className="overflow-x-auto border border-zinc-150 rounded-xl">
-                        <table className="w-full text-left text-xs border-collapse">
-                          <thead className="bg-slate-50 border-b border-zinc-150">
-                            <tr>
-                              <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Material Name</th>
-                              <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Current Stock</th>
-                              <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest w-24">Reorder Trigger</th>
-                              <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredReorderItemsList.map((item) => {
-                              const isLow = item.reorderLevel > 0 && item.quantity <= item.reorderLevel;
-                              const isOut = item.quantity <= 0;
-                              const currentEdit = editingReorderLevel[item.id];
-                              return (
-                                <tr
-                                  key={item.id}
-                                  className={`border-b border-zinc-100 hover:bg-slate-50/50 transition-colors ${
-                                    isOut
-                                      ? 'bg-rose-50/30 border-l-2 border-l-rose-500'
-                                      : isLow
-                                        ? 'bg-amber-50/30 border-l-2 border-l-amber-500'
-                                        : ''
-                                  }`}
-                                >
-                                  <td className="px-3 py-2 font-black text-slate-800">{item.name}</td>
-                                  <td className="px-3 py-2 font-bold">
-                                    <span className={isLow ? (isOut ? 'text-rose-600 font-extrabold' : 'text-amber-600') : 'text-slate-700'}>
-                                      {item.quantity} {item.unit}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <div className="flex items-center gap-1">
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        placeholder={item.reorderLevel > 0 ? item.reorderLevel.toString() : '0'}
-                                        value={currentEdit !== undefined ? currentEdit : (item.reorderLevel > 0 ? item.reorderLevel.toString() : '')}
-                                        onChange={(e) => setEditingReorderLevel(prev => ({ ...prev, [item.id]: e.target.value }))}
-                                        className="w-12 px-1 py-0.5 border border-zinc-200 rounded text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-amber-400"
-                                      />
-                                      <button
-                                        onClick={() => handleSaveReorderLevel(item.id)}
-                                        disabled={savingReorderLevel === item.id || currentEdit === undefined}
-                                        className={`p-0.5 rounded text-[10px] font-black transition cursor-pointer ${
-                                          savingReorderLevel === item.id
-                                            ? 'bg-slate-100 text-slate-300'
-                                            : currentEdit !== undefined
-                                              ? 'bg-amber-500 hover:bg-amber-400 text-white shadow-sm'
-                                              : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                      {reorderSubTab === 'rolls' && (
+                        <div className="space-y-6 animate-in fade-in duration-200">
+                          {/* Part 1: Overall Material Type Reorder Triggers */}
+                          <div className="space-y-3">
+                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                              <Layers size={12} className="text-indigo-500" />
+                              Material Type Overall Triggers (Total SQM)
+                            </h4>
+                            <div className="overflow-x-auto border border-zinc-150 rounded-xl">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead className="bg-slate-50 border-b border-zinc-150">
+                                  <tr>
+                                    <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Material Type</th>
+                                    <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Total SQM in Stock</th>
+                                    <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest w-28">Overall Trigger (SQM)</th>
+                                    <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {materialTypeStocks.map((m) => {
+                                    const currentEdit = editingMaterialTypeReorder[m.materialType];
+                                    return (
+                                      <tr
+                                        key={m.materialType}
+                                        className={`border-b border-zinc-100 hover:bg-slate-50/50 transition-colors ${
+                                          m.totalSqm <= 0
+                                            ? 'bg-rose-50/30 border-l-2 border-l-rose-500'
+                                            : m.isLow
+                                              ? 'bg-amber-50/30 border-l-2 border-l-amber-500'
+                                              : ''
                                         }`}
-                                        title="Save reorder level"
                                       >
-                                        {savingReorderLevel === item.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
-                                      </button>
-                                    </div>
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    {isOut ? (
-                                      <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200">OUT OF STOCK</span>
-                                    ) : isLow ? (
-                                      <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">LOW STOCK</span>
-                                    ) : (
-                                      <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">OK</span>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                                        <td className="px-3 py-2.5 font-black text-slate-800">{m.materialType}</td>
+                                        <td className="px-3 py-2.5 font-bold">
+                                          <span className={m.isLow ? (m.totalSqm <= 0 ? 'text-rose-600 font-extrabold' : 'text-amber-600') : 'text-slate-700'}>
+                                            {m.totalSqm.toFixed(2)} sqm
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <div className="flex items-center gap-1">
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="1"
+                                              placeholder={m.reorderLevel > 0 ? m.reorderLevel.toString() : '0'}
+                                              value={currentEdit !== undefined ? currentEdit : (m.reorderLevel > 0 ? m.reorderLevel.toString() : '')}
+                                              onChange={(e) => setEditingMaterialTypeReorder(prev => ({ ...prev, [m.materialType]: e.target.value }))}
+                                              className="w-16 px-1 py-0.5 border border-zinc-200 rounded text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                            />
+                                            <button
+                                              onClick={() => handleSaveMaterialTypeReorder(m.materialType)}
+                                              disabled={savingMaterialTypeReorder === m.materialType || currentEdit === undefined}
+                                              className={`p-0.5 rounded text-[10px] font-black transition cursor-pointer ${
+                                                savingMaterialTypeReorder === m.materialType
+                                                  ? 'bg-slate-100 text-slate-300'
+                                                  : currentEdit !== undefined
+                                                    ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm'
+                                                    : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                                              }`}
+                                              title="Save overall trigger"
+                                            >
+                                              {savingMaterialTypeReorder === m.materialType ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+                                            </button>
+                                          </div>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right font-black">
+                                          {m.totalSqm <= 0 ? (
+                                            <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200">OUT OF STOCK</span>
+                                          ) : m.isLow ? (
+                                            <div className="flex flex-col gap-0.5 items-end">
+                                              <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">LOW STOCK</span>
+                                              <span className="text-[8px] font-black text-amber-600 leading-none">⚠️ Order new rolls!</span>
+                                            </div>
+                                          ) : (
+                                            <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">OK</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
 
-                            {filteredReorderItemsList.length === 0 && (
-                              <tr>
-                                <td colSpan={4} className="py-10 text-center text-zinc-400 font-semibold text-xs italic">
-                                  No materials found.
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
+                          <div className="border-t border-zinc-150 pt-4 space-y-3">
+                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                              <Package size={12} className="text-indigo-500" />
+                              Individual Roll Triggers & Status
+                            </h4>
+
+                            {/* Searcher */}
+                            <div className="relative">
+                              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                              <input
+                                type="text"
+                                placeholder="Search Fresh Rolls..."
+                                value={rollReorderSearchQuery}
+                                onChange={(e) => setRollReorderSearchQuery(e.target.value)}
+                                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-zinc-200 rounded-lg text-[11px] font-bold text-zinc-950 focus:outline-none focus:ring-1 focus:ring-zinc-950 placeholder-zinc-400 shadow-sm text-left"
+                              />
+                            </div>
+
+                            <div className="overflow-x-auto border border-zinc-150 rounded-xl">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead className="bg-slate-50 border-b border-zinc-150">
+                                  <tr>
+                                    <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Roll ID</th>
+                                    <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Material Type</th>
+                                    <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Remaining SQM</th>
+                                    <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Total SQM</th>
+                                    <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest w-28">Reorder Trigger</th>
+                                    <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {filteredRollReorderList.map((r) => {
+                                    const isLow = r.reorderLevel > 0 && r.remainingSqm <= r.reorderLevel;
+                                    const isOut = r.remainingSqm <= 0;
+                                    const currentEdit = editingRollReorderLevel[r.id];
+                                    return (
+                                      <tr
+                                        key={r.id}
+                                        className={`border-b border-zinc-100 hover:bg-slate-50/50 transition-colors ${
+                                          isOut
+                                            ? 'bg-rose-50/30 border-l-2 border-l-rose-500'
+                                            : isLow
+                                              ? 'bg-amber-50/30 border-l-2 border-l-amber-500'
+                                              : ''
+                                        }`}
+                                      >
+                                        <td className="px-3 py-2.5 font-black text-slate-800">{r.id}</td>
+                                        <td className="px-3 py-2.5 font-bold text-slate-600">{r.materialType}</td>
+                                        <td className="px-3 py-2.5 font-bold">
+                                          <span className={isLow ? (isOut ? 'text-rose-600 font-extrabold' : 'text-amber-600') : 'text-slate-700'}>
+                                            {r.remainingSqm.toFixed(2)} sqm
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2.5 font-bold text-slate-500">{r.totalSqm.toFixed(2)} sqm</td>
+                                        <td className="px-3 py-2">
+                                          <div className="flex items-center gap-1">
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="0.1"
+                                              placeholder={r.reorderLevel > 0 ? r.reorderLevel.toString() : '0'}
+                                              value={currentEdit !== undefined ? currentEdit : (r.reorderLevel > 0 ? r.reorderLevel.toString() : '')}
+                                              onChange={(e) => setEditingRollReorderLevel(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                              className="w-16 px-1 py-0.5 border border-zinc-200 rounded text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                            />
+                                            <button
+                                              onClick={() => handleSaveRollReorderLevel(r.id)}
+                                              disabled={savingRollReorderLevel === r.id || currentEdit === undefined}
+                                              className={`p-0.5 rounded text-[10px] font-black transition cursor-pointer ${
+                                                savingRollReorderLevel === r.id
+                                                  ? 'bg-slate-100 text-slate-300'
+                                                  : currentEdit !== undefined
+                                                    ? 'bg-amber-500 hover:bg-amber-400 text-white shadow-sm'
+                                                    : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                                              }`}
+                                              title="Save roll reorder level"
+                                            >
+                                              {savingRollReorderLevel === r.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+                                            </button>
+                                          </div>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right font-black">
+                                          {isOut ? (
+                                            <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200">OUT OF STOCK</span>
+                                          ) : isLow ? (
+                                            <div className="flex flex-col gap-0.5 items-end">
+                                              <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">LOW STOCK</span>
+                                              <span className="text-[8px] font-black text-amber-600 leading-none">⚠️ New roll order karo!</span>
+                                            </div>
+                                          ) : (
+                                            <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">OK</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+
+                                  {filteredRollReorderList.length === 0 && (
+                                    <tr>
+                                      <td colSpan={6} className="py-8 text-center text-zinc-400 font-semibold text-xs italic">
+                                        No fresh rolls found.
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {reorderSubTab === 'remnants' && (
+                        <div className="space-y-4 animate-in fade-in duration-200">
+                          <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-2.5 flex items-start gap-2">
+                            <Info size={14} className="text-rose-600 shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[10px] font-bold text-rose-800 leading-tight">
+                                These remnant rolls have been fully consumed by production. No refill or reorder actions are required for remnants.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="overflow-x-auto border border-zinc-150 rounded-xl">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead className="bg-slate-50 border-b border-zinc-150">
+                                <tr>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Remnant ID</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Parent Roll ID</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Material Type</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Remaining SQM</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {consumedRemnantRolls.slice(0, 15).map((r) => (
+                                  <tr key={r.id} className="border-b border-zinc-100 hover:bg-slate-50/50 transition-colors bg-rose-50/10">
+                                    <td className="px-3 py-2.5 font-black text-slate-800">{r.id}</td>
+                                    <td className="px-3 py-2.5 font-bold text-slate-500">{r.parentRollId || 'Unknown'}</td>
+                                    <td className="px-3 py-2.5 font-bold text-slate-600">{r.materialType}</td>
+                                    <td className="px-3 py-2.5 font-bold text-rose-600">{r.remainingSqm.toFixed(2)} sqm</td>
+                                    <td className="px-3 py-2.5 text-right font-black text-rose-600 text-[10px] uppercase tracking-wide">
+                                      ❌ Khatam ho gaya
+                                    </td>
+                                  </tr>
+                                ))}
+
+                                {consumedRemnantRolls.length === 0 && (
+                                  <tr>
+                                    <td colSpan={5} className="py-8 text-center text-zinc-400 font-semibold text-xs italic">
+                                      No remnants are currently marked as fully consumed.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* CARD 5: Material Requests For Approval */}
+                {activeInventoryCard === 'requests' && (() => {
+                  const pendingReqs = materialRequests.filter(r => r.status === 'pending');
+                  const pastReqs = materialRequests.filter(r => r.status !== 'pending');
+                  return (
+                    <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-4 animate-in fade-in duration-300 flex flex-col w-full">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                        <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <div className="p-1.5 rounded-lg bg-violet-50 shrink-0">
+                            <ClipboardList size={14} className="text-violet-600" />
+                          </div>
+                          Material Requests Approval Workflow
+                          <span className="text-[10px] font-black text-violet-700 bg-violet-50 border border-violet-100 px-2 py-0.5 rounded-full ml-1.5">
+                            {pendingReqs.length} Pending
+                          </span>
+                        </h3>
                       </div>
+
+                      {/* Sub-tabs row */}
+                      <div className="flex border-b border-zinc-150 mb-4">
+                        <button
+                          type="button"
+                          onClick={() => setRequestsSubTab('pending')}
+                          className={`px-4 py-2 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                            requestsSubTab === 'pending'
+                              ? 'border-violet-600 text-violet-600'
+                              : 'border-transparent text-slate-400 hover:text-slate-600'
+                          }`}
+                        >
+                          Pending Requests ({pendingReqs.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRequestsSubTab('history')}
+                          className={`px-4 py-2 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                            requestsSubTab === 'history'
+                              ? 'border-violet-600 text-violet-600'
+                              : 'border-transparent text-slate-400 hover:text-slate-600'
+                          }`}
+                        >
+                          Request History ({pastReqs.length})
+                        </button>
+                      </div>
+
+                      {/* Tab contents */}
+                      {requestsSubTab === 'pending' ? (
+                        <div className="space-y-4">
+                          {/* Info Alert */}
+                          {pendingReqs.length > 0 ? (
+                            <div className="bg-violet-50/70 border border-violet-200 rounded-xl p-2.5 flex items-start gap-2">
+                              <Info size={14} className="text-violet-600 shrink-0 mt-0.5" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[10px] font-bold text-violet-800 leading-tight">
+                                  Production team has requested raw materials. Please review, adjust quantities if necessary, and approve or reject.
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-2.5 flex items-start gap-2">
+                              <Check size={14} className="text-emerald-600 shrink-0 mt-0.5" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[10px] font-bold text-emerald-800 leading-tight">
+                                  All material requests are caught up! No pending approvals.
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="overflow-x-auto border border-zinc-150 rounded-xl">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead className="bg-slate-50 border-b border-zinc-150">
+                                <tr>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Material Name</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Requested Qty</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Requested By</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Notes</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Date & Time</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right w-32">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pendingReqs.map((req) => {
+                                  const reqDate = new Date(req.requestedAt).toLocaleString();
+                                  return (
+                                    <tr key={req.id} className="border-b border-zinc-100 hover:bg-slate-50/50 transition-colors">
+                                      <td className="px-3 py-2.5 font-black text-slate-800">{req.materialName}</td>
+                                      <td className="px-3 py-2.5 font-bold text-slate-700">
+                                        {req.requestedQuantity} {req.unit}
+                                      </td>
+                                      <td className="px-3 py-2.5 font-bold text-slate-600">
+                                        <div className="flex items-center gap-1">
+                                          <User size={10} className="text-slate-400" />
+                                          {req.requestedBy}
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2.5 font-bold text-slate-500 max-w-xs truncate" title={req.notes}>
+                                        {req.notes || <span className="text-zinc-300 italic">No notes</span>}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-[10px] font-bold text-slate-400">
+                                        <div className="flex items-center gap-1">
+                                          <Clock size={10} />
+                                          {reqDate}
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2.5 text-right">
+                                        <div className="flex items-center justify-end gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenApprovalModal(req)}
+                                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] rounded-lg shadow-sm transition cursor-pointer flex items-center gap-1"
+                                          >
+                                            <Check size={10} /> Approve
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRejectRequest(req)}
+                                            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white font-black text-[10px] rounded-lg shadow-sm transition cursor-pointer flex items-center gap-1"
+                                          >
+                                            <X size={10} /> Reject
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+
+                                {pendingReqs.length === 0 && (
+                                  <tr>
+                                    <td colSpan={6} className="py-8 text-center text-zinc-400 font-semibold text-xs italic">
+                                      No pending requests at this time.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="overflow-x-auto border border-zinc-150 rounded-xl">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead className="bg-slate-50 border-b border-zinc-150">
+                                <tr>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Material Name</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Requested Qty</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Requested By</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Approved/Processed Qty</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Processed By</th>
+                                  <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Remarks / Notes</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pastReqs.map((req) => {
+                                  const isApproved = req.status === 'approved';
+                                  return (
+                                    <tr key={req.id} className="border-b border-zinc-100 hover:bg-slate-50/50 transition-colors">
+                                      <td className="px-3 py-2.5 font-black text-slate-800">{req.materialName}</td>
+                                      <td className="px-3 py-2.5 font-bold text-slate-600">
+                                        {req.requestedQuantity} {req.unit}
+                                      </td>
+                                      <td className="px-3 py-2.5 font-bold text-slate-500">{req.requestedBy}</td>
+                                      <td className="px-3 py-2.5">
+                                        {isApproved ? (
+                                          <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">APPROVED</span>
+                                        ) : (
+                                          <span className="text-[7.5px] font-black px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-100">REJECTED</span>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2.5 font-black text-slate-800">
+                                        {isApproved ? `${req.approvedQuantity} ${req.unit}` : '-'}
+                                      </td>
+                                      <td className="px-3 py-2.5 font-bold text-slate-600">{req.approvedBy || '-'}</td>
+                                      <td className="px-3 py-2.5 font-bold text-slate-500 max-w-xs truncate" title={req.approvalNotes}>
+                                        {req.approvalNotes || <span className="text-zinc-300 italic">No notes</span>}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+
+                                {pastReqs.length === 0 && (
+                                  <tr>
+                                    <td colSpan={7} className="py-8 text-center text-zinc-400 font-semibold text-xs italic">
+                                      No request history found.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -3548,16 +4962,35 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                               dateStr = `${d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
                             }
                           }
+
+                          const matchedInvRoll = cut.isInventoryCut
+                            ? findInventoryRollForCut(rolls, selectedRollId, cut)
+                            : null;
+
+                          const isClickable = !!matchedInvRoll;
+
                           return (
-                            <tr key={cut.id} className="hover:bg-slate-50/50">
-                              <td className="px-5 py-3 font-bold text-slate-900">{cut.customerName}</td>
+                            <tr
+                              key={cut.id}
+                              className={`transition-colors ${isClickable ? 'hover:bg-indigo-50/60 cursor-pointer' : 'hover:bg-slate-50/50'}`}
+                              onClick={() => {
+                                if (isClickable && matchedInvRoll) {
+                                  setSelectedRollId(matchedInvRoll.id);
+                                }
+                              }}
+                              title={isClickable ? "Click to view allocations for this stock piece" : undefined}
+                            >
+                              <td className="px-5 py-3 font-bold text-slate-900 flex items-center gap-1.5">
+                                {isInventoryCutName(cut.customerName) ? 'REUSE STOCK' : cut.customerName}
+                                {isClickable && <ExternalLink size={12} className="text-indigo-500 shrink-0" />}
+                              </td>
                               <td className="px-5 py-3 font-mono text-[10px] text-zinc-500">{cut.id.substring(0, 12)}</td>
                               <td className="px-5 py-3 text-zinc-950 font-bold">
                                 {fromMeters(cut.length).toFixed(1)}{currentUnit} x {fromMeters(cut.width).toFixed(1)}{currentUnit}
                               </td>
                               <td className="px-5 py-3">
                                 {cut.isInventoryCut ? (
-                                  <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-lg border font-bold text-[9px]">STOCK</span>
+                                  <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-lg border border-emerald-100 font-bold text-[9px]">REUSE</span>
                                 ) : (
                                   <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg border border-blue-100 font-bold text-[9px]">CLIENT</span>
                                 )}
@@ -3598,128 +5031,339 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
         </div>
       </main>
 
-      {/* â•â•â• ISSUE MATERIAL MODAL â•â•â• */}
-      {showIssueModal && issuingStock && (
+      {/* ═══ REQUEST MATERIAL MODAL ═══ */}
+      {showRequestModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop */}
           <div
             className="absolute inset-0 bg-zinc-950/60 backdrop-blur-sm"
-            onClick={() => setShowIssueModal(false)}
+            onClick={() => setShowRequestModal(false)}
           />
-
-          {/* Modal */}
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200">
-            {/* Header */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200 text-left">
             <div className="p-5 border-b border-zinc-100 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
-                  <ArrowDownCircle size={20} className="text-emerald-600" />
+                <div className="w-10 h-10 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-center">
+                  <Send size={20} className="text-indigo-600" />
                 </div>
                 <div>
-                  <h3 className="font-black text-zinc-950 text-sm">Issue Material</h3>
-                  <p className="text-[10px] font-bold text-slate-400 mt-0.5">From Inventory â†’ Production</p>
+                  <h3 className="font-black text-zinc-950 text-sm">Request Material</h3>
+                  <p className="text-[10px] font-bold text-slate-400 mt-0.5">Send a request to Inventory Manager</p>
                 </div>
               </div>
               <button
-                onClick={() => setShowIssueModal(false)}
+                onClick={() => setShowRequestModal(false)}
                 className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
               >
                 <X size={16} />
               </button>
             </div>
 
-            {/* Material Info */}
-            <div className="px-5 pt-4">
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 flex items-center justify-between">
-                <div>
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Material</span>
-                  <p className="font-black text-zinc-950 text-sm mt-0.5">{issuingStock.name}</p>
-                </div>
-                <span className="text-xs font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-lg">
-                  Available: {issuingStock.quantity} {issuingStock.unit}
-                </span>
+            <div className="p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                  Select Material <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={requestForm.materialId}
+                  onChange={(e) => setRequestForm({ ...requestForm, materialId: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer"
+                >
+                  <option value="" disabled>-- Choose Material --</option>
+                  {materialStocks.map(stock => (
+                    <option key={stock.id} value={stock.id}>
+                      {stock.name} ({stock.quantity} {stock.unit} available)
+                    </option>
+                  ))}
+                </select>
               </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                  Requested Quantity <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder="Enter required amount"
+                  value={requestForm.quantity}
+                  onChange={(e) => setRequestForm({ ...requestForm, quantity: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                  Notes (Optional)
+                </label>
+                <textarea
+                  placeholder="Explain why this material is needed..."
+                  value={requestForm.notes}
+                  onChange={(e) => setRequestForm({ ...requestForm, notes: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                />
+              </div>
+
+              <button
+                onClick={handleSubmitRequest}
+                disabled={isSubmittingRequest}
+                className={`w-full py-3 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition cursor-pointer ${
+                  isSubmittingRequest
+                    ? 'bg-indigo-300 text-white cursor-not-allowed'
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm'
+                }`}
+              >
+                {isSubmittingRequest ? (
+                  <><Loader2 size={16} className="animate-spin" /> Submitting Request...</>
+                ) : (
+                  <><Send size={15} /> Send Request for Approval</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ APPROVE MATERIAL REQUEST MODAL ═══ */}
+      {showApprovalModal && approvingRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-zinc-950/60 backdrop-blur-sm"
+            onClick={() => {
+              setShowApprovalModal(false);
+              setApprovingRequest(null);
+            }}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200 text-left">
+            <div className="p-5 border-b border-zinc-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center justify-center">
+                  <Check size={20} className="text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="font-black text-zinc-950 text-sm">Approve Material Request</h3>
+                  <p className="text-[10px] font-bold text-slate-400 mt-0.5">Approve and adjust quantity for {approvingRequest.materialName}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowApprovalModal(false);
+                  setApprovingRequest(null);
+                }}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
             </div>
 
-            {/* Form */}
-            {(() => {
-              const parsedQty = parseFloat(issueForm.quantity);
-              const isOverStock = !isNaN(parsedQty) && parsedQty > issuingStock.quantity;
-              return (
-                <div className="p-5 space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                      Quantity to Issue ({issuingStock.unit})
-                    </label>
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      placeholder={`e.g. 5 ${issuingStock.unit}`}
-                      value={issueForm.quantity}
-                      onChange={(e) => setIssueForm({ ...issueForm, quantity: e.target.value })}
-                      className={`w-full px-3 py-2.5 border rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:border-transparent ${
-                        isOverStock
-                          ? 'border-rose-350 text-rose-700 focus:ring-rose-500'
-                          : 'border-zinc-200 focus:ring-emerald-500'
-                      }`}
-                      autoFocus
-                    />
-                    {isOverStock && (
-                      <p className="text-[10px] font-bold text-rose-600 mt-1 animate-in fade-in slide-in-from-top-1 duration-150">
-                        ⚠️ Quantity cannot exceed available stock ({issuingStock.quantity} {issuingStock.unit})
-                      </p>
-                    )}
-                  </div>
+            <div className="p-5 space-y-4">
+              <div className="bg-slate-50 border border-zinc-150 rounded-xl p-3 space-y-1">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Request Details</p>
+                <p className="text-xs font-bold text-zinc-800">
+                  Requested by: <span className="font-black text-zinc-950">{approvingRequest.requestedBy}</span>
+                </p>
+                <p className="text-xs font-bold text-zinc-800">
+                  Requested Qty: <span className="font-black text-indigo-600">{approvingRequest.requestedQuantity} {approvingRequest.unit}</span>
+                </p>
+                {approvingRequest.notes && (
+                  <p className="text-xs font-bold text-zinc-800 mt-1 italic">
+                    " {approvingRequest.notes} "
+                  </p>
+                )}
+              </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                      Issued To (Person / Department)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Ramesh - Production Floor"
-                      value={issueForm.issuedTo}
-                      onChange={(e) => setIssueForm({ ...issueForm, issuedTo: e.target.value })}
-                      className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                    />
-                  </div>
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                  Approved Quantity <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder="Enter quantity to approve"
+                  value={approvalForm.approvedQuantity}
+                  onChange={(e) => setApprovalForm({ ...approvalForm, approvedQuantity: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                      Notes (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. For Belt Assembly Line A"
-                      value={issueForm.notes}
-                      onChange={(e) => setIssueForm({ ...issueForm, notes: e.target.value })}
-                      className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950 focus:border-transparent"
-                    />
-                  </div>
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                  Approval Notes (Optional)
+                </label>
+                <textarea
+                  placeholder="Add any remarks or details regarding the approval..."
+                  value={approvalForm.approvalNotes}
+                  onChange={(e) => setApprovalForm({ ...approvalForm, approvalNotes: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+                />
+              </div>
 
+              <button
+                onClick={handleSubmitApproval}
+                disabled={isSubmittingApproval}
+                className={`w-full py-3 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition cursor-pointer ${
+                  isSubmittingApproval
+                    ? 'bg-emerald-300 text-white cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
+                }`}
+              >
+                {isSubmittingApproval ? (
+                  <><Loader2 size={16} className="animate-spin" /> Approving...</>
+                ) : (
+                  <><Check size={15} /> Approve & Deduct Stock</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ ADD CUSTOM MATERIAL TYPE MODAL ═══ */}
+      {showAddMaterialModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-zinc-950/60 backdrop-blur-sm"
+            onClick={handleCancelAddMaterialType}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200 text-left">
+            <div className="p-5 border-b border-zinc-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-center">
+                  <ClipboardList size={20} className="text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="font-black text-zinc-950 text-sm">Manage Material Types</h3>
+                  <p className="text-[10px] font-bold text-slate-400 mt-0.5">Create, update and delete belt material types</p>
+                </div>
+              </div>
+              <button
+                onClick={handleCancelAddMaterialType}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                  Add New Material Type <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. PU - Red Flexible Grade"
+                    value={newMaterialTypeName}
+                    onChange={(e) => setNewMaterialTypeName(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleAddCustomMaterialType();
+                      }
+                    }}
+                  />
                   <button
-                    onClick={handleSubmitIssue}
-                    disabled={isSubmittingIssue || isOverStock}
-                    className={`w-full py-3 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition cursor-pointer ${
-                      isSubmittingIssue
-                        ? 'bg-emerald-350 text-white cursor-not-allowed'
-                        : isOverStock
-                          ? 'bg-rose-50 text-rose-400 border border-rose-100 cursor-not-allowed shadow-none'
-                          : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
-                    }`}
+                    type="button"
+                    onClick={handleAddCustomMaterialType}
+                    className="px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1 shadow-md active:scale-95 shrink-0"
                   >
-                    {isSubmittingIssue ? (
-                      <><Loader2 size={16} className="animate-spin" /> Processing...</>
-                    ) : isOverStock ? (
-                      <>Exceeds Available Stock</>
-                    ) : (
-                      <><Send size={15} /> Confirm Issue & Save Record</>
-                    )}
+                    <Plus size={15} /> Add
                   </button>
                 </div>
-              );
-            })()}
+              </div>
+
+              {/* Scrollable list of existing ones */}
+              <div className="space-y-2 pt-2 border-t border-zinc-105">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                  Existing Material Types ({materialTypes.length})
+                </label>
+                <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                  {materialTypes.map((type) => {
+                    const isEditing = editingMaterialType === type;
+                    return (
+                      <div
+                        key={type}
+                        className="flex items-center justify-between p-2 bg-slate-50 border border-zinc-100 rounded-xl hover:bg-slate-105/70 transition gap-2"
+                      >
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editingMaterialTypeName}
+                            onChange={(e) => setEditingMaterialTypeName(e.target.value)}
+                            className="flex-1 px-2 py-1 border border-zinc-200 bg-white rounded-lg text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleUpdateMaterialType(type);
+                              if (e.key === 'Escape') setEditingMaterialType(null);
+                            }}
+                          />
+                        ) : (
+                          <span className="text-xs font-bold text-zinc-850 truncate">{type}</span>
+                        )}
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          {isEditing ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateMaterialType(type)}
+                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                                title="Save"
+                              >
+                                <Check size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingMaterialType(null)}
+                                className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                title="Cancel"
+                              >
+                                <X size={14} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingMaterialType(type);
+                                  setEditingMaterialTypeName(type);
+                                }}
+                                className="p-1.5 text-slate-500 hover:text-indigo-650 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                                title="Edit"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteMaterialType(type)}
+                                className="p-1.5 text-slate-500 hover:text-rose-650 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                title="Delete"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleCancelAddMaterialType}
+                  className="w-full py-2.5 border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-xl text-xs font-black transition cursor-pointer text-center"
+                >
+                  Close Manager
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

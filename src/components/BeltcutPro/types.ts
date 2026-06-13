@@ -25,6 +25,7 @@ export interface Roll {
   isReuse?: boolean;
   parentRollId?: string | null;
   status?: 'active' | 'refused';
+  reorderLevel?: number;
 }
 
 export interface Order {
@@ -70,4 +71,20 @@ export interface MaterialIssue {
   issuedTo: string;
   notes: string;
   issuedAt: string;
+}
+
+export interface MaterialRequest {
+  id: string;
+  materialId?: string;
+  materialName: string;
+  requestedQuantity: number;
+  unit: string;
+  requestedBy: string;
+  notes?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approvedQuantity?: number | null;
+  approvedBy?: string;
+  approvalNotes?: string;
+  requestedAt: string;
+  approvedAt?: string | null;
 }

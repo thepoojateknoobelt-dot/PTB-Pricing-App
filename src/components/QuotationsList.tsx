@@ -7,7 +7,7 @@ import { Badge } from './ui/badge';
 import { toast } from 'sonner';
 import { formatCurrency, cn } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
-import { CheckCircle2, XCircle, ShoppingCart, Download, FileText, Clock, AlertCircle, Search, SlidersHorizontal, Calendar, Filter, X, RotateCcw, Building2 } from 'lucide-react';
+import { CheckCircle2, XCircle, ShoppingCart, Download, FileText, Clock, AlertCircle, Search, SlidersHorizontal, Calendar, Filter, X, RotateCcw, Building2, Printer, Scissors, Zap, Package, TriangleAlert } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from './ui/dialog';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
@@ -182,6 +182,57 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
     }
   };
 
+  // ─── Smart Cut State ────────────────────────────────────────────────────────
+  const [isSmartCutDialogOpen, setIsSmartCutDialogOpen] = useState(false);
+  const [smartCutLoading, setSmartCutLoading] = useState(false);
+  const [smartCutPlan, setSmartCutPlan] = useState<any>(null);
+  const [smartCutQuotation, setSmartCutQuotation] = useState<EnhancedQuotation | null>(null);
+  const [smartCutConfirming, setSmartCutConfirming] = useState(false);
+
+  const handleSmartCut = async (q: EnhancedQuotation) => {
+    setSmartCutQuotation(q);
+    setSmartCutPlan(null);
+    setIsSmartCutDialogOpen(true);
+    setSmartCutLoading(true);
+    try {
+      const res = await fetch(`/api/quotations/${q.id}/smart-cut`, { method: 'POST' });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Smart cut failed');
+      }
+      const plan = await res.json();
+      setSmartCutPlan(plan);
+    } catch (err: any) {
+      toast.error(err.message || 'Smart cut failed');
+      setIsSmartCutDialogOpen(false);
+    } finally {
+      setSmartCutLoading(false);
+    }
+  };
+
+  const handleConfirmSmartCut = async () => {
+    if (!smartCutQuotation) return;
+    setSmartCutConfirming(true);
+    try {
+      const res = await fetch(`/api/quotations/${smartCutQuotation.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'executed' })
+      });
+      if (!res.ok) throw new Error('Failed to execute order');
+      toast.success('Order executed & cutting plan applied!');
+      setIsSmartCutDialogOpen(false);
+      setSmartCutQuotation(null);
+      setSmartCutPlan(null);
+      setSelectedQuotation(null);
+      fetchQuotations();
+    } catch (err: any) {
+      toast.error(err.message || 'Execution failed');
+    } finally {
+      setSmartCutConfirming(false);
+    }
+  };
+
   // Get unique belt types for the filter dropdown
   const uniqueBeltTypes = Array.from(new Set(quotations.map(q => q.beltType))).filter(Boolean);
 
@@ -265,6 +316,183 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
     a.href = url;
     a.download = `quotations_report_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
+  };
+
+  const handlePrintQuotation = (q: EnhancedQuotation) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Failed to open print window. Please allow popups.');
+      return;
+    }
+
+    const isMultiItem = q.items && q.items.length > 0;
+    const clientComp = q.company || 'Pooja Tekno Belt';
+    const dateStr = formatQuoteDate(q.createdAt);
+    const totalBeforeAdjustment = isMultiItem
+      ? q.items!.reduce((sum, item) => sum + item.totalCost, 0)
+      : q.totalCost;
+    const discountAmt = q.discountRequested || 0;
+    const finalAmt = q.totalCost;
+
+    // Render table rows
+    let tableRowsHTML = '';
+    if (isMultiItem) {
+      q.items!.forEach((item, idx) => {
+        tableRowsHTML += `
+          <tr>
+            <td style="text-align: center; border: 1px solid #ddd; padding: 8px;">${idx + 1}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">
+              <strong>${item.beltType}</strong><br/>
+              <span style="font-size: 11px; color: #555;">Style: ${item.beltStyle}</span>
+            </td>
+            <td style="text-align: center; border: 1px solid #ddd; padding: 8px; font-family: monospace;">
+              L ${item.dimensions.length}${item.dimensions.lengthUnit || 'mm'} x W ${item.dimensions.width}${item.dimensions.widthUnit || 'mm'}
+              ${item.dimensions.hasHoles ? `<br/><span style="font-size: 10px; color: #6366f1;">Holes: ${item.dimensions.totalHoles} pcs</span>` : ''}
+            </td>
+            <td style="text-align: right; border: 1px solid #ddd; padding: 8px; font-family: monospace; font-weight: bold;">
+              ${formatCurrency(item.totalCost)}
+            </td>
+          </tr>
+        `;
+      });
+    } else {
+      tableRowsHTML = `
+        <tr>
+          <td style="text-align: center; border: 1px solid #ddd; padding: 8px;">1</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">
+            <strong>${q.beltType}</strong><br/>
+            <span style="font-size: 11px; color: #555;">Style: ${q.beltStyle || 'Std'}</span>
+          </td>
+          <td style="text-align: center; border: 1px solid #ddd; padding: 8px; font-family: monospace;">
+            L ${q.dimensions.length}${q.dimensions.lengthUnit || q.dimensions.unit || 'mm'} x W ${q.dimensions.width}${q.dimensions.widthUnit || q.dimensions.unit || 'mm'}
+            ${q.dimensions.hasHoles ? `<br/><span style="font-size: 10px; color: #6366f1;">Holes: ${q.dimensions.totalHoles} pcs</span>` : ''}
+          </td>
+          <td style="text-align: right; border: 1px solid #ddd; padding: 8px; font-family: monospace; font-weight: bold;">
+            ${formatCurrency(q.totalCost)}
+          </td>
+        </tr>
+      `;
+    }
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Quotation #${q.orderNumber} - ${q.clientName}</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; margin: 40px; line-height: 1.5; }
+            .header-container { display: flex; justify-content: space-between; border-bottom: 3px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+            .company-details h1 { margin: 0; font-size: 28px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+            .company-details p { margin: 4px 0 0 0; font-size: 12px; color: #666; }
+            .invoice-details { text-align: right; }
+            .invoice-details h2 { margin: 0; font-size: 22px; color: #444; font-weight: 700; }
+            .invoice-details p { margin: 4px 0; font-size: 12px; color: #666; }
+            .client-info { background: #f9f9f9; padding: 15px 20px; border-radius: 8px; border: 1px solid #eaeaea; margin-bottom: 35px; }
+            .client-info h3 { margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase; color: #777; letter-spacing: 0.8px; }
+            .client-info p { margin: 3px 0; font-size: 14px; font-weight: bold; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+            th { background: #f2f2f2; border: 1px solid #ddd; padding: 10px 8px; font-size: 12px; text-transform: uppercase; text-align: left; }
+            td { font-size: 13px; }
+            .summary-container { display: flex; justify-content: flex-end; margin-top: 20px; }
+            .summary-table { width: 320px; }
+            .summary-table tr td { padding: 6px 8px; border: none; }
+            .summary-table tr .lbl { color: #666; font-size: 12px; }
+            .summary-table tr .val { text-align: right; font-family: monospace; font-weight: bold; }
+            .summary-table tr.total-row { border-top: 2px solid #333; font-size: 16px; font-weight: bold; }
+            .summary-table tr.total-row td { padding-top: 10px; }
+            .terms-container { margin-top: 50px; border-top: 1px solid #eee; padding-top: 20px; font-size: 11px; color: #777; }
+            .terms-container h4 { margin: 0 0 8px 0; text-transform: uppercase; }
+            .footer-signature { display: flex; justify-content: space-between; margin-top: 80px; padding: 0 20px; }
+            .sig-line { width: 200px; border-top: 1px solid #888; text-align: center; font-size: 12px; padding-top: 5px; color: #555; }
+            @media print {
+              body { margin: 20px; }
+              button { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header-container">
+            <div class="company-details">
+              <h1>${clientComp}</h1>
+              <p>Authorized Sales Partner & Belt Fabricator</p>
+              <p>Email: contact@poojateknobelt.com | Web: poojateknobelt.com</p>
+            </div>
+            <div class="invoice-details">
+              <h2>QUOTATION</h2>
+              <p><strong>Quote No:</strong> #${q.orderNumber}</p>
+              <p><strong>Date:</strong> ${dateStr}</p>
+              <p><strong>Status:</strong> ${q.status.toUpperCase()}</p>
+            </div>
+          </div>
+
+          <div class="client-info">
+            <h3>Client Details</h3>
+            <p style="font-size: 16px; margin-bottom: 2px; color: #111;">${q.clientName}</p>
+            ${q.company ? `<p style="font-size: 13px; font-weight: normal; color: #555; margin-top: 0;">Company: ${q.company}</p>` : ''}
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 50px; text-align: center;">Sr. No</th>
+                <th>Description / Specification</th>
+                <th style="width: 200px; text-align: center;">Dimensions</th>
+                <th style="width: 150px; text-align: right;">Total Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRowsHTML}
+            </tbody>
+          </table>
+
+          <div class="summary-container">
+            <table class="summary-table">
+              <tr>
+                <td class="lbl">Items Total</td>
+                <td class="val">${formatCurrency(totalBeforeAdjustment)}</td>
+              </tr>
+              ${discountAmt > 0 ? `
+              <tr>
+                <td class="lbl" style="color: #b45309;">Special Adjustment (Discount)</td>
+                <td class="val" style="color: #b45309;">- ${formatCurrency(discountAmt)}</td>
+              </tr>
+              ` : ''}
+              <tr class="total-row">
+                <td>Net Payable</td>
+                <td class="val" style="color: #15803d; font-size: 18px;">${formatCurrency(finalAmt)}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="footer-signature">
+            <div>
+              <div style="height: 50px;"></div>
+              <div class="sig-line">Prepared By</div>
+            </div>
+            <div>
+              <div style="height: 50px;"></div>
+              <div class="sig-line">Authorized Signatory</div>
+            </div>
+          </div>
+
+          <div class="terms-container">
+            <h4>Terms & Conditions</h4>
+            <ol style="padding-left: 15px; margin: 0;">
+              <li>Prices quoted are inclusive of taxes and packaging unless stated otherwise.</li>
+              <li>Delivery timelines are subject to fabric availability and production queues.</li>
+              <li>This quotation is valid for a period of 30 days from the date of issue.</li>
+              <li>Custom cut and punch orders cannot be cancelled once production has commenced.</li>
+            </ol>
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const getStatusBadge = (status: string) => {
@@ -510,7 +738,7 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
       </Card>
 
       <Dialog open={!!selectedQuotation && !isRejectDialogOpen} onOpenChange={(open) => !open && setSelectedQuotation(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold flex items-center gap-2">
               Quotation Details <Badge variant="outline" className="font-mono bg-zinc-50">#{selectedQuotation?.orderNumber}</Badge>
@@ -527,14 +755,55 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
                 <p className="text-sm text-zinc-500">Client</p>
                 <p className="font-semibold text-zinc-900">{selectedQuotation.clientName}</p>
               </div>
-              <div className="space-y-1">
-                <p className="text-sm text-zinc-500">Belt Category / Style</p>
-                <p className="font-semibold text-zinc-900">{selectedQuotation.beltType} {selectedQuotation.beltStyle && `/ ${selectedQuotation.beltStyle}`}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-zinc-500">Dimensions</p>
-                <p className="font-semibold text-zinc-900">L {selectedQuotation.dimensions.length}{selectedQuotation.dimensions.lengthUnit || selectedQuotation.dimensions.unit || 'mm'} x W {selectedQuotation.dimensions.width}{selectedQuotation.dimensions.widthUnit || selectedQuotation.dimensions.unit || 'mm'}</p>
-              </div>
+              
+              {selectedQuotation.items && selectedQuotation.items.length > 0 ? (
+                <div className="col-span-2 space-y-2 pt-2">
+                  <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Quotation Items</p>
+                  <div className="border border-zinc-200 rounded-lg overflow-hidden bg-white max-h-[260px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="bg-zinc-50">
+                        <TableRow>
+                          <TableHead className="w-[40px] text-center font-bold text-xs py-2 h-8">No.</TableHead>
+                          <TableHead className="font-bold text-xs py-2 h-8">Belt Details</TableHead>
+                          <TableHead className="font-bold text-xs py-2 h-8">Dimensions</TableHead>
+                          <TableHead className="font-bold text-right text-xs py-2 h-8 pr-4">Price</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selectedQuotation.items.map((item, idx) => (
+                          <TableRow key={item.id || idx} className="text-xs hover:bg-zinc-50/50 transition-colors h-10">
+                            <TableCell className="text-center font-bold text-zinc-500">{idx + 1}</TableCell>
+                            <TableCell className="font-semibold text-zinc-900">
+                              {item.beltType}
+                              <div className="text-[10px] text-zinc-400 font-medium">Style: {item.beltStyle}</div>
+                            </TableCell>
+                            <TableCell className="font-mono text-zinc-650">
+                              L {item.dimensions.length}{item.dimensions.lengthUnit || 'mm'} x W {item.dimensions.width}{item.dimensions.widthUnit || 'mm'}
+                              {item.dimensions.hasHoles && (
+                                <div className="text-[10px] text-indigo-600 font-bold">Holes: {item.dimensions.totalHoles} pcs</div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-bold text-zinc-900 pr-4">
+                              {formatCurrency(item.totalCost)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    <p className="text-sm text-zinc-500">Belt Category / Style</p>
+                    <p className="font-semibold text-zinc-900">{selectedQuotation.beltType} {selectedQuotation.beltStyle && `/ ${selectedQuotation.beltStyle}`}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-zinc-500">Dimensions</p>
+                    <p className="font-semibold text-zinc-900">L {selectedQuotation.dimensions.length}{selectedQuotation.dimensions.lengthUnit || selectedQuotation.dimensions.unit || 'mm'} x W {selectedQuotation.dimensions.width}{selectedQuotation.dimensions.widthUnit || selectedQuotation.dimensions.unit || 'mm'}</p>
+                  </div>
+                </>
+              )}
 
               <div className="space-y-1">
                 <p className="text-sm text-zinc-500">Total Price</p>
@@ -554,7 +823,7 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
                 </div>
               )}
 
-              {selectedQuotation.dimensions.hasHoles && (
+              {(!selectedQuotation.items || selectedQuotation.items.length === 0) && selectedQuotation.dimensions.hasHoles && (
                 <div className="col-span-2 p-3 bg-indigo-50 border border-indigo-150 rounded-xl space-y-1.5 animate-in fade-in duration-200">
                   <h4 className="text-[10px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
                     <AlertCircle className="h-3.5 w-3.5 text-indigo-700" />
@@ -596,6 +865,12 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
             </div>
           )}
           <DialogFooter className="gap-2">
+            {selectedQuotation && (
+              <Button variant="outline" className="gap-1.5 border-zinc-350 font-bold text-zinc-700 hover:bg-zinc-100 mr-auto cursor-pointer" onClick={() => handlePrintQuotation(selectedQuotation)}>
+                <Printer className="h-3.5 w-3.5 text-zinc-500" />
+                Print Quotation
+              </Button>
+            )}
             {user?.role === 'admin' && selectedQuotation?.status === 'pending_approval' && (
               <>
                 <Button onClick={() => handleApprove(selectedQuotation!)}>
@@ -609,6 +884,15 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
             {(selectedQuotation?.status === 'approved' || selectedQuotation?.status === 'draft') && (
               <Button onClick={() => handleConvertToOrder(selectedQuotation!)}>
                 Convert to Order
+              </Button>
+            )}
+            {selectedQuotation?.status === 'order' && (
+              <Button
+                className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white gap-2 font-bold shadow-lg shadow-indigo-200 transition-all duration-200"
+                onClick={() => { setSelectedQuotation(null); handleSmartCut(selectedQuotation!); }}
+              >
+                <Scissors className="h-4 w-4" />
+                Execute & Smart Cut
               </Button>
             )}
             <Button variant="outline" onClick={() => setSelectedQuotation(null)}>Close</Button>
@@ -681,6 +965,158 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
             >
               Confirm Convert
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Smart Cut Plan Dialog ─────────────────────────────────────────── */}
+      <Dialog open={isSmartCutDialogOpen} onOpenChange={(open) => { if (!open) { setIsSmartCutDialogOpen(false); setSmartCutPlan(null); } }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <div className="p-1.5 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-lg">
+                <Scissors className="h-4 w-4 text-white" />
+              </div>
+              Smart Cutting Plan
+              {smartCutQuotation && (
+                <span className="text-sm font-normal text-zinc-500 ml-1">
+                  — Order #{smartCutQuotation.orderNumber} ({smartCutQuotation.clientName})
+                </span>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              AI-optimised cut allocation across your inventory rolls. Largest items placed first to minimise scrap.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto py-4 space-y-4">
+            {smartCutLoading && (
+              <div className="flex flex-col items-center justify-center py-16 gap-3">
+                <div className="relative">
+                  <div className="h-12 w-12 rounded-full border-4 border-violet-100 border-t-violet-600 animate-spin" />
+                  <Zap className="h-5 w-5 text-violet-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                </div>
+                <p className="text-sm font-semibold text-zinc-600 animate-pulse">Running bin-packing optimiser…</p>
+                <p className="text-xs text-zinc-400">Analysing {smartCutQuotation?.items?.length || 1} items across available rolls</p>
+              </div>
+            )}
+
+            {!smartCutLoading && smartCutPlan && (
+              <>
+                {/* Summary Cards */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-center">
+                    <p className="text-xs font-bold uppercase tracking-wider text-violet-500 mb-1">Items Allocated</p>
+                    <p className="text-2xl font-black text-violet-900">{smartCutPlan.allocations?.length || 0}</p>
+                  </div>
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-center">
+                    <p className="text-xs font-bold uppercase tracking-wider text-indigo-500 mb-1">Rolls Used</p>
+                    <p className="text-2xl font-black text-indigo-900">{smartCutPlan.rollsUsed?.length || 0}</p>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-500 mb-1">Total Scrap</p>
+                    <p className="text-2xl font-black text-emerald-900">{(smartCutPlan.totalScrapSqm || 0).toFixed(3)} m²</p>
+                  </div>
+                </div>
+
+                {/* Warnings */}
+                {smartCutPlan.warnings?.length > 0 && (
+                  <div className="space-y-2">
+                    {smartCutPlan.warnings.map((w: string, i: number) => (
+                      <div key={i} className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                        <TriangleAlert className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                        <span className="font-medium">{w}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Allocation Table */}
+                <div className="border border-zinc-200 rounded-xl overflow-hidden">
+                  <div className="bg-zinc-50/80 px-4 py-2.5 border-b border-zinc-200 flex items-center gap-2">
+                    <Package className="h-4 w-4 text-zinc-500" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-600">Cut Allocations</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader className="bg-zinc-50">
+                        <TableRow>
+                          <TableHead className="text-xs font-bold w-[40px] text-center">No.</TableHead>
+                          <TableHead className="text-xs font-bold">Item</TableHead>
+                          <TableHead className="text-xs font-bold">Belt Type</TableHead>
+                          <TableHead className="text-xs font-bold">Dimensions (m)</TableHead>
+                          <TableHead className="text-xs font-bold">Area (m²)</TableHead>
+                          <TableHead className="text-xs font-bold">Roll / Source</TableHead>
+                          <TableHead className="text-xs font-bold">Position</TableHead>
+                          <TableHead className="text-xs font-bold text-right">Scrap After</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(smartCutPlan.allocations || []).map((alloc: any, i: number) => (
+                          <TableRow key={i} className="hover:bg-zinc-50/50 transition-colors">
+                            <TableCell className="text-center font-bold text-zinc-500 text-xs">{i + 1}</TableCell>
+                            <TableCell className="text-xs font-semibold text-zinc-800">{alloc.itemLabel}</TableCell>
+                            <TableCell className="text-xs text-zinc-600">{alloc.beltType || '—'}</TableCell>
+                            <TableCell className="font-mono text-xs text-zinc-700">
+                              {alloc.lengthM?.toFixed(3)} L × {alloc.widthM?.toFixed(3)} W
+                            </TableCell>
+                            <TableCell className="font-mono text-xs text-zinc-700">{alloc.areaSqm?.toFixed(4)}</TableCell>
+                            <TableCell>
+                              {alloc.source === 'fresh_roll' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-[10px] font-black uppercase">
+                                  <TriangleAlert className="h-3 w-3" /> Fresh Roll Needed
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-[10px] font-black font-mono">
+                                  <CheckCircle2 className="h-3 w-3" /> {alloc.rollId?.slice(0, 14)}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="font-mono text-xs text-zinc-500">
+                              {alloc.source === 'fresh_roll' ? '—' : `x:${alloc.x?.toFixed(2)}m y:${alloc.y?.toFixed(2)}m`}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-xs font-bold text-zinc-700">
+                              {alloc.source === 'fresh_roll' ? '—' : `${alloc.scrapAfter?.toFixed(3)} m²`}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+                {smartCutPlan.warnings?.some((w: string) => w.includes('fresh roll')) && (
+                  <p className="text-xs text-zinc-500 bg-zinc-50 border border-zinc-200 rounded-lg p-3">
+                    ℹ️ Items marked "Fresh Roll Needed" have no matching inventory roll available. Add rolls in <strong>Nesting Portal → Inventory</strong> and re-run Smart Cut, or proceed to execute manually.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="border-t pt-4 gap-2">
+            <Button variant="outline" onClick={() => { setIsSmartCutDialogOpen(false); setSmartCutPlan(null); }}>
+              Cancel
+            </Button>
+            {!smartCutLoading && smartCutPlan && (
+              <Button
+                className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white gap-2 font-bold shadow-lg shadow-indigo-200 transition-all duration-200"
+                onClick={handleConfirmSmartCut}
+                disabled={smartCutConfirming}
+              >
+                {smartCutConfirming ? (
+                  <>
+                    <div className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                    Executing…
+                  </>
+                ) : (
+                  <>
+                    <Scissors className="h-4 w-4" />
+                    Confirm & Execute Order
+                  </>
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
