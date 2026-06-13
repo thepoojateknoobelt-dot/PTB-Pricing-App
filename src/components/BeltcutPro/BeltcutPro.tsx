@@ -2407,10 +2407,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                 setCuttingSelectedRollId('');
                                 setRollSearchQuery('');
                                 if (purpose === 'manual') {
-                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: false, customerName: '' }));
+                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: false, customerName: '', quantity: 1 }));
                                   setSelectedOrderNumber('');
                                 } else if (purpose === 'order') {
-                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: false, customerName: '' }));
+                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: false, customerName: '', quantity: 1 }));
                                   setSelectedOrderNumber('');
                                 } else if (purpose === 'scrap') {
                                   setSelectedOrder(prev => ({ ...prev, isInventoryCut: true, customerName: 'SCRAP', quantity: 1 }));
@@ -2923,36 +2923,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             </div>
                           </div>
 
-                          {/* Quantity stepper — only shown for manual purpose */}
-                          {cutPurpose === 'manual' && (
-                            <div className="space-y-1">
-                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                                <Layers size={10} /> Quantity (Pieces)
-                              </label>
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  onClick={() => setSelectedOrder({ ...selectedOrder, quantity: Math.max(1, (selectedOrder.quantity || 1) - 1) })}
-                                  className="w-8 h-8 rounded-lg bg-slate-100 font-black text-base hover:bg-slate-200 transition flex items-center justify-center shrink-0"
-                                >−</button>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  value={selectedOrder.quantity || 1}
-                                  onChange={(e) => setSelectedOrder({ ...selectedOrder, quantity: Math.max(1, parseInt(e.target.value) || 1) })}
-                                  className="flex-1 px-2.5 py-1 border border-slate-200 rounded-lg focus:border-zinc-950 focus:outline-none font-black text-xs text-center bg-white"
-                                />
-                                <button
-                                  onClick={() => setSelectedOrder({ ...selectedOrder, quantity: (selectedOrder.quantity || 1) + 1 })}
-                                  className="w-8 h-8 rounded-lg bg-slate-100 font-black text-base hover:bg-slate-200 transition flex items-center justify-center shrink-0"
-                                >+</button>
-                              </div>
-                              {(selectedOrder.quantity || 1) > 1 && (
-                                <p className="text-[8.5px] text-emerald-600 font-bold flex items-center gap-1">
-                                  <Scissors size={9} /> Will cut {selectedOrder.quantity} pieces sequentially — minimum scrap
-                                </p>
-                              )}
-                            </div>
-                          )}
+
 
                           <div className="space-y-1">
                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Belt Material Type</label>
