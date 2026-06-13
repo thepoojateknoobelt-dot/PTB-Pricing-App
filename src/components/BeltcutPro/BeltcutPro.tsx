@@ -4600,7 +4600,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                 {issue.issuedTo}
                               </span>
                             </td>
-                            <td className="px-4 py-2 text-xs text-slate-500 italic max-w-xs truncate" title={issue.notes || undefined}>
+                            <td className="px-4 py-2 text-xs text-slate-500 italic max-w-md break-words whitespace-pre-wrap" title={issue.notes || undefined}>
                               {issue.notes ? `"${issue.notes}"` : <span className="text-slate-300 font-normal">No notes</span>}
                             </td>
                             <td className="px-4 py-2 text-xs text-slate-500">
