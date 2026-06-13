@@ -738,7 +738,7 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
       </Card>
 
       <Dialog open={!!selectedQuotation && !isRejectDialogOpen} onOpenChange={(open) => !open && setSelectedQuotation(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-4xl sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold flex items-center gap-2">
               Quotation Details <Badge variant="outline" className="font-mono bg-zinc-50">#{selectedQuotation?.orderNumber}</Badge>
@@ -747,265 +747,267 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
           </DialogHeader>
           {selectedQuotation && (
             <div className="space-y-6 py-4">
-              {/* Summary Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl">
-                <div className="space-y-0.5">
-                  <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Order ID</p>
-                  <p className="text-sm font-black font-mono text-zinc-800">#{selectedQuotation.orderNumber}</p>
+              <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 sm:p-6 space-y-6 shadow-inner">
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-white border border-zinc-200 rounded-2xl shadow-sm">
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Order ID</p>
+                    <p className="text-sm font-black font-mono text-zinc-800">#{selectedQuotation.orderNumber}</p>
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Client</p>
+                    <p className="text-sm font-bold text-zinc-800">{selectedQuotation.clientName}</p>
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Total Price</p>
+                    <p className="text-base font-black text-emerald-650 font-mono">{formatCurrency(Math.round(selectedQuotation.totalCost))}</p>
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Status</p>
+                    <div>{getStatusBadge(selectedQuotation.status)}</div>
+                  </div>
+                  {selectedQuotation.company && (
+                    <div className="space-y-0.5 col-span-2 sm:col-span-4 border-t border-zinc-200/50 pt-2 mt-1">
+                      <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Company</p>
+                      <p className="text-xs font-bold text-zinc-800 flex items-center gap-1.5 mt-0.5">
+                        <Building2 className="h-3.5 w-3.5 text-zinc-500" />
+                        {selectedQuotation.company}
+                      </p>
+                    </div>
+                  )}
                 </div>
-                <div className="space-y-0.5">
-                  <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Client</p>
-                  <p className="text-sm font-bold text-zinc-800">{selectedQuotation.clientName}</p>
+
+                {/* Items List Table */}
+                <div className="space-y-2">
+                  <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Quotation Items</p>
+                  <div className="border border-zinc-200 rounded-xl overflow-hidden bg-white max-h-[300px] overflow-y-auto shadow-sm">
+                    <Table>
+                      <TableHeader className="bg-zinc-50/50">
+                        <TableRow className="h-10">
+                          <TableHead className="w-[45px] text-center font-bold text-xs py-2.5">No.</TableHead>
+                          <TableHead className="font-bold text-xs py-2.5">Belt Details</TableHead>
+                          <TableHead className="font-bold text-xs py-2.5">Dimensions</TableHead>
+                          <TableHead className="font-bold text-xs py-2.5">BOM & Customizations</TableHead>
+                          <TableHead className="font-bold text-right text-xs py-2.5 pr-4">Price</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selectedQuotation.items && selectedQuotation.items.length > 0 ? (
+                          selectedQuotation.items.map((item, idx) => {
+                            const included = item.selectedBOMOptions?._included || {};
+                            const customRates = item.selectedBOMOptions?._customRates || {};
+                            const remarks = item.selectedBOMOptions?._remarks || {};
+                            const optRemarks = item.selectedBOMOptions?._optRemarks || {};
+
+                            const category = (Array.isArray(config?.beltTypes) ? config.beltTypes : [])?.find?.(t => t.name === item.beltType) || null;
+                            const style = (Array.isArray(category?.styles) ? category.styles : [])?.find?.(s => s.name === item.beltStyle) || null;
+                            const bomItems = style?.bom || [];
+
+                            const includedItems = bomItems.filter(b => included[b.id] !== false);
+                            const adjustedItems = bomItems.filter(b => customRates[b.id] !== undefined).map(b => `${b.name} (₹${customRates[b.id]})`);
+                            const hasRemarks = includedItems.some(b => remarks[b.id]);
+
+                            const subRemarkEntries: { label: string; text: string }[] = [];
+                            includedItems.forEach(b => {
+                              const rawSel = item.selectedBOMOptions?.[b.id];
+                              const selIndices: number[] = Array.isArray(rawSel)
+                                ? rawSel
+                                : rawSel !== undefined ? [rawSel] : [];
+                              selIndices.forEach((optIdx: number) => {
+                                if (b.options?.[optIdx]) {
+                                  const optKey = `${b.id}_${optIdx}`;
+                                  if (optRemarks[optKey]) {
+                                    subRemarkEntries.push({
+                                      label: `${b.name} › ${b.options[optIdx].name || ''}`,
+                                      text: optRemarks[optKey]
+                                    });
+                                  }
+                                }
+                              });
+                            });
+
+                            return (
+                              <TableRow key={item.id || idx} className="text-xs hover:bg-zinc-50/50 transition-colors h-11">
+                                <TableCell className="text-center font-bold text-zinc-500">{idx + 1}</TableCell>
+                                <TableCell className="font-semibold text-zinc-900">
+                                  {item.beltType}
+                                  <div className="text-[10px] text-zinc-400 font-medium">Style: {item.beltStyle || 'Standard'}</div>
+                                </TableCell>
+                                <TableCell className="font-mono text-zinc-650">
+                                  L {item.dimensions.length}{item.dimensions.lengthUnit || 'mm'} x W {item.dimensions.width}{item.dimensions.widthUnit || 'mm'}
+                                  {item.dimensions.hasHoles && (
+                                    <div className="text-[10px] text-indigo-650 font-bold mt-0.5">Holes: {item.dimensions.totalHoles} pcs</div>
+                                  )}
+                                </TableCell>
+                                <TableCell className="max-w-[280px] text-[10px] text-zinc-600 font-normal leading-relaxed">
+                                  <div className="space-y-0.5 py-1">
+                                    <div><span className="font-semibold text-zinc-500">BOM:</span> {includedItems.map(b => b.name).join(', ') || 'None'}</div>
+                                    {adjustedItems.length > 0 && (
+                                      <div className="text-[10px] text-indigo-650 font-bold">
+                                        <span className="font-extrabold">Adjusted:</span> {adjustedItems.join(', ')}
+                                      </div>
+                                    )}
+                                    {hasRemarks && (
+                                      <div className="text-[10px] text-amber-700 font-medium mt-0.5 space-y-0.5 bg-amber-50/50 p-1 rounded border border-amber-100/50">
+                                        {includedItems.filter(b => remarks[b.id]).map(b => (
+                                          <div key={b.id} className="flex items-start gap-1">
+                                            <span className="font-bold text-amber-600 shrink-0">{b.name}:</span>
+                                            <span className="italic">{remarks[b.id]}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {subRemarkEntries.length > 0 && (
+                                      <div className="text-[10px] text-indigo-750 font-medium mt-0.5 space-y-0.5 bg-indigo-50/50 p-1 rounded border border-indigo-100/50">
+                                        {subRemarkEntries.map((e, i) => (
+                                          <div key={i} className="flex items-start gap-1">
+                                            <span className="font-bold text-indigo-500 shrink-0">{e.label}:</span>
+                                            <span className="italic">{e.text}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right font-mono font-bold text-zinc-900 pr-4">
+                                  {formatCurrency(item.totalCost)}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
+                        ) : (
+                          // Fallback row for single-item legacy quotations
+                          (() => {
+                            const item = selectedQuotation;
+                            const included = item.selectedBOMOptions?._included || {};
+                            const customRates = item.selectedBOMOptions?._customRates || {};
+                            const remarks = item.selectedBOMOptions?._remarks || {};
+                            const optRemarks = item.selectedBOMOptions?._optRemarks || {};
+
+                            const category = (Array.isArray(config?.beltTypes) ? config.beltTypes : [])?.find?.(t => t.name === item.beltType) || null;
+                            const style = (Array.isArray(category?.styles) ? category.styles : [])?.find?.(s => s.name === item.beltStyle) || null;
+                            const bomItems = style?.bom || [];
+
+                            const includedItems = bomItems.filter(b => included[b.id] !== false);
+                            const adjustedItems = bomItems.filter(b => customRates[b.id] !== undefined).map(b => `${b.name} (₹${customRates[b.id]})`);
+                            const hasRemarks = includedItems.some(b => remarks[b.id]);
+
+                            const subRemarkEntries: { label: string; text: string }[] = [];
+                            includedItems.forEach(b => {
+                              const rawSel = item.selectedBOMOptions?.[b.id];
+                              const selIndices: number[] = Array.isArray(rawSel)
+                                ? rawSel
+                                : rawSel !== undefined ? [rawSel] : [];
+                              selIndices.forEach((optIdx: number) => {
+                                if (b.options?.[optIdx]) {
+                                  const optKey = `${b.id}_${optIdx}`;
+                                  if (optRemarks[optKey]) {
+                                    subRemarkEntries.push({
+                                      label: `${b.name} › ${b.options[optIdx].name || ''}`,
+                                      text: optRemarks[optKey]
+                                    });
+                                  }
+                                }
+                              });
+                            });
+
+                            return (
+                              <TableRow className="text-xs hover:bg-zinc-50/50 transition-colors h-11">
+                                <TableCell className="text-center font-bold text-zinc-500">1</TableCell>
+                                <TableCell className="font-semibold text-zinc-900">
+                                  {item.beltType}
+                                  <div className="text-[10px] text-zinc-400 font-medium">Style: {item.beltStyle || 'Standard'}</div>
+                                </TableCell>
+                                <TableCell className="font-mono text-zinc-650">
+                                  L {item.dimensions.length}{item.dimensions.lengthUnit || item.dimensions.unit || 'mm'} x W {item.dimensions.width}{item.dimensions.widthUnit || item.dimensions.unit || 'mm'}
+                                  {item.dimensions.hasHoles && (
+                                    <div className="text-[10px] text-indigo-650 font-bold mt-0.5">Holes: {item.dimensions.totalHoles} pcs</div>
+                                  )}
+                                </TableCell>
+                                <TableCell className="max-w-[280px] text-[10px] text-zinc-600 font-normal leading-relaxed">
+                                  <div className="space-y-0.5 py-1">
+                                    <div><span className="font-semibold text-zinc-500">BOM:</span> {includedItems.map(b => b.name).join(', ') || 'None'}</div>
+                                    {adjustedItems.length > 0 && (
+                                      <div className="text-[10px] text-indigo-650 font-bold">
+                                        <span className="font-extrabold">Adjusted:</span> {adjustedItems.join(', ')}
+                                      </div>
+                                    )}
+                                    {hasRemarks && (
+                                      <div className="text-[10px] text-amber-700 font-medium mt-0.5 space-y-0.5 bg-amber-50/50 p-1 rounded border border-amber-100/50">
+                                        {includedItems.filter(b => remarks[b.id]).map(b => (
+                                          <div key={b.id} className="flex items-start gap-1">
+                                            <span className="font-bold text-amber-600 shrink-0">{b.name}:</span>
+                                            <span className="italic">{remarks[b.id]}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {subRemarkEntries.length > 0 && (
+                                      <div className="text-[10px] text-indigo-755 font-medium mt-0.5 space-y-0.5 bg-indigo-50/50 p-1 rounded border border-indigo-100/50">
+                                        {subRemarkEntries.map((e, i) => (
+                                          <div key={i} className="flex items-start gap-1">
+                                            <span className="font-bold text-indigo-500 shrink-0">{e.label}:</span>
+                                            <span className="italic">{e.text}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right font-mono font-bold text-zinc-900 pr-4">
+                                  {formatCurrency(item.totalCost)}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })()
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
-                <div className="space-y-0.5">
-                  <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Total Price</p>
-                  <p className="text-base font-black text-emerald-650 font-mono">{formatCurrency(Math.round(selectedQuotation.totalCost))}</p>
-                </div>
-                <div className="space-y-0.5">
-                  <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Status</p>
-                  <div>{getStatusBadge(selectedQuotation.status)}</div>
-                </div>
-                {selectedQuotation.company && (
-                  <div className="space-y-0.5 col-span-2 sm:col-span-4 border-t border-zinc-200/50 pt-2 mt-1">
-                    <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Company</p>
-                    <p className="text-xs font-bold text-zinc-800 flex items-center gap-1.5 mt-0.5">
-                      <Building2 className="h-3.5 w-3.5 text-zinc-500" />
-                      {selectedQuotation.company}
-                    </p>
+
+                {/* Single Item Hole specifications overlay (only if legacy single item has holes) */}
+                {(!selectedQuotation.items || selectedQuotation.items.length === 0) && selectedQuotation.dimensions.hasHoles && (
+                  <div className="p-3.5 bg-indigo-50/60 border border-indigo-150 rounded-2xl space-y-1.5 animate-in fade-in duration-200 shadow-sm">
+                    <h4 className="text-[10px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+                      <AlertCircle className="h-3.5 w-3.5 text-indigo-700" />
+                      Holes Layout Specifications
+                    </h4>
+                    <div className="grid grid-cols-4 gap-2 text-xs font-semibold text-slate-700 mt-1">
+                      <div>
+                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Total Holes</span>
+                        <p className="text-sm font-black text-indigo-950">{selectedQuotation.dimensions.totalHoles}</p>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Hole Size</span>
+                        <p className="text-xs font-bold text-slate-900">{selectedQuotation.dimensions.holeSize} mm</p>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Spacing (H / V)</span>
+                        <p className="text-xs font-bold text-slate-900">
+                          {selectedQuotation.dimensions.holeDistHorizontal}mm / {selectedQuotation.dimensions.holeDistVertical}mm
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Price per Hole</span>
+                        <p className="text-xs font-bold text-slate-900">₹{selectedQuotation.dimensions.pricePerHole}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Discount details */}
+                {selectedQuotation.discountRequested && selectedQuotation.discountRequested > 0 && (
+                  <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-100 space-y-2 shadow-sm">
+                    <div className="flex items-center gap-2 text-amber-900 font-bold text-xs uppercase tracking-wider">
+                      <AlertCircle className="h-4 w-4 text-amber-600" />
+                      Discount Requested: {formatCurrency(selectedQuotation.discountRequested)}
+                    </div>
+                    <p className="text-xs text-amber-700 italic">"{selectedQuotation.discountReason}"</p>
+                    <p className="text-xs text-amber-600 font-extrabold">Final Price after discount: <span className="font-mono text-sm text-amber-900">{formatCurrency(Math.round(selectedQuotation.totalCost - selectedQuotation.discountRequested))}</span></p>
                   </div>
                 )}
               </div>
-
-              {/* Items List Table */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Quotation Items</p>
-                <div className="border border-zinc-200 rounded-xl overflow-hidden bg-white max-h-[300px] overflow-y-auto shadow-sm">
-                  <Table>
-                    <TableHeader className="bg-zinc-50">
-                      <TableRow>
-                        <TableHead className="w-[45px] text-center font-bold text-xs py-2.5 h-9">No.</TableHead>
-                        <TableHead className="font-bold text-xs py-2.5 h-9">Belt Details</TableHead>
-                        <TableHead className="font-bold text-xs py-2.5 h-9">Dimensions</TableHead>
-                        <TableHead className="font-bold text-xs py-2.5 h-9">BOM & Customizations</TableHead>
-                        <TableHead className="font-bold text-right text-xs py-2.5 h-9 pr-4">Price</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedQuotation.items && selectedQuotation.items.length > 0 ? (
-                        selectedQuotation.items.map((item, idx) => {
-                          const included = item.selectedBOMOptions?._included || {};
-                          const customRates = item.selectedBOMOptions?._customRates || {};
-                          const remarks = item.selectedBOMOptions?._remarks || {};
-                          const optRemarks = item.selectedBOMOptions?._optRemarks || {};
-
-                          const category = (Array.isArray(config?.beltTypes) ? config.beltTypes : [])?.find?.(t => t.name === item.beltType) || null;
-                          const style = (Array.isArray(category?.styles) ? category.styles : [])?.find?.(s => s.name === item.beltStyle) || null;
-                          const bomItems = style?.bom || [];
-
-                          const includedItems = bomItems.filter(b => included[b.id] !== false);
-                          const adjustedItems = bomItems.filter(b => customRates[b.id] !== undefined).map(b => `${b.name} (₹${customRates[b.id]})`);
-                          const hasRemarks = includedItems.some(b => remarks[b.id]);
-
-                          const subRemarkEntries: { label: string; text: string }[] = [];
-                          includedItems.forEach(b => {
-                            const rawSel = item.selectedBOMOptions?.[b.id];
-                            const selIndices: number[] = Array.isArray(rawSel)
-                              ? rawSel
-                              : rawSel !== undefined ? [rawSel] : [];
-                            selIndices.forEach((optIdx: number) => {
-                              if (b.options?.[optIdx]) {
-                                const optKey = `${b.id}_${optIdx}`;
-                                if (optRemarks[optKey]) {
-                                  subRemarkEntries.push({
-                                    label: `${b.name} › ${b.options[optIdx].name || ''}`,
-                                    text: optRemarks[optKey]
-                                  });
-                                }
-                              }
-                            });
-                          });
-
-                          return (
-                            <TableRow key={item.id || idx} className="text-xs hover:bg-zinc-50/50 transition-colors h-11">
-                              <TableCell className="text-center font-bold text-zinc-500">{idx + 1}</TableCell>
-                              <TableCell className="font-semibold text-zinc-900">
-                                {item.beltType}
-                                <div className="text-[10px] text-zinc-400 font-medium">Style: {item.beltStyle || 'Standard'}</div>
-                              </TableCell>
-                              <TableCell className="font-mono text-zinc-650">
-                                L {item.dimensions.length}{item.dimensions.lengthUnit || 'mm'} x W {item.dimensions.width}{item.dimensions.widthUnit || 'mm'}
-                                {item.dimensions.hasHoles && (
-                                  <div className="text-[10px] text-indigo-650 font-bold mt-0.5">Holes: {item.dimensions.totalHoles} pcs</div>
-                                )}
-                              </TableCell>
-                              <TableCell className="max-w-[250px] text-[10px] text-zinc-600 font-normal leading-relaxed">
-                                <div className="space-y-0.5 py-1">
-                                  <div><span className="font-semibold text-zinc-500">BOM:</span> {includedItems.map(b => b.name).join(', ') || 'None'}</div>
-                                  {adjustedItems.length > 0 && (
-                                    <div className="text-[10px] text-indigo-650 font-bold">
-                                      <span className="font-extrabold">Adjusted:</span> {adjustedItems.join(', ')}
-                                    </div>
-                                  )}
-                                  {hasRemarks && (
-                                    <div className="text-[10px] text-amber-700 font-medium mt-0.5 space-y-0.5 bg-amber-50/50 p-1 rounded border border-amber-100/50">
-                                      {includedItems.filter(b => remarks[b.id]).map(b => (
-                                        <div key={b.id} className="flex items-start gap-1">
-                                          <span className="font-bold text-amber-600 shrink-0">{b.name}:</span>
-                                          <span className="italic">{remarks[b.id]}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {subRemarkEntries.length > 0 && (
-                                    <div className="text-[10px] text-indigo-750 font-medium mt-0.5 space-y-0.5 bg-indigo-50/50 p-1 rounded border border-indigo-100/50">
-                                      {subRemarkEntries.map((e, i) => (
-                                        <div key={i} className="flex items-start gap-1">
-                                          <span className="font-bold text-indigo-500 shrink-0">{e.label}:</span>
-                                          <span className="italic">{e.text}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right font-mono font-bold text-zinc-900 pr-4">
-                                {formatCurrency(item.totalCost)}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })
-                      ) : (
-                        // Fallback row for single-item legacy quotations
-                        (() => {
-                          const item = selectedQuotation;
-                          const included = item.selectedBOMOptions?._included || {};
-                          const customRates = item.selectedBOMOptions?._customRates || {};
-                          const remarks = item.selectedBOMOptions?._remarks || {};
-                          const optRemarks = item.selectedBOMOptions?._optRemarks || {};
-
-                          const category = (Array.isArray(config?.beltTypes) ? config.beltTypes : [])?.find?.(t => t.name === item.beltType) || null;
-                          const style = (Array.isArray(category?.styles) ? category.styles : [])?.find?.(s => s.name === item.beltStyle) || null;
-                          const bomItems = style?.bom || [];
-
-                          const includedItems = bomItems.filter(b => included[b.id] !== false);
-                          const adjustedItems = bomItems.filter(b => customRates[b.id] !== undefined).map(b => `${b.name} (₹${customRates[b.id]})`);
-                          const hasRemarks = includedItems.some(b => remarks[b.id]);
-
-                          const subRemarkEntries: { label: string; text: string }[] = [];
-                          includedItems.forEach(b => {
-                            const rawSel = item.selectedBOMOptions?.[b.id];
-                            const selIndices: number[] = Array.isArray(rawSel)
-                              ? rawSel
-                              : rawSel !== undefined ? [rawSel] : [];
-                            selIndices.forEach((optIdx: number) => {
-                              if (b.options?.[optIdx]) {
-                                const optKey = `${b.id}_${optIdx}`;
-                                if (optRemarks[optKey]) {
-                                  subRemarkEntries.push({
-                                    label: `${b.name} › ${b.options[optIdx].name || ''}`,
-                                    text: optRemarks[optKey]
-                                  });
-                                }
-                              }
-                            });
-                          });
-
-                          return (
-                            <TableRow className="text-xs hover:bg-zinc-50/50 transition-colors h-11">
-                              <TableCell className="text-center font-bold text-zinc-500">1</TableCell>
-                              <TableCell className="font-semibold text-zinc-900">
-                                {item.beltType}
-                                <div className="text-[10px] text-zinc-400 font-medium">Style: {item.beltStyle || 'Standard'}</div>
-                              </TableCell>
-                              <TableCell className="font-mono text-zinc-650">
-                                L {item.dimensions.length}{item.dimensions.lengthUnit || item.dimensions.unit || 'mm'} x W {item.dimensions.width}{item.dimensions.widthUnit || item.dimensions.unit || 'mm'}
-                                {item.dimensions.hasHoles && (
-                                  <div className="text-[10px] text-indigo-650 font-bold mt-0.5">Holes: {item.dimensions.totalHoles} pcs</div>
-                                )}
-                              </TableCell>
-                              <TableCell className="max-w-[250px] text-[10px] text-zinc-600 font-normal leading-relaxed">
-                                <div className="space-y-0.5 py-1">
-                                  <div><span className="font-semibold text-zinc-500">BOM:</span> {includedItems.map(b => b.name).join(', ') || 'None'}</div>
-                                  {adjustedItems.length > 0 && (
-                                    <div className="text-[10px] text-indigo-650 font-bold">
-                                      <span className="font-extrabold">Adjusted:</span> {adjustedItems.join(', ')}
-                                    </div>
-                                  )}
-                                  {hasRemarks && (
-                                    <div className="text-[10px] text-amber-700 font-medium mt-0.5 space-y-0.5 bg-amber-50/50 p-1 rounded border border-amber-100/50">
-                                      {includedItems.filter(b => remarks[b.id]).map(b => (
-                                        <div key={b.id} className="flex items-start gap-1">
-                                          <span className="font-bold text-amber-600 shrink-0">{b.name}:</span>
-                                          <span className="italic">{remarks[b.id]}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {subRemarkEntries.length > 0 && (
-                                    <div className="text-[10px] text-indigo-750 font-medium mt-0.5 space-y-0.5 bg-indigo-50/50 p-1 rounded border border-indigo-100/50">
-                                      {subRemarkEntries.map((e, i) => (
-                                        <div key={i} className="flex items-start gap-1">
-                                          <span className="font-bold text-indigo-500 shrink-0">{e.label}:</span>
-                                          <span className="italic">{e.text}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right font-mono font-bold text-zinc-900 pr-4">
-                                {formatCurrency(item.totalCost)}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })()
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-
-              {/* Single Item Hole specifications overlay (only if legacy single item has holes) */}
-              {(!selectedQuotation.items || selectedQuotation.items.length === 0) && selectedQuotation.dimensions.hasHoles && (
-                <div className="p-3.5 bg-indigo-50/60 border border-indigo-150 rounded-2xl space-y-1.5 animate-in fade-in duration-200 shadow-sm">
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
-                    <AlertCircle className="h-3.5 w-3.5 text-indigo-700" />
-                    Holes Layout Specifications
-                  </h4>
-                  <div className="grid grid-cols-4 gap-2 text-xs font-semibold text-slate-700 mt-1">
-                    <div>
-                      <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Total Holes</span>
-                      <p className="text-sm font-black text-indigo-950">{selectedQuotation.dimensions.totalHoles}</p>
-                    </div>
-                    <div>
-                      <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Hole Size</span>
-                      <p className="text-xs font-bold text-slate-900">{selectedQuotation.dimensions.holeSize} mm</p>
-                    </div>
-                    <div>
-                      <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Spacing (H / V)</span>
-                      <p className="text-xs font-bold text-slate-900">
-                        {selectedQuotation.dimensions.holeDistHorizontal}mm / {selectedQuotation.dimensions.holeDistVertical}mm
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Price per Hole</span>
-                      <p className="text-xs font-bold text-slate-900">₹{selectedQuotation.dimensions.pricePerHole}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Discount details */}
-              {selectedQuotation.discountRequested && selectedQuotation.discountRequested > 0 && (
-                <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-100 space-y-2 shadow-sm">
-                  <div className="flex items-center gap-2 text-amber-900 font-bold text-xs uppercase tracking-wider">
-                    <AlertCircle className="h-4 w-4 text-amber-600" />
-                    Discount Requested: {formatCurrency(selectedQuotation.discountRequested)}
-                  </div>
-                  <p className="text-xs text-amber-700 italic">"{selectedQuotation.discountReason}"</p>
-                  <p className="text-xs text-amber-600 font-extrabold">Final Price after discount: <span className="font-mono text-sm text-amber-900">{formatCurrency(Math.round(selectedQuotation.totalCost - selectedQuotation.discountRequested))}</span></p>
-                </div>
-              )}
             </div>
           )}
           <DialogFooter className="gap-2">
