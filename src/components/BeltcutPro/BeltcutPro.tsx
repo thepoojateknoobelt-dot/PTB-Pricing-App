@@ -5064,7 +5064,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                   <option value="" disabled>-- Choose Material --</option>
                   {materialStocks.map(stock => (
                     <option key={stock.id} value={stock.id}>
-                      {stock.name} ({stock.quantity} {stock.unit} available)
+                      {user?.role === 'admin' 
+                        ? `${stock.name} (${stock.quantity} ${stock.unit} available)`
+                        : stock.name
+                      }
                     </option>
                   ))}
                 </select>
