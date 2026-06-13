@@ -745,6 +745,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       if (rollsData) {
         setRolls(rollsData);
       }
+      loadMaterialIssues();
     } catch (err) {
       console.error("Failed to load rolls:", err);
     } finally {
@@ -2102,9 +2103,15 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   }, [rolls, materialTypeReorders]);
 
   const filteredMaterialIssues = useMemo(() => {
-    if (!productionSearchQuery) return materialIssues;
+    // Only show material issues representing requested items (exclude system logs)
+    const productionRecords = materialIssues.filter(issue =>
+      issue.issuedTo !== 'REUSE STOCK' &&
+      issue.issuedTo !== 'REJECTED / WASTE'
+    );
+
+    if (!productionSearchQuery) return productionRecords;
     const query = productionSearchQuery.toLowerCase().trim();
-    return materialIssues.filter(issue =>
+    return productionRecords.filter(issue =>
       (issue.materialName || '').toLowerCase().includes(query) ||
       (issue.issuedTo || '').toLowerCase().includes(query) ||
       (issue.notes || '').toLowerCase().includes(query)

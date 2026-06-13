@@ -300,6 +300,17 @@ async function initializeDatabase() {
 
     console.log('Database schema checked/created successfully.');
 
+    // Cleanup any auto-logged refused/waste/reuse stock issues from material_issues table
+    try {
+      await pool.query(
+        "DELETE FROM material_issues WHERE issued_to = $1 OR id LIKE $2 OR id LIKE $3",
+        ['REJECTED / WASTE', 'issue-refused-sync-%', 'issue-refused-%']
+      );
+      console.log('Cleaned up refused/waste logs from material_issues.');
+    } catch (cleanErr) {
+      console.warn('Failed to clean up refused issues:', cleanErr);
+    }
+
     // Seed default admin user if none exists
     const adminCheck = await pool.query("SELECT * FROM users WHERE username = 'admin'");
     if (adminCheck.rowCount === 0) {
