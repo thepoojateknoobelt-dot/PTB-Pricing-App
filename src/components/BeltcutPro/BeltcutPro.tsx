@@ -2413,10 +2413,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                   setSelectedOrder(prev => ({ ...prev, isInventoryCut: false, customerName: '' }));
                                   setSelectedOrderNumber('');
                                 } else if (purpose === 'scrap') {
-                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: true, customerName: 'SCRAP' }));
+                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: true, customerName: 'SCRAP', quantity: 1 }));
                                   setSelectedOrderNumber('');
                                 } else if (purpose === 'inventory') {
-                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: true, customerName: 'REUSE STOCK' }));
+                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: true, customerName: 'REUSE STOCK', quantity: 1 }));
                                   setSelectedOrderNumber('');
                                 }
                               }}
@@ -2771,16 +2771,25 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                 <div className="absolute left-0 right-0 top-[100%] mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in duration-100">
                                   {rolls
                                     .filter(r => {
-                                      // Only show rolls matching current material type and not refused
-                                      if (r.status === 'refused' || r.materialType !== selectedOrder.materialType) return false;
+                                      // Only show rolls that are active (not refused)
+                                      if (r.status === 'refused') return false;
                                       
                                       const q = rollSearchQuery.toLowerCase();
                                       if (!q) return true;
                                       const rollSize = `${fromMeters(r.fullLength).toFixed(2)}${currentUnit} x ${fromMeters(r.fullWidth).toFixed(2)}${currentUnit}`.toLowerCase();
                                       return (
                                         r.id.toLowerCase().includes(q) ||
-                                        rollSize.includes(q)
+                                        rollSize.includes(q) ||
+                                        r.materialType.toLowerCase().includes(q)
                                       );
+                                    })
+                                    .sort((a, b) => {
+                                      // Prioritize rolls matching the current selected material type to the top
+                                      const aMatch = a.materialType === selectedOrder.materialType;
+                                      const bMatch = b.materialType === selectedOrder.materialType;
+                                      if (aMatch && !bMatch) return -1;
+                                      if (!aMatch && bMatch) return 1;
+                                      return 0;
                                     })
                                     .map((r) => {
                                       const isSelected = cuttingSelectedRollId === r.id;
@@ -2791,6 +2800,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                           onMouseDown={() => {
                                             setCuttingSelectedRollId(r.id);
                                             setRollSearchQuery(`${r.id} (${fromMeters(r.fullLength).toFixed(1)}${currentUnit} × ${fromMeters(r.fullWidth).toFixed(1)}${currentUnit})`);
+                                            // Sync selectedOrder's materialType with the selected roll
+                                            setSelectedOrder(prev => ({ ...prev, materialType: r.materialType }));
                                             setShowRollDropdown(false);
                                             toast.success(`Target roll selected: ${r.id}`);
                                           }}
@@ -2800,9 +2811,14 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                             <span className="text-[10px] font-black text-white bg-zinc-900 px-1.5 py-0.5 rounded-md shrink-0">
                                               {r.id}
                                             </span>
-                                            <span className="font-bold text-xs text-slate-800 truncate">
-                                              {fromMeters(r.fullLength).toFixed(2)}{currentUnit} × {fromMeters(r.fullWidth).toFixed(2)}{currentUnit}
-                                            </span>
+                                            <div className="flex flex-col min-w-0">
+                                              <span className="font-bold text-xs text-slate-800 truncate">
+                                                {fromMeters(r.fullLength).toFixed(2)}{currentUnit} × {fromMeters(r.fullWidth).toFixed(2)}{currentUnit}
+                                              </span>
+                                              <span className="text-[8px] font-bold text-slate-400 truncate">
+                                                {r.materialType}
+                                              </span>
+                                            </div>
                                           </div>
                                           <span className="text-[9px] font-bold text-slate-400 shrink-0">
                                             Rem: {fromMeters(r.remainingSqm).toFixed(1)}{currentUnit}²
@@ -2811,14 +2827,14 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                       );
                                     })}
                                   {rolls.filter(r => {
-                                    if (r.status === 'refused' || r.materialType !== selectedOrder.materialType) return false;
+                                    if (r.status === 'refused') return false;
                                     const q = rollSearchQuery.toLowerCase();
                                     if (!q) return true;
                                     const rollSize = `${fromMeters(r.fullLength).toFixed(2)}${currentUnit} x ${fromMeters(r.fullWidth).toFixed(2)}${currentUnit}`.toLowerCase();
-                                    return r.id.toLowerCase().includes(q) || rollSize.includes(q);
+                                    return r.id.toLowerCase().includes(q) || rollSize.includes(q) || r.materialType.toLowerCase().includes(q);
                                   }).length === 0 && (
                                       <div className="px-4 py-6 text-center text-xs font-bold text-slate-400">
-                                        No active rolls found for this material
+                                        No active rolls found
                                       </div>
                                     )}
                                 </div>
@@ -2907,8 +2923,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             </div>
                           </div>
 
-                          {/* Quantity stepper — only shown for manual / scrap / inventory purposes */}
-                          {cutPurpose !== 'order' && (
+                          {/* Quantity stepper — only shown for manual purpose */}
+                          {cutPurpose === 'manual' && (
                             <div className="space-y-1">
                               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
                                 <Layers size={10} /> Quantity (Pieces)
