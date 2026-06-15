@@ -124,6 +124,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   // Expanded/Accordion Roll ID for Remnant Matching Visualization
   const [expandedRollId, setExpandedRollId] = useState<string | null>(null);
   const [lastCutRollId, setLastCutRollId] = useState<string | null>(null);
+  const [fullscreenRollId, setFullscreenRollId] = useState<string | null>(null);
 
   // Cut Purpose State & Active Orders
   const [cutPurpose, setCutPurpose] = useState<'manual' | 'order' | 'scrap' | 'inventory'>('order');
@@ -1806,6 +1807,244 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     printWindow.document.close();
   };
 
+  const handlePrintRollLayout = (rollId: string) => {
+    const roll = rolls.find(r => r.id === rollId);
+    if (!roll) return;
+    const cuts = roll.cuts || [];
+
+    // Find visualizer container (either the fullscreen modal's or the dashboard one)
+    const container = document.getElementById(`roll-visualizer-${rollId}`);
+    const svgEl = container?.querySelector('svg');
+    if (!svgEl) {
+      alert("Visualizer layout not found. Please make sure the roll is expanded and visible.");
+      return;
+    }
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Pop-up blocker active. Please allow popups for printing.");
+      return;
+    }
+
+    // Clone the SVG and customize for print
+    const svgClone = svgEl.cloneNode(true) as SVGElement;
+    // Set explicit scaling for print
+    svgClone.setAttribute('width', '100%');
+    svgClone.setAttribute('height', 'auto');
+    svgClone.style.maxWidth = '100%';
+    svgClone.style.maxHeight = '350px';
+    // Remove pointer cursor or interactive classes
+    svgClone.removeAttribute('class');
+
+    const svgHtml = svgClone.outerHTML;
+
+    // Generate cut table rows
+    const cutsRows = cuts.map((cut, idx) => {
+      let dateStr = 'N/A';
+      const tsMatch = cut.id.match(/C-(\d+)/);
+      if (tsMatch) {
+        const d = new Date(parseInt(tsMatch[1], 10));
+        if (!isNaN(d.getTime())) {
+          dateStr = `${d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+        }
+      }
+      const lenVal = fromMeters(cut.length).toFixed(1);
+      const widVal = fromMeters(cut.width).toFixed(1);
+      return `
+        <tr>
+          <td>#${idx + 1}</td>
+          <td>${isInventoryCutName(cut.customerName) ? 'REUSE STOCK' : (cut.customerName || 'N/A')}</td>
+          <td>${cut.id.substring(0, 12)}</td>
+          <td>${lenVal}${currentUnit} x ${widVal}${currentUnit}</td>
+          <td>${cut.isInventoryCut ? 'REUSE' : 'CLIENT'}</td>
+          <td>${dateStr}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const lenVal = fromMeters(roll.fullLength).toFixed(1);
+    const widVal = fromMeters(roll.fullWidth).toFixed(1);
+    const efficiencyVal = roll.cuts.length > 0 ? (roll.efficiency || 0).toFixed(1) : '0';
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Roll Layout Manifest - Roll ${rollId}</title>
+          <style>
+            body { font-family: sans-serif; padding: 25px; color: #1e293b; line-height: 1.5; }
+            @media print {
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              .no-print { display: none; }
+            }
+            .print-header {
+              display: flex;
+              align-items: center;
+              gap: 15px;
+              border-bottom: 3px double #cbd5e1;
+              padding-bottom: 15px;
+              margin-bottom: 20px;
+            }
+            .logo {
+              width: 45px;
+              height: 45px;
+              color: #1e293b;
+              flex-shrink: 0;
+            }
+            .company-info {
+              display: flex;
+              flex-direction: column;
+            }
+            .company-name {
+              font-size: 22px;
+              font-weight: 900;
+              color: #0f172a;
+              letter-spacing: -0.5px;
+              text-transform: uppercase;
+            }
+            .company-tagline {
+              font-size: 10px;
+              color: #64748b;
+              font-weight: 700;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              margin-top: 1px;
+            }
+            .document-title {
+              display: flex;
+              justify-content: space-between;
+              align-items: baseline;
+              margin-bottom: 20px;
+            }
+            .document-title h2 {
+              font-size: 16px;
+              text-transform: uppercase;
+              font-weight: 800;
+              color: #0f172a;
+              margin: 0;
+            }
+            .print-date {
+              font-size: 10px;
+              color: #64748b;
+              font-weight: 700;
+            }
+            .stats-grid {
+              display: grid;
+              grid-template-cols: repeat(4, 1fr);
+              gap: 15px;
+              margin-bottom: 25px;
+            }
+            .stat-card {
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 12px;
+              background: #f8fafc;
+            }
+            .stat-label {
+              font-size: 9px;
+              text-transform: uppercase;
+              color: #64748b;
+              font-weight: 800;
+              margin-bottom: 4px;
+            }
+            .stat-value {
+              font-size: 14px;
+              font-weight: bold;
+              color: #0f172a;
+            }
+            .visualizer-section {
+              border: 1px solid #cbd5e1;
+              border-radius: 12px;
+              padding: 15px;
+              margin-bottom: 25px;
+              background: #ffffff;
+              display: flex;
+              justify-content: center;
+            }
+            .section-title {
+              font-size: 11px;
+              text-transform: uppercase;
+              font-weight: 800;
+              color: #475569;
+              margin-bottom: 10px;
+              border-bottom: 1px solid #e2e8f0;
+              padding-bottom: 5px;
+            }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; font-size: 11px; }
+            th { background: #f8fafc; font-weight: 800; text-transform: uppercase; font-size: 10px; color: #475569; }
+          </style>
+        </head>
+        <body>
+          <div class="print-header">
+            <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+            </svg>
+            <div class="company-info">
+              <div class="company-name">POOJA TEKNO BELT</div>
+              <div class="company-tagline">Premium Belt Cutting & Optimization Nesting Portal</div>
+            </div>
+          </div>
+          
+          <div class="document-title">
+            <h2>Roll Layout & Allocations - Roll ${rollId}</h2>
+            <span class="print-date">Printed on: ${new Date().toLocaleString()}</span>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Material Type</div>
+              <div class="stat-value">${roll.materialType}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Dimensions</div>
+              <div class="stat-value">${lenVal}${currentUnit} x ${widVal}${currentUnit}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Efficiency</div>
+              <div class="stat-value">${efficiencyVal}%</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Allocated Cuts</div>
+              <div class="stat-value">${cuts.length}</div>
+            </div>
+          </div>
+
+          <div class="section-title">Layout Visualization</div>
+          <div class="visualizer-section">
+            ${svgHtml}
+          </div>
+
+          <div class="section-title">Cuts Allocation Table</div>
+          <table>
+            <thead>
+              <tr>
+                <th>S.No</th>
+                <th>Client Name</th>
+                <th>Cut ID</th>
+                <th>Dimensions</th>
+                <th>Type</th>
+                <th>Date & Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${cutsRows || '<tr><td colspan="6" style="text-align:center;">No cuts allocated yet.</td></tr>'}
+            </tbody>
+          </table>
+
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+                window.close();
+              }, 500);
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const handleExportCSV = (rollId: string) => {
     const roll = rolls.find(r => r.id === rollId);
     if (!roll) return;
@@ -2442,6 +2681,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     roll={roll}
                     unit={currentUnit}
                     onSelectCut={(cut) => handleDeleteCut(roll.id, cut)}
+                    onMaximize={() => setFullscreenRollId(roll.id)}
                   />
                 ))}
               </div>
@@ -3243,6 +3483,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                               handleExecuteCutWithPlacement(result, roll);
                             }}
                             suggestedPlacement={(currentResult?.rollId === roll.id) ? { ...(currentResult as any).placement, width: activeOrderDimensions.width, length: activeOrderDimensions.length } : null}
+                            onMaximize={() => setFullscreenRollId(roll.id)}
                           />
                         );
                       })}
@@ -5475,6 +5716,180 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
           </div>
         </div>
       )}
+
+      {/* ═══ FULLSCREEN ROLL MODAL ═══ */}
+      {fullscreenRollId && (() => {
+        const roll = rolls.find(r => r.id === fullscreenRollId);
+        if (!roll) return null;
+        
+        const isReuse = isRollReuse(roll);
+        const cuts = roll.cuts || [];
+        const lenVal = fromMeters(roll.fullLength).toFixed(1);
+        const widVal = fromMeters(roll.fullWidth).toFixed(1);
+        const efficiencyVal = cuts.length > 0 ? (roll.efficiency || 0).toFixed(1) : '0';
+        
+        // Calculate remaining area
+        const totalCutsArea = cuts.reduce((acc, cut) => acc + (cut.length * cut.width), 0);
+        const totalRollArea = roll.fullLength * roll.fullWidth;
+        const remainingArea = totalRollArea - totalCutsArea;
+
+        const displayTotalArea = formatDisplayValue(totalRollArea);
+        const displayRemainingArea = formatDisplayValue(remainingArea);
+
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 md:p-10">
+            <div
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+              onClick={() => setFullscreenRollId(null)}
+            />
+            <div className="relative bg-white rounded-[32px] shadow-2xl w-full max-w-5xl h-full max-h-[85vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200 text-left">
+              {/* Header */}
+              <div className="p-6 border-b border-zinc-150 flex items-center justify-between bg-slate-50/50 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-lg">
+                    <Package size={22} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-800 text-lg flex items-center gap-2 italic uppercase">
+                      Roll {roll.id}
+                      <span className={`text-[9px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${isReuse ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                        {isReuse ? 'REUSE' : 'FRESH'}
+                      </span>
+                      <span className={`text-[9px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${cuts.length > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700'}`}>
+                        {cuts.length > 0 ? 'REMNANT' : 'FULL'}
+                      </span>
+                    </h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{roll.materialType}</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => handlePrintRollLayout(roll.id)}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95 shrink-0 uppercase tracking-wider"
+                  >
+                    <Printer size={14} /> Print Layout
+                  </button>
+                  <button
+                    onClick={() => setFullscreenRollId(null)}
+                    className="p-2.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer border border-slate-200 bg-white"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+                
+                {/* Stats Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Dimensions</p>
+                    <p className="text-base font-black text-slate-800 mt-1">{lenVal}{currentUnit} x {widVal}{currentUnit}</p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Area</p>
+                    <p className="text-base font-black text-slate-800 mt-1">{displayTotalArea} {areaUnit}</p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Remaining Area</p>
+                    <p className="text-base font-black text-slate-800 mt-1">{displayRemainingArea} {areaUnit}</p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Efficiency</p>
+                    <p className="text-base font-black text-emerald-600 mt-1">{efficiencyVal}%</p>
+                  </div>
+                </div>
+
+                {/* Visualizer Frame */}
+                <div className="bg-white border border-slate-200 rounded-[24px] p-2 md:p-4 shadow-sm">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 mb-2">Interactive Nesting Layout</p>
+                  <RollVisualizer
+                    roll={roll}
+                    unit={currentUnit}
+                    isExpanded={true}
+                    onSelectCut={(cut) => handleDeleteCut(roll.id, cut)}
+                  />
+                </div>
+
+                {/* Allocations Table */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Cuts Allocations Details ({cuts.length})</h4>
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50/70 border-b border-slate-200">
+                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider w-12">S.No</th>
+                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Client Name</th>
+                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Cut ID</th>
+                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Dimensions</th>
+                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Type</th>
+                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Date & Time</th>
+                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider w-16 text-center">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
+                        {cuts.map((cut, idx) => {
+                          let dateStr = 'N/A';
+                          const tsMatch = cut.id.match(/C-(\d+)/);
+                          if (tsMatch) {
+                            const d = new Date(parseInt(tsMatch[1], 10));
+                            if (!isNaN(d.getTime())) {
+                              dateStr = `${d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+                            }
+                          }
+                          const lenCut = fromMeters(cut.length).toFixed(1);
+                          const widCut = fromMeters(cut.width).toFixed(1);
+                          return (
+                            <tr key={cut.id} className="hover:bg-slate-50/50 transition duration-150">
+                              <td className="px-4 py-3 text-slate-400">#{idx + 1}</td>
+                              <td className="px-4 py-3 text-slate-800">
+                                {isInventoryCutName(cut.customerName) ? (
+                                  <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded text-[10px] font-black tracking-wider uppercase">
+                                    REUSE STOCK
+                                  </span>
+                                ) : (
+                                  cut.customerName || 'N/A'
+                                )}
+                              </td>
+                              <td className="px-4 py-3 font-mono text-[10px] text-slate-500">{cut.id.substring(0, 12)}</td>
+                              <td className="px-4 py-3 font-black text-slate-800">{lenCut}{currentUnit} x {widCut}{currentUnit}</td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex px-2 py-0.5 rounded-[6px] text-[8px] font-black tracking-widest uppercase ${cut.isInventoryCut ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}>
+                                  {cut.isInventoryCut ? 'REUSE' : 'CLIENT'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-slate-500">{dateStr}</td>
+                              <td className="px-4 py-3 text-center">
+                                <button
+                                  onClick={() => handleDeleteCut(roll.id, cut)}
+                                  className="p-1.5 hover:bg-rose-50 text-rose-500 rounded-lg transition active:scale-95 cursor-pointer border border-transparent hover:border-rose-100"
+                                  title="Delete Cut Allocation"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {cuts.length === 0 && (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-8 text-center text-slate-400 font-medium bg-slate-50/30">
+                              No cuts allocated to this roll yet.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

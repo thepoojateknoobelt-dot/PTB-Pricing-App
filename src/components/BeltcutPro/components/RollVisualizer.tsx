@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Roll, Cut, Unit } from '../types';
 import { isSpaceAvailable } from '../services/optimizationEngine';
-import { Box, ChevronDown, ChevronUp } from 'lucide-react';
+import { Box, ChevronDown, ChevronUp, Maximize2 } from 'lucide-react';
 
 interface RollVisualizerProps {
   roll: Roll;
@@ -14,6 +14,7 @@ interface RollVisualizerProps {
   onManualPlacementConfirm?: (pos: { x: number; y: number }) => void;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
+  onMaximize?: () => void;
 }
 
 const CONVERSIONS: Record<Unit, number> = {
@@ -34,7 +35,8 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   onManualPlacementChange,
   onManualPlacementConfirm,
   isExpanded = true,
-  onToggleExpand
+  onToggleExpand,
+  onMaximize
 }) => {
   const [zoom, setZoom] = useState(0.8);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -177,6 +179,18 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
               title={isExpanded ? "Collapse" : "Expand"}
             >
               {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          )}
+          {onMaximize && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onMaximize();
+              }}
+              className="p-2 hover:bg-slate-150 active:scale-95 bg-slate-100 border border-slate-200 rounded-xl transition-all cursor-pointer text-slate-500 hover:text-slate-800"
+              title="Fullscreen View"
+            >
+              <Maximize2 size={16} />
             </button>
           )}
         </div>
