@@ -113,6 +113,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   const [detailsSubTab, setDetailsSubTab] = useState<'clients' | 'rolls'>('clients');
   const [selectedClientName, setSelectedClientName] = useState<string | null>(null);
   const [selectedRollId, setSelectedRollId] = useState<string | null>(null);
+  const [rollHistory, setRollHistory] = useState<string[]>([]);
   const [rollDetailPanelId, setRollDetailPanelId] = useState<string | null>(null);
   const [cuttingMode, setCuttingMode] = useState<'auto' | 'manual'>('auto');
   const [isSyncing, setIsSyncing] = useState(true);
@@ -978,6 +979,62 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     cutPurpose,
     cuttingSelectedRollId
   ]);
+
+  // Keyboard Arrow Keys listener for Manual Fit mode coordinates adjustment
+  useEffect(() => {
+    if (cuttingMode !== 'manual' || !manualPlacement) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in form inputs, textareas, or selects
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
+        return;
+      }
+
+      const roll = rolls.find(r => r.id === manualPlacement.rollId);
+      if (!roll) return;
+
+      const reqWidth = activeOrderDimensions.width || 0;
+      const reqLength = activeOrderDimensions.length || 0;
+      if (reqWidth <= 0 || reqLength <= 0) return;
+
+      let { x, y } = manualPlacement.placement;
+      let moved = false;
+
+      // Snap coordinates to 1 decimal place (10cm grid)
+      x = Math.round(x * 10) / 10;
+      y = Math.round(y * 10) / 10;
+
+      if (e.key === 'ArrowLeft') {
+        x = Math.max(0, x - 0.1);
+        moved = true;
+      } else if (e.key === 'ArrowRight') {
+        x = Math.min(roll.fullLength - reqLength, x + 0.1);
+        moved = true;
+      } else if (e.key === 'ArrowUp') {
+        y = Math.max(0, y - 0.1);
+        moved = true;
+      } else if (e.key === 'ArrowDown') {
+        y = Math.min(roll.fullWidth - reqWidth, y + 0.1);
+        moved = true;
+      }
+
+      if (moved) {
+        e.preventDefault();
+        const newX = Math.round(x * 10) / 10;
+        const newY = Math.round(y * 10) / 10;
+        setManualPlacement({
+          rollId: roll.id,
+          placement: { x: newX, y: newY }
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [cuttingMode, manualPlacement, rolls, activeOrderDimensions]);
 
   const visibleRolls = useMemo(() => {
     let active = rolls.filter(r =>
@@ -3174,14 +3231,16 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             manualDimensions={{ width: activeOrderDimensions.width, length: activeOrderDimensions.length }}
                             onManualPlacementChange={(pos) => {
                               if (pos) {
-                                const result = { rollId: roll.id, placement: pos };
-                                setManualPlacement(result);
-                                handleExecuteCutWithPlacement(result, roll);
+                                setManualPlacement({ rollId: roll.id, placement: pos });
                               } else {
                                 setManualPlacement(null);
                               }
                             }}
-                            suggestedPlacement={(cuttingMode === 'auto' && currentResult?.rollId === roll.id) ? { ...(currentResult as any).placement, width: activeOrderDimensions.width, length: activeOrderDimensions.length } : null}
+                            onManualPlacementConfirm={(pos) => {
+                              const result = { rollId: roll.id, placement: pos };
+                              handleExecuteCutWithPlacement(result, roll);
+                            }}
+                            suggestedPlacement={(currentResult?.rollId === roll.id) ? { ...(currentResult as any).placement, width: activeOrderDimensions.width, length: activeOrderDimensions.length } : null}
                           />
                         );
                       })}
@@ -4808,7 +4867,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                           </td>
                           <td className="px-4 py-2.5 text-right">
                             <button
-                              onClick={() => setSelectedRollId(roll.id)}
+                              onClick={() => {
+                                setRollHistory([]);
+                                setSelectedRollId(roll.id);
+                              }}
                               className="px-2 py-1 bg-zinc-950 hover:bg-zinc-800 text-white rounded-lg font-black text-[10px] transition shadow-sm cursor-pointer inline-flex items-center gap-1.5"
                             >
                               <Info size={11} /> Check Details
@@ -4924,11 +4986,27 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
               <div className="bg-white rounded-xl w-full max-w-4xl shadow-2xl max-h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-left">
                 <div className="p-3 border-b border-zinc-150 flex justify-between items-center bg-white text-zinc-950">
-                  <div>
+                  <div className="flex items-center gap-2">
+                    {rollHistory.length > 0 && (
+                      <button
+                        onClick={() => {
+                          const prev = [...rollHistory];
+                          const prevId = prev.pop();
+                          setRollHistory(prev);
+                          setSelectedRollId(prevId || null);
+                        }}
+                        className="mr-2 px-2.5 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer flex items-center gap-1 border border-zinc-200 active:scale-95 animate-in fade-in"
+                      >
+                        <ArrowLeft size={12} className="stroke-[3]" /> Back
+                      </button>
+                    )}
                     <h3 className="text-xs font-black uppercase tracking-wider">Client Allocations for Roll {selectedRollId}</h3>
                   </div>
                   <button
-                    onClick={() => setSelectedRollId(null)}
+                    onClick={() => {
+                      setSelectedRollId(null);
+                      setRollHistory([]);
+                    }}
                     className="p-2 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-xl transition cursor-pointer"
                   >
                     <X className="h-5 w-5" />
@@ -4969,6 +5047,9 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                               className={`transition-colors ${isClickable ? 'hover:bg-indigo-50/60 cursor-pointer' : 'hover:bg-slate-50/50'}`}
                               onClick={() => {
                                 if (isClickable && matchedInvRoll) {
+                                  if (selectedRollId) {
+                                    setRollHistory(prev => [...prev, selectedRollId]);
+                                  }
                                   setSelectedRollId(matchedInvRoll.id);
                                 }
                               }}
@@ -5013,7 +5094,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     </button>
                   </div>
                   <button
-                    onClick={() => setSelectedRollId(null)}
+                    onClick={() => {
+                      setSelectedRollId(null);
+                      setRollHistory([]);
+                    }}
                     className="px-5 py-2.5 bg-zinc-950 hover:bg-zinc-800 text-white rounded-xl text-xs font-black transition cursor-pointer"
                   >
                     CLOSE

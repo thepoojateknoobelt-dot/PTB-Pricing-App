@@ -11,6 +11,7 @@ interface RollVisualizerProps {
   manualMode?: boolean;
   manualDimensions?: { width: number; length: number } | null;
   onManualPlacementChange?: (pos: { x: number; y: number } | null) => void;
+  onManualPlacementConfirm?: (pos: { x: number; y: number }) => void;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
 }
@@ -31,6 +32,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   manualMode, 
   manualDimensions,
   onManualPlacementChange,
+  onManualPlacementConfirm,
   isExpanded = true,
   onToggleExpand
 }) => {
@@ -66,13 +68,14 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
     if (!svgRef.current || !manualDimensions) return null;
     const svg = svgRef.current;
     const rect = svg.getBoundingClientRect();
-    // Convert client coordinates to SVG user units
-    const clientX = e.clientX - rect.left - RULER_SIZE;
-    const clientY = e.clientY - rect.top - RULER_SIZE;
     
-    // Scale back to raw meters
-    const rawX = clientX / SCALE;
-    const rawY = clientY / SCALE;
+    // Convert client coordinates to SVG user units, taking zoom into account
+    const unscaledX = (e.clientX - rect.left) / zoom;
+    const unscaledY = (e.clientY - rect.top) / zoom;
+    
+    // Scale back to raw meters after subtracting ruler size
+    const rawX = (unscaledX - RULER_SIZE) / SCALE;
+    const rawY = (unscaledY - RULER_SIZE) / SCALE;
     
     // Snap to 10cm grid
     const x = Math.max(0, Math.min(roll.fullLength - manualDimensions.length, Math.round(rawX * 10) / 10));
@@ -104,9 +107,11 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   };
 
   const handleClick = (e: React.MouseEvent) => {
-    if (!manualMode || !mousePos || !onManualPlacementChange) return;
+    if (!manualMode || !mousePos) return;
     if (manualDimensions && isSpaceAvailable(roll, mousePos.x, mousePos.y, manualDimensions.width, manualDimensions.length)) {
-      onManualPlacementChange(mousePos);
+      if (onManualPlacementConfirm) {
+        onManualPlacementConfirm(mousePos);
+      }
     } else {
       alert('Cut cannot be placed here — space is either occupied or dimensions do not fit.');
     }
@@ -119,6 +124,10 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   const widthLabels = Array.from({ length: Math.floor(roll.fullWidth) + 1 }, (_, i) => i);
 
   const formatVal = (m: number) => (m * conv).toFixed(unit === 'm' ? 1 : 0);
+
+  const isSuggestedValid = suggestedPlacement 
+    ? isSpaceAvailable(roll, suggestedPlacement.x, suggestedPlacement.y, suggestedPlacement.width, suggestedPlacement.length)
+    : true;
 
   return (
     <div id={`roll-visualizer-${roll.id}`} className={`flex flex-col gap-4 w-full p-6 rounded-3xl border transition-all duration-300 ${manualMode ? 'bg-blue-50/50 border-blue-400 shadow-xl' : 'bg-white border-slate-200 shadow-sm'}`}>
@@ -302,8 +311,8 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                     y={suggestedPlacement.y * SCALE} 
                     width={suggestedPlacement.length * SCALE} 
                     height={suggestedPlacement.width * SCALE} 
-                    fill={manualMode ? "url(#suggested-pattern-manual)" : "url(#suggested-pattern-auto)"} 
-                    stroke={manualMode ? "#3b82f6" : "#10b981"} 
+                    fill={manualMode ? (isSuggestedValid ? "url(#suggested-pattern-manual)" : "url(#suggested-pattern-invalid)") : "url(#suggested-pattern-auto)"} 
+                    stroke={manualMode ? (isSuggestedValid ? "#3b82f6" : "#ef4444") : "#10b981"} 
                     strokeWidth="5" 
                     strokeDasharray="10,5" 
                     className="animate-pulse" 

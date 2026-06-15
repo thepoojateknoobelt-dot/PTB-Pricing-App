@@ -355,8 +355,10 @@ async function initializeDatabase() {
       console.log('Default system config seeded.');
     }
   } catch (err: any) {
-    if (err.code === 'ECONNREFUSED' || err.message?.includes('ECONNREFUSED')) {
-      console.warn('⚠️ Local PostgreSQL database offline (Connection Refused). Local API endpoints will run, database endpoints require active connection.');
+    const offlineCodes = ['ECONNREFUSED', 'EHOSTUNREACH', 'ETIMEDOUT'];
+    const isOffline = offlineCodes.includes(err.code) || offlineCodes.some(code => err.message?.includes(code));
+    if (isOffline) {
+      console.warn(`⚠️ PostgreSQL database offline or unreachable (${err.code || 'Unreachable'}). Local API endpoints will run, but database features require an active connection.`);
     } else {
       console.error('Error during database initialization:', err);
     }
