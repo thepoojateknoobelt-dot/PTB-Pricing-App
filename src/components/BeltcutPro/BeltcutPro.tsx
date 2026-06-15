@@ -446,7 +446,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     if (val === undefined || val === '') return;
     setSavingRollReorderLevel(rollId);
     try {
-      const res = await fetch(`/api/rolls/${rollId}/reorder`, {
+      const res = await fetch(`/api/rolls/${encodeURIComponent(rollId)}/reorder`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reorderLevel: parseFloat(val) || 0 })

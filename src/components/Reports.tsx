@@ -7,8 +7,10 @@ import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { formatCurrency, cn } from '../lib/utils';
 import { calculateCosting } from '../lib/calculations';
-import { Calendar, Download, Printer, TrendingUp, IndianRupee, Building2, ShoppingBag, Percent, BarChart3 } from 'lucide-react';
+import { Calendar, Download, Printer, TrendingUp, IndianRupee, Building2, ShoppingBag, Percent, BarChart3, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
+import { Badge } from './ui/badge';
 
 interface ReportsProps {
   config: Config;
@@ -31,9 +33,9 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
   const [activeReportCard, setActiveReportCard] = useState<'purchase' | 'profitability' | 'company' | null>(null);
-  const [isDateConfirmed, setIsDateConfirmed] = useState<boolean>(false);
   const [selectedPreset, setSelectedPreset] = useState<string>('this-month');
   const [selectedCompany, setSelectedCompany] = useState<string>('all');
+  const [selectedOrderForModal, setSelectedOrderForModal] = useState<Quotation | null>(null);
 
   // Default date range: current month start to today
   const [startDate, setStartDate] = useState<string>(() => {
@@ -426,51 +428,153 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
   };
 
   return (
-    <div className="space-y-6 w-full">
-      <div className="flex items-center gap-2 border-b border-zinc-200 pb-4">
-        <div className="p-2 bg-zinc-950 rounded-xl text-white shadow-md">
-          <BarChart3 className="h-5 w-5" />
-        </div>
-        <div>
-          <h1 className="text-xl sm:text-3xl font-black tracking-tight text-zinc-900">Reports Dashboard</h1>
-          <p className="text-xs text-zinc-500 font-bold mt-0.5">Generate, analyze, and export business reports</p>
+    <div className="space-y-6 w-full pb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-zinc-950 rounded-xl text-white shadow-md">
+            <BarChart3 className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-900">Reports Dashboard</h1>
+            <p className="text-xs text-zinc-500 font-bold mt-0.5">Generate, analyze, and export business reports</p>
+          </div>
         </div>
       </div>
 
-      {/* ── TOP: Three dynamic report cards ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* ── PERSISTENT FILTER BAR ── */}
+      <Card className="border-zinc-200 bg-white/80 backdrop-blur-md shadow-sm rounded-2xl overflow-hidden">
+        <CardContent className="p-4 flex flex-col xl:flex-row items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
+            <span className="text-xs font-black uppercase text-zinc-400 tracking-wider mr-2 flex items-center gap-1">
+              <Calendar size={14} /> Date Range:
+            </span>
+            {[
+              { id: 'today', label: 'Today' },
+              { id: 'yesterday', label: 'Yesterday' },
+              { id: 'this-week', label: 'This Week' },
+              { id: 'this-month', label: 'This Month' },
+              { id: 'last-month', label: 'Last Month' },
+              { id: 'last-30-days', label: '30 Days' },
+            ].map(preset => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => {
+                  handlePresetClick(preset.id);
+                  setSelectedPreset(preset.id);
+                }}
+                className={cn(
+                  "py-1.5 px-3 rounded-lg border text-xs font-bold transition-all duration-200 cursor-pointer",
+                  selectedPreset === preset.id
+                    ? "bg-zinc-950 text-white border-zinc-950 shadow-sm"
+                    : "bg-zinc-50 border-zinc-200 text-zinc-650 hover:bg-zinc-105 hover:border-zinc-300"
+                )}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto justify-end">
+            <div className="flex items-center gap-2">
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  setSelectedPreset('custom');
+                }}
+                className="bg-white border-zinc-300 focus:ring-zinc-950 text-xs font-semibold h-9 w-36 rounded-lg px-2"
+              />
+              <span className="text-zinc-400 text-xs font-bold">to</span>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => {
+                  setEndDate(e.target.value);
+                  setSelectedPreset('custom');
+                }}
+                className="bg-white border-zinc-300 focus:ring-zinc-950 text-xs font-semibold h-9 w-36 rounded-lg px-2"
+              />
+            </div>
+
+            {activeReportCard && (
+              <div className="flex items-center gap-2 border-t sm:border-t-0 sm:border-l border-zinc-200 pt-2 sm:pt-0 sm:pl-3 w-full sm:w-auto justify-end">
+                <Button
+                  onClick={handleExportCSV}
+                  className="bg-zinc-900 hover:bg-zinc-800 text-white h-9 text-xs font-bold px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Download size={13} /> Export CSV
+                </Button>
+                <Button
+                  onClick={handlePrintReport}
+                  className="bg-zinc-900 hover:bg-zinc-800 text-white h-9 text-xs font-bold px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Printer size={13} /> Print
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── TOP: Four dynamic navigation cards ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         
+        {/* Card 0: Overview Dashboard */}
+        <button
+          type="button"
+          onClick={() => {
+            setActiveReportCard(null);
+            setSelectedCompany('all');
+          }}
+          className={`group w-full text-left p-5 rounded-2xl border-2 transition-all duration-305 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${
+            activeReportCard === null
+              ? 'bg-zinc-950 border-zinc-950 text-white shadow-lg scale-[1.01]'
+              : 'bg-white border-zinc-200 text-zinc-850 hover:border-zinc-400 hover:bg-zinc-50/50'
+          }`}
+        >
+          <div className={`p-3 rounded-xl shrink-0 transition-transform group-hover:scale-110 ${activeReportCard === null ? 'bg-white/10' : 'bg-zinc-100'}`}>
+            <BarChart3 size={20} className={activeReportCard === null ? 'text-white' : 'text-zinc-700'} />
+          </div>
+          <div>
+            <p className={`text-[9px] font-black uppercase tracking-wider ${activeReportCard === null ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              Main
+            </p>
+            <h3 className={`text-base font-black leading-snug mt-0.5 ${activeReportCard === null ? 'text-white' : 'text-zinc-950'}`}>
+              Overview
+            </h3>
+            <p className={`text-[9px] font-bold mt-1 leading-normal ${activeReportCard === null ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              Dashboard summary & KPIs
+            </p>
+          </div>
+        </button>
+
         {/* Card 1: Purchase Cost */}
         <button
           type="button"
           onClick={() => {
-            const next = activeReportCard === 'purchase' ? null : 'purchase';
-            setActiveReportCard(next);
-            setIsDateConfirmed(false);
-            setSelectedPreset('this-month');
+            setActiveReportCard('purchase');
             setSelectedCompany('all');
-            const d = new Date();
-            setStartDate(formatLocalDate(new Date(d.getFullYear(), d.getMonth(), 1)));
-            setEndDate(formatLocalDate(new Date()));
           }}
-          className={`group w-full text-left p-6 rounded-2xl border-2 transition-all duration-300 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${
+          className={`group w-full text-left p-5 rounded-2xl border-2 transition-all duration-305 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${
             activeReportCard === 'purchase'
               ? 'bg-zinc-950 border-zinc-950 text-white shadow-lg scale-[1.01]'
-              : 'bg-white border-zinc-200 text-zinc-800 hover:border-zinc-400 hover:bg-zinc-50/50'
+              : 'bg-white border-zinc-200 text-zinc-855 hover:border-zinc-400 hover:bg-zinc-50/50'
           }`}
         >
-          <div className={`p-3.5 rounded-xl shrink-0 transition-transform group-hover:scale-115 ${activeReportCard === 'purchase' ? 'bg-white/10' : 'bg-zinc-100'}`}>
-            <IndianRupee size={24} className={activeReportCard === 'purchase' ? 'text-white' : 'text-zinc-700'} />
+          <div className={`p-3 rounded-xl shrink-0 transition-transform group-hover:scale-110 ${activeReportCard === 'purchase' ? 'bg-white/10' : 'bg-zinc-100'}`}>
+            <IndianRupee size={20} className={activeReportCard === 'purchase' ? 'text-white' : 'text-zinc-700'} />
           </div>
           <div>
-            <p className={`text-[10px] font-black uppercase tracking-wider ${activeReportCard === 'purchase' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+            <p className={`text-[9px] font-black uppercase tracking-wider ${activeReportCard === 'purchase' ? 'text-zinc-400' : 'text-zinc-500'}`}>
               Report #1
             </p>
-            <h3 className={`text-lg font-black leading-snug mt-0.5 ${activeReportCard === 'purchase' ? 'text-white' : 'text-zinc-950'}`}>
+            <h3 className={`text-base font-black leading-snug mt-0.5 ${activeReportCard === 'purchase' ? 'text-white' : 'text-zinc-950'}`}>
               Purchase Cost
             </h3>
-            <p className={`text-[10px] font-bold mt-1 leading-normal ${activeReportCard === 'purchase' ? 'text-zinc-400' : 'text-zinc-500'}`}>
-              Material Subtotal cost breakdown
+            <p className={`text-[9px] font-bold mt-1 leading-normal ${activeReportCard === 'purchase' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              Material cost breakdown
             </p>
           </div>
         </button>
@@ -479,33 +583,27 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
         <button
           type="button"
           onClick={() => {
-            const next = activeReportCard === 'profitability' ? null : 'profitability';
-            setActiveReportCard(next);
-            setIsDateConfirmed(false);
-            setSelectedPreset('this-month');
+            setActiveReportCard('profitability');
             setSelectedCompany('all');
-            const d = new Date();
-            setStartDate(formatLocalDate(new Date(d.getFullYear(), d.getMonth(), 1)));
-            setEndDate(formatLocalDate(new Date()));
           }}
-          className={`group w-full text-left p-6 rounded-2xl border-2 transition-all duration-300 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${
+          className={`group w-full text-left p-5 rounded-2xl border-2 transition-all duration-305 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${
             activeReportCard === 'profitability'
               ? 'bg-emerald-700 border-emerald-700 text-white shadow-lg scale-[1.01]'
-              : 'bg-white border-zinc-200 text-zinc-800 hover:border-emerald-400 hover:bg-zinc-50/50'
+              : 'bg-white border-zinc-200 text-zinc-855 hover:border-emerald-400 hover:bg-zinc-50/50'
           }`}
         >
-          <div className={`p-3.5 rounded-xl shrink-0 transition-transform group-hover:scale-115 ${activeReportCard === 'profitability' ? 'bg-white/15' : 'bg-emerald-50'}`}>
-            <TrendingUp size={24} className={activeReportCard === 'profitability' ? 'text-white' : 'text-emerald-700'} />
+          <div className={`p-3 rounded-xl shrink-0 transition-transform group-hover:scale-110 ${activeReportCard === 'profitability' ? 'bg-white/15' : 'bg-emerald-50'}`}>
+            <TrendingUp size={20} className={activeReportCard === 'profitability' ? 'text-white' : 'text-emerald-700'} />
           </div>
           <div>
-            <p className={`text-[10px] font-black uppercase tracking-wider ${activeReportCard === 'profitability' ? 'text-emerald-100' : 'text-zinc-500'}`}>
+            <p className={`text-[9px] font-black uppercase tracking-wider ${activeReportCard === 'profitability' ? 'text-emerald-100' : 'text-zinc-500'}`}>
               Report #2
             </p>
-            <h3 className={`text-lg font-black leading-snug mt-0.5 ${activeReportCard === 'profitability' ? 'text-white' : 'text-zinc-950'}`}>
+            <h3 className={`text-base font-black leading-snug mt-0.5 ${activeReportCard === 'profitability' ? 'text-white' : 'text-zinc-950'}`}>
               Order Profitability
             </h3>
-            <p className={`text-[10px] font-bold mt-1 leading-normal ${activeReportCard === 'profitability' ? 'text-emerald-100' : 'text-zinc-500'}`}>
-              Base selling price and profit margins
+            <p className={`text-[9px] font-bold mt-1 leading-normal ${activeReportCard === 'profitability' ? 'text-emerald-100' : 'text-zinc-500'}`}>
+              Base price & profit margins
             </p>
           </div>
         </button>
@@ -514,155 +612,230 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
         <button
           type="button"
           onClick={() => {
-            const next = activeReportCard === 'company' ? null : 'company';
-            setActiveReportCard(next);
-            setIsDateConfirmed(false);
-            setSelectedPreset('this-month');
+            setActiveReportCard('company');
             setSelectedCompany('all');
-            const d = new Date();
-            setStartDate(formatLocalDate(new Date(d.getFullYear(), d.getMonth(), 1)));
-            setEndDate(formatLocalDate(new Date()));
           }}
-          className={`group w-full text-left p-6 rounded-2xl border-2 transition-all duration-300 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${
+          className={`group w-full text-left p-5 rounded-2xl border-2 transition-all duration-305 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${
             activeReportCard === 'company'
               ? 'bg-indigo-700 border-indigo-700 text-white shadow-lg scale-[1.01]'
-              : 'bg-white border-zinc-200 text-zinc-800 hover:border-indigo-400 hover:bg-zinc-50/50'
+              : 'bg-white border-zinc-200 text-zinc-855 hover:border-indigo-400 hover:bg-zinc-50/50'
           }`}
         >
-          <div className={`p-3.5 rounded-xl shrink-0 transition-transform group-hover:scale-115 ${activeReportCard === 'company' ? 'bg-white/15' : 'bg-indigo-50'}`}>
-            <Building2 size={24} className={activeReportCard === 'company' ? 'text-white' : 'text-indigo-700'} />
+          <div className={`p-3 rounded-xl shrink-0 transition-transform group-hover:scale-110 ${activeReportCard === 'company' ? 'bg-white/15' : 'bg-indigo-50'}`}>
+            <Building2 size={20} className={activeReportCard === 'company' ? 'text-white' : 'text-indigo-700'} />
           </div>
           <div>
-            <p className={`text-[10px] font-black uppercase tracking-wider ${activeReportCard === 'company' ? 'text-indigo-100' : 'text-zinc-500'}`}>
+            <p className={`text-[9px] font-black uppercase tracking-wider ${activeReportCard === 'company' ? 'text-indigo-100' : 'text-zinc-500'}`}>
               Report #3
             </p>
-            <h3 className={`text-lg font-black leading-snug mt-0.5 ${activeReportCard === 'company' ? 'text-white' : 'text-zinc-950'}`}>
+            <h3 className={`text-base font-black leading-snug mt-0.5 ${activeReportCard === 'company' ? 'text-white' : 'text-zinc-950'}`}>
               Company Sales
             </h3>
-            <p className={`text-[10px] font-bold mt-1 leading-normal ${activeReportCard === 'company' ? 'text-indigo-100' : 'text-zinc-500'}`}>
-              Final totals divided by company units
+            <p className={`text-[9px] font-bold mt-1 leading-normal ${activeReportCard === 'company' ? 'text-indigo-100' : 'text-zinc-500'}`}>
+              Totals by company units
             </p>
           </div>
         </button>
 
       </div>
 
-      {/* ── BOTTOM: Date Selection Prompt OR Report Output ── */}
-      {activeReportCard && (
+      {/* ── BOTTOM CONTENT ── */}
+      {activeReportCard === null ? (
+        /* Executive Overview Tab */
         <div className="space-y-6 animate-in fade-in slide-in-from-top-3 duration-300">
           
-          {!isDateConfirmed ? (
-            /* Elegant prompt to select dates first */
-            <Card className="border-zinc-200 shadow-md bg-white max-w-2xl mx-auto overflow-hidden rounded-2xl">
-              <div className="bg-zinc-950 p-6 text-white flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-white/10 rounded-xl">
-                    {activeReportCard === 'purchase' && <IndianRupee size={20} />}
-                    {activeReportCard === 'profitability' && <TrendingUp size={20} />}
-                    {activeReportCard === 'company' && <Building2 size={20} />}
-                  </div>
-                  <div>
-                    <h2 className="text-base font-black tracking-tight uppercase">
-                      {activeReportCard === 'purchase' && 'Purchase Cost Report'}
-                      {activeReportCard === 'profitability' && 'Order Profitability Report'}
-                      {activeReportCard === 'company' && 'Company Sales Report'}
-                    </h2>
-                    <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mt-0.5">Select Date Range Parameters</p>
+          {/* Overview KPI Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            {/* KPI 1: Gross Sales */}
+            <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl overflow-hidden relative group hover:shadow-md transition-shadow">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-400 to-indigo-600" />
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3.5 bg-indigo-50 rounded-xl text-indigo-700 shrink-0">
+                  <TrendingUp className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Gross Sales Volume</p>
+                  <h3 className="text-2xl font-black text-zinc-950 mt-0.5 font-mono">
+                    {formatCurrency(filteredOrders.reduce((sum, o) => sum + o.totalCost, 0))}
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 font-bold mt-0.5">Total final revenue generated</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* KPI 2: Profit Margin */}
+            <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl overflow-hidden relative group hover:shadow-md transition-shadow">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 to-emerald-600" />
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3.5 bg-emerald-50 rounded-xl text-emerald-700 shrink-0">
+                  <Percent className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Estimated Profit</p>
+                  <h3 className="text-2xl font-black text-zinc-950 mt-0.5 font-mono">
+                    {formatCurrency(totalProfitMarginCash)}
+                  </h3>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[10px] text-zinc-500 font-bold">Avg Margin:</span>
+                    <Badge className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-1.5 py-0">
+                      {avgProfitMarginPct.toFixed(1)}%
+                    </Badge>
                   </div>
                 </div>
-                <button 
-                  type="button"
-                  onClick={() => setActiveReportCard(null)}
-                  className="text-zinc-400 hover:text-white transition-colors text-xs font-bold bg-transparent border-none cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-              <CardContent className="p-6 space-y-6">
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase text-zinc-500 tracking-wider">Quick Date Presets</Label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {[
-                      { id: 'today', label: 'Today' },
-                      { id: 'yesterday', label: 'Yesterday' },
-                      { id: 'this-week', label: 'This Week' },
-                      { id: 'last-7-days', label: 'Last 7 Days' },
-                      { id: 'this-month', label: 'This Month' },
-                      { id: 'last-month', label: 'Last Month' },
-                      { id: 'last-30-days', label: 'Last 30 Days' },
-                    ].map(preset => (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => {
-                          handlePresetClick(preset.id);
-                          setSelectedPreset(preset.id);
-                        }}
-                        className={cn(
-                          "py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer",
-                          selectedPreset === preset.id
-                            ? "bg-zinc-950 text-white border-zinc-950 shadow-sm"
-                            : "bg-zinc-50 border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:border-zinc-300"
-                        )}
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPreset('custom')}
-                      className={cn(
-                        "py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer",
-                        selectedPreset === 'custom'
-                          ? "bg-zinc-950 text-white border-zinc-950 shadow-sm"
-                          : "bg-zinc-50 border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:border-zinc-300"
+              </CardContent>
+            </Card>
+
+            {/* KPI 3: Material Cost */}
+            <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl overflow-hidden relative group hover:shadow-md transition-shadow">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 to-amber-600" />
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3.5 bg-amber-50 rounded-xl text-amber-700 shrink-0">
+                  <IndianRupee className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Material Cost (BOM)</p>
+                  <h3 className="text-2xl font-black text-zinc-950 mt-0.5 font-mono">
+                    {formatCurrency(totalMaterialSubtotal)}
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 font-bold mt-0.5">BOM items subtotal cost</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Sales Distribution Widget */}
+            <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl lg:col-span-1">
+              <CardHeader className="pb-3 border-b border-zinc-150">
+                <CardTitle className="text-xs font-black uppercase tracking-wider text-zinc-800 flex items-center gap-1.5">
+                  <Building2 size={14} className="text-zinc-500" /> Company Sales Split
+                </CardTitle>
+                <CardDescription className="text-[10px] text-zinc-500 font-bold">Revenue breakdown among company units</CardDescription>
+              </CardHeader>
+              <CardContent className="p-5 space-y-4">
+                {(() => {
+                  const grandTotalSales = Object.keys(companySalesMap).reduce((sum, key) => sum + (companySalesMap[key] || 0), 0) || 1;
+                  return activeCompaniesList.map(compName => {
+                    const sales = companySalesMap[compName] || 0;
+                    const percentage = (sales / grandTotalSales) * 100;
+                    return (
+                      <div key={compName} className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-zinc-800">{compName}</span>
+                          <span className="font-bold font-mono text-zinc-950">{formatCurrency(sales)}</span>
+                        </div>
+                        <div className="w-full bg-zinc-100 rounded-full h-2 overflow-hidden">
+                          <div 
+                            className="bg-indigo-650 h-full rounded-full transition-all duration-500" 
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-end">
+                          <span className="text-[9px] text-zinc-400 font-black tracking-wider uppercase">{percentage.toFixed(1)}% Share</span>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </CardContent>
+            </Card>
+
+            {/* Recent Orders List */}
+            <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl lg:col-span-2 overflow-hidden">
+              <CardHeader className="pb-3 border-b border-zinc-150 flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-xs font-black uppercase tracking-wider text-zinc-800 flex items-center gap-1.5">
+                    <ShoppingBag size={14} className="text-zinc-500" /> Recent Orders
+                  </CardTitle>
+                  <CardDescription className="text-[10px] text-zinc-500 font-bold">Latest order transactions within selected range</CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-zinc-50/50">
+                      <TableRow>
+                        <TableHead className="text-xs font-black text-zinc-500">Order ID</TableHead>
+                        <TableHead className="text-xs font-black text-zinc-500">Client</TableHead>
+                        <TableHead className="text-xs font-black text-zinc-500">Date</TableHead>
+                        <TableHead className="text-xs font-black text-zinc-500">Company</TableHead>
+                        <TableHead className="text-xs font-black text-zinc-500 text-right">Selling Price</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="text-xs font-semibold text-zinc-700">
+                      {filteredOrders.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="py-12 text-center text-zinc-400 font-medium italic">
+                            No orders found in selected date range.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        filteredOrders.slice(0, 10).map(o => (
+                          <TableRow key={o.id} className="hover:bg-zinc-50/35 transition-colors h-10">
+                            <TableCell className="font-mono font-bold">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedOrderForModal(o)}
+                                className="font-mono font-bold text-indigo-650 hover:text-indigo-800 hover:underline transition-colors bg-transparent border-none cursor-pointer p-0"
+                              >
+                                #{o.orderNumber || o.id.substring(0, 8)}
+                              </button>
+                            </TableCell>
+                            <TableCell className="font-bold text-zinc-900">{o.clientName}</TableCell>
+                            <TableCell>{convertToDate(o.updatedAt || o.createdAt).toLocaleDateString('en-IN')}</TableCell>
+                            <TableCell className="font-bold text-zinc-600">{o.company || 'Pooja Tekno Belt'}</TableCell>
+                            <TableCell className="text-right font-bold font-mono text-zinc-900">
+                              {formatCurrency(o.totalCost)}
+                            </TableCell>
+                          </TableRow>
+                        ))
                       )}
-                    >
-                      Custom Range
-                    </button>
-                  </div>
+                    </TableBody>
+                  </Table>
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-zinc-100 pt-6">
-                  <div className="space-y-1.5">
-                    <Label className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider flex items-center gap-1">
-                      <Calendar size={12} /> Start Date
-                    </Label>
-                    <Input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => {
-                        setStartDate(e.target.value);
-                        setSelectedPreset('custom');
-                      }}
-                      className="bg-white border-zinc-300 focus:ring-zinc-950 text-sm font-semibold h-10 rounded-xl"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider flex items-center gap-1">
-                      <Calendar size={12} /> End Date
-                    </Label>
-                    <Input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => {
-                        setEndDate(e.target.value);
-                        setSelectedPreset('custom');
-                      }}
-                      className="bg-white border-zinc-300 focus:ring-zinc-950 text-sm font-semibold h-10 rounded-xl"
-                    />
-                  </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      ) : (
+        /* Sub-Report Views */
+        <div className="space-y-6 animate-in fade-in slide-in-from-top-3 duration-300">
+          
+          {/* Header Bar with Action Controls */}
+          <Card className="border-zinc-200 shadow-sm bg-white overflow-hidden rounded-2xl">
+            <CardContent className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3 w-full md:w-auto">
+                <div className={cn(
+                  "p-3 rounded-xl text-white shrink-0 shadow-sm",
+                  activeReportCard === 'purchase' && "bg-zinc-950",
+                  activeReportCard === 'profitability' && "bg-emerald-700",
+                  activeReportCard === 'company' && "bg-indigo-700"
+                )}>
+                  {activeReportCard === 'purchase' && <IndianRupee size={20} />}
+                  {activeReportCard === 'profitability' && <TrendingUp size={20} />}
+                  {activeReportCard === 'company' && <Building2 size={20} />}
                 </div>
-
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-wider text-zinc-900">
+                    {activeReportCard === 'purchase' && 'Purchase Cost Report'}
+                    {activeReportCard === 'profitability' && 'Order Profitability Report'}
+                    {activeReportCard === 'company' && 'Company Sales Report'}
+                  </h2>
+                  <p className="text-xs text-zinc-500 font-bold mt-0.5">
+                    Range: {new Date(startDate).toLocaleDateString('en-IN')} to {new Date(endDate).toLocaleDateString('en-IN')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
                 {activeReportCard === 'company' && (
-                  <div className="space-y-1.5 border-t border-zinc-100 pt-6">
-                    <Label className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider flex items-center gap-1">
-                      <Building2 size={12} /> Filter by Company
-                    </Label>
+                  <div className="flex items-center gap-2 border border-zinc-200 bg-zinc-50/50 py-1.5 px-3 rounded-xl">
+                    <Label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider whitespace-nowrap">Company:</Label>
                     <select
                       value={selectedCompany}
                       onChange={(e) => setSelectedCompany(e.target.value)}
-                      className="w-full bg-white border border-zinc-300 focus:ring-zinc-950 text-sm font-semibold h-10 rounded-xl px-3 outline-none"
+                      className="bg-white border border-zinc-200 focus:ring-zinc-900 text-xs font-bold h-8 rounded-lg px-2 outline-none"
                     >
                       <option value="all">All Companies</option>
                       {activeCompaniesList.map(name => (
@@ -671,353 +844,512 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
                     </select>
                   </div>
                 )}
+              </div>
+            </CardContent>
+          </Card>
 
-                <div className="border-t border-zinc-100 pt-6 flex justify-end gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setActiveReportCard(null)}
-                    className="border-zinc-200 hover:bg-zinc-50 text-zinc-700 h-10 text-xs font-bold px-5 rounded-xl cursor-pointer"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      setIsDateConfirmed(true);
-                      toast.success('Report generated successfully.');
-                    }}
-                    className="bg-zinc-950 hover:bg-zinc-900 text-white h-10 text-xs font-bold px-6 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
-                  >
-                    <BarChart3 size={14} /> Generate Report
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            /* Generated Report UI */
-            <>
-              {/* Header Bar with Action Controls */}
-              <Card className="border-zinc-200 shadow-sm bg-white overflow-hidden rounded-2xl">
-                <CardContent className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 w-full md:w-auto">
-                    <div className={cn(
-                      "p-3 rounded-xl text-white shrink-0 shadow-sm",
-                      activeReportCard === 'purchase' && "bg-zinc-950",
-                      activeReportCard === 'profitability' && "bg-emerald-700",
-                      activeReportCard === 'company' && "bg-indigo-700"
-                    )}>
-                      {activeReportCard === 'purchase' && <IndianRupee size={20} />}
-                      {activeReportCard === 'profitability' && <TrendingUp size={20} />}
-                      {activeReportCard === 'company' && <Building2 size={20} />}
+          {/* Report 1: Purchase Cost Details */}
+          {activeReportCard === 'purchase' && (
+            <div className="space-y-6">
+              
+              {/* Upper Stats Card */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl">
+                  <CardContent className="p-5 flex items-center gap-4">
+                    <div className="p-3.5 bg-zinc-100 rounded-xl shrink-0">
+                      <IndianRupee className="h-6 w-6 text-zinc-950" />
                     </div>
                     <div>
-                      <h2 className="text-sm font-black uppercase tracking-wider text-zinc-900">
-                        {activeReportCard === 'purchase' && 'Purchase Cost Report'}
-                        {activeReportCard === 'profitability' && 'Order Profitability Report'}
-                        {activeReportCard === 'company' && 'Company Sales Report'}
-                      </h2>
-                      <p className="text-xs text-zinc-500 font-bold mt-0.5">
-                        Range: {new Date(startDate).toLocaleDateString('en-IN')} to {new Date(endDate).toLocaleDateString('en-IN')}
-                      </p>
+                      <p className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Total Material Subtotal</p>
+                      <h3 className="text-2xl font-black text-zinc-950 mt-0.5 font-mono">{formatCurrency(totalMaterialSubtotal)}</h3>
                     </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
-                    {activeReportCard === 'company' && (
-                      <div className="flex items-center gap-2 border border-zinc-200 bg-zinc-50/50 py-1.5 px-3 rounded-xl">
-                        <Label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider whitespace-nowrap">Company:</Label>
-                        <select
-                          value={selectedCompany}
-                          onChange={(e) => setSelectedCompany(e.target.value)}
-                          className="bg-white border border-zinc-200 focus:ring-zinc-900 text-xs font-bold h-8 rounded-lg px-2 outline-none"
-                        >
-                          <option value="all">All Companies</option>
-                          {activeCompaniesList.map(name => (
-                            <option key={name} value={name}>{name}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                    <Button
-                      variant="outline"
-                      onClick={() => setIsDateConfirmed(false)}
-                      className="flex-1 md:flex-initial border-zinc-200 text-zinc-700 hover:bg-zinc-50 h-9 text-xs font-bold px-4 rounded-xl flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Calendar size={13} /> Change Date
-                    </Button>
-                    <Button
-                      onClick={handleExportCSV}
-                      className="flex-1 md:flex-initial bg-zinc-900 hover:bg-zinc-800 text-white h-9 text-xs font-bold px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm"
-                    >
-                      <Download size={13} /> Export CSV
-                    </Button>
-                    <Button
-                      onClick={handlePrintReport}
-                      className="flex-1 md:flex-initial bg-zinc-900 hover:bg-zinc-800 text-white h-9 text-xs font-bold px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm"
-                    >
-                      <Printer size={13} /> Print
-                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Table Data */}
+              <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl overflow-hidden">
+                <CardHeader className="pb-2 border-b border-zinc-100">
+                  <CardTitle className="text-xs font-black uppercase tracking-wider text-zinc-800">
+                    Filtered Orders Sheet
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader className="bg-zinc-50/50">
+                        <TableRow>
+                          <TableHead className="text-xs font-black text-zinc-500">Order ID</TableHead>
+                          <TableHead className="text-xs font-black text-zinc-500">Date</TableHead>
+                          <TableHead className="text-xs font-black text-zinc-500">Client</TableHead>
+                          <TableHead className="text-xs font-black text-zinc-500 text-right">Material Subtotal</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="text-xs font-semibold text-zinc-700">
+                        {filteredOrders.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="py-12 text-center text-zinc-400 font-medium italic">
+                              No orders found in selected date range.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          <>
+                            {filteredOrders.map(o => (
+                              <TableRow key={o.id} className="hover:bg-zinc-50/35 transition-colors h-9">
+                                <TableCell className="font-mono font-bold text-zinc-950">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedOrderForModal(o)}
+                                    className="font-mono font-bold text-indigo-650 hover:text-indigo-800 hover:underline transition-colors bg-transparent border-none cursor-pointer p-0"
+                                  >
+                                    #{o.orderNumber || o.id.substring(0, 8)}
+                                  </button>
+                                </TableCell>
+                                <TableCell>{convertToDate(o.updatedAt || o.createdAt).toLocaleDateString('en-IN')}</TableCell>
+                                <TableCell className="font-bold text-zinc-900">{o.clientName}</TableCell>
+                                <TableCell className="text-right font-bold font-mono text-zinc-900">
+                                  {formatCurrency(o.calculated?.summary?.subtotal || 0)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                            <TableRow className="bg-zinc-50/70 border-t-2 border-zinc-200 font-black h-10 text-zinc-950">
+                              <TableCell colSpan={3} className="text-xs font-black text-zinc-900">GRAND TOTAL</TableCell>
+                              <TableCell className="text-right text-xs font-black font-mono text-zinc-900">
+                                {formatCurrency(totalMaterialSubtotal)}
+                              </TableCell>
+                            </TableRow>
+                          </>
+                        )}
+                      </TableBody>
+                    </Table>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Report 1: Purchase Cost Details */}
-              {activeReportCard === 'purchase' && (
-                <div className="space-y-6">
-                  
-                  {/* Upper Stats Card */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl">
-                      <CardContent className="p-5 flex items-center gap-4">
-                        <div className="p-3.5 bg-zinc-100 rounded-xl shrink-0">
-                          <IndianRupee className="h-6 w-6 text-zinc-950" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Total Material Subtotal</p>
-                          <h3 className="text-2xl font-black text-zinc-950 mt-0.5">{formatCurrency(totalMaterialSubtotal)}</h3>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Table Data */}
-                  <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl overflow-hidden">
-                    <CardHeader className="pb-2 border-b border-zinc-100">
-                      <CardTitle className="text-xs font-black uppercase tracking-wider text-zinc-800">
-                        Filtered Orders Sheet
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader className="bg-zinc-50/50">
-                            <TableRow>
-                              <TableHead className="text-xs font-black text-zinc-500">Order ID</TableHead>
-                              <TableHead className="text-xs font-black text-zinc-500">Date</TableHead>
-                              <TableHead className="text-xs font-black text-zinc-500">Client</TableHead>
-                              <TableHead className="text-xs font-black text-zinc-500 text-right">Material Subtotal</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody className="text-xs font-semibold text-zinc-700">
-                            {filteredOrders.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={4} className="py-12 text-center text-zinc-400 font-medium italic">
-                                  No orders found in selected date range.
-                                </TableCell>
-                              </TableRow>
-                            ) : (
-                              <>
-                                {filteredOrders.map(o => (
-                                  <TableRow key={o.id} className="hover:bg-zinc-50/35 transition-colors h-9">
-                                    <TableCell className="font-mono font-bold text-zinc-950">#{o.orderNumber || ''}</TableCell>
-                                    <TableCell>{convertToDate(o.updatedAt || o.createdAt).toLocaleDateString('en-IN')}</TableCell>
-                                    <TableCell className="font-bold text-zinc-900">{o.clientName}</TableCell>
-                                    <TableCell className="text-right font-bold font-mono text-zinc-900">
-                                      {formatCurrency(o.calculated?.summary?.subtotal || 0)}
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                                <TableRow className="bg-zinc-50/70 border-t-2 border-zinc-200 font-black h-10 text-zinc-950">
-                                  <TableCell colSpan={3} className="text-xs font-black text-zinc-900">GRAND TOTAL</TableCell>
-                                  <TableCell className="text-right text-xs font-black font-mono text-zinc-900">
-                                    {formatCurrency(totalMaterialSubtotal)}
-                                  </TableCell>
-                                </TableRow>
-                              </>
-                            )}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                </div>
-              )}
-
-              {/* Report 2: Order Profitability Details */}
-              {activeReportCard === 'profitability' && (
-                <div className="space-y-6">
-                  
-                  {/* Upper Stats Card */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl">
-                      <CardContent className="p-5 flex items-center gap-4">
-                        <div className="p-3.5 bg-zinc-100 rounded-xl shrink-0">
-                          <IndianRupee className="h-6 w-6 text-zinc-950" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Total Base Price</p>
-                          <h3 className="text-2xl font-black text-zinc-950 mt-0.5">{formatCurrency(totalBasePrice)}</h3>
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl">
-                      <CardContent className="p-5 flex items-center gap-4">
-                        <div className="p-3.5 bg-zinc-100 rounded-xl shrink-0">
-                          <Percent className="h-6 w-6 text-zinc-950" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Average Profit Margin %</p>
-                          <h3 className="text-2xl font-black text-zinc-950 mt-0.5">{avgProfitMarginPct.toFixed(1)}%</h3>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Table Data */}
-                  <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl overflow-hidden">
-                    <CardHeader className="pb-2 border-b border-zinc-100">
-                      <CardTitle className="text-xs font-black uppercase tracking-wider text-zinc-800">
-                        Filtered Orders Sheet
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader className="bg-zinc-50/50">
-                            <TableRow>
-                              <TableHead className="text-xs font-black text-zinc-500">Order ID</TableHead>
-                              <TableHead className="text-xs font-black text-zinc-500">Date</TableHead>
-                              <TableHead className="text-xs font-black text-zinc-500">Client</TableHead>
-                              <TableHead className="text-xs font-black text-zinc-500 text-right">Base Price</TableHead>
-                              <TableHead className="text-xs font-black text-zinc-500 text-right">Profit Margin (₹)</TableHead>
-                              <TableHead className="text-xs font-black text-zinc-500 text-right">Profit Margin (%)</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody className="text-xs font-semibold text-zinc-700">
-                            {filteredOrders.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={6} className="py-12 text-center text-zinc-400 font-medium italic">
-                                  No orders found in selected date range.
-                                </TableCell>
-                              </TableRow>
-                            ) : (
-                              <>
-                                {filteredOrders.map(o => (
-                                  <TableRow key={o.id} className="hover:bg-zinc-50/35 transition-colors h-9">
-                                    <TableCell className="font-mono font-bold text-zinc-950">#{o.orderNumber || ''}</TableCell>
-                                    <TableCell>{convertToDate(o.createdAt).toLocaleDateString('en-IN')}</TableCell>
-                                    <TableCell className="font-bold text-zinc-900">{o.clientName}</TableCell>
-                                    <TableCell className="text-right font-bold font-mono text-zinc-900">
-                                      {formatCurrency(o.calculated?.summary?.totalWithProfit || 0)}
-                                    </TableCell>
-                                    <TableCell className="text-right font-bold font-mono text-zinc-900">
-                                      {formatCurrency(o.calculated?.summary?.profit || 0)}
-                                    </TableCell>
-                                    <TableCell className="text-right font-bold font-mono text-zinc-900">
-                                      {(o.calculated?.summary?.profitMarginUsed || 0).toFixed(1)}%
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                                <TableRow className="bg-zinc-50/70 border-t-2 border-zinc-200 font-black h-10 text-zinc-950">
-                                  <TableCell colSpan={3} className="text-xs font-black text-zinc-900">GRAND TOTAL</TableCell>
-                                  <TableCell className="text-right text-xs font-black font-mono text-zinc-900">
-                                    {formatCurrency(totalBasePrice)}
-                                  </TableCell>
-                                  <TableCell className="text-right text-xs font-black font-mono text-zinc-900">
-                                    {formatCurrency(totalProfitMarginCash)}
-                                  </TableCell>
-                                  <TableCell className="text-right text-xs font-black font-mono text-zinc-900">
-                                    Avg: {avgProfitMarginPct.toFixed(1)}%
-                                  </TableCell>
-                                </TableRow>
-                              </>
-                            )}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                </div>
-              )}
-
-              {/* Report 3: Company Sales Details */}
-              {activeReportCard === 'company' && (
-                <div className="space-y-6">
-                  
-                  {/* Upper Stats Card (Exactly 3 Company Cards or filtered) */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {activeCompaniesList
-                      .filter(compName => selectedCompany === 'all' || compName === selectedCompany)
-                      .map(compName => (
-                        <Card key={compName} className="border-zinc-200 shadow-sm bg-white rounded-2xl">
-                          <CardContent className="p-5 flex items-center gap-4">
-                            <div className="p-3.5 bg-zinc-100 rounded-xl shrink-0">
-                              <Building2 className="h-6 w-6 text-zinc-950" />
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">
-                                {compName} Sales
-                              </p>
-                              <h3 className="text-2xl font-black text-zinc-950 mt-0.5">
-                                {formatCurrency(companySalesMap[compName] || 0)}
-                              </h3>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                  </div>
-
-                  {/* Table Data */}
-                  <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl overflow-hidden">
-                    <CardHeader className="pb-2 border-b border-zinc-100">
-                      <CardTitle className="text-xs font-black uppercase tracking-wider text-zinc-800">
-                        Filtered Orders Sheet
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader className="bg-zinc-50/50">
-                            <TableRow>
-                              <TableHead className="text-xs font-black text-zinc-500">Order ID</TableHead>
-                              <TableHead className="text-xs font-black text-zinc-500">Date</TableHead>
-                              <TableHead className="text-xs font-black text-zinc-500">Client</TableHead>
-                              <TableHead className="text-xs font-black text-zinc-500">Company</TableHead>
-                              <TableHead className="text-xs font-black text-zinc-500 text-right">Final Selling Price</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody className="text-xs font-semibold text-zinc-700">
-                            {displayOrders.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={5} className="py-12 text-center text-zinc-400 font-medium italic">
-                                  No orders found in selected date range.
-                                </TableCell>
-                              </TableRow>
-                            ) : (
-                              <>
-                                {displayOrders.map(o => (
-                                  <TableRow key={o.id} className="hover:bg-zinc-50/35 transition-colors h-9">
-                                    <TableCell className="font-mono font-bold text-zinc-950">#{o.orderNumber || ''}</TableCell>
-                                    <TableCell>{convertToDate(o.createdAt).toLocaleDateString('en-IN')}</TableCell>
-                                    <TableCell className="font-bold text-zinc-900">{o.clientName}</TableCell>
-                                    <TableCell className="font-bold text-zinc-650">{o.company || 'Pooja Tekno Belt'}</TableCell>
-                                    <TableCell className="text-right font-bold font-mono text-zinc-900">
-                                      {formatCurrency(o.totalCost)}
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                                <TableRow className="bg-zinc-50/70 border-t-2 border-zinc-200 font-black h-10 text-zinc-950">
-                                  <TableCell colSpan={4} className="text-xs font-black text-zinc-900">GRAND TOTAL</TableCell>
-                                  <TableCell className="text-right text-xs font-black font-mono text-zinc-900">
-                                    {formatCurrency(displayOrders.reduce((sum, o) => sum + o.totalCost, 0))}
-                                  </TableCell>
-                                </TableRow>
-                              </>
-                            )}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                </div>
-              )}
-            </>
+            </div>
           )}
 
+          {/* Report 2: Order Profitability Details */}
+          {activeReportCard === 'profitability' && (
+            <div className="space-y-6">
+              
+              {/* Upper Stats Card */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl">
+                  <CardContent className="p-5 flex items-center gap-4">
+                    <div className="p-3.5 bg-zinc-100 rounded-xl shrink-0">
+                      <IndianRupee className="h-6 w-6 text-zinc-950" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Total Base Price</p>
+                      <h3 className="text-2xl font-black text-zinc-950 mt-0.5 font-mono">{formatCurrency(totalBasePrice)}</h3>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl">
+                  <CardContent className="p-5 flex items-center gap-4">
+                    <div className="p-3.5 bg-zinc-100 rounded-xl shrink-0">
+                      <Percent className="h-6 w-6 text-zinc-950" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Average Profit Margin %</p>
+                      <h3 className="text-2xl font-black text-zinc-950 mt-0.5 font-mono">{avgProfitMarginPct.toFixed(1)}%</h3>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Table Data */}
+              <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl overflow-hidden">
+                <CardHeader className="pb-2 border-b border-zinc-100">
+                  <CardTitle className="text-xs font-black uppercase tracking-wider text-zinc-800">
+                    Filtered Orders Sheet
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader className="bg-zinc-50/50">
+                        <TableRow>
+                          <TableHead className="text-xs font-black text-zinc-500">Order ID</TableHead>
+                          <TableHead className="text-xs font-black text-zinc-500">Date</TableHead>
+                          <TableHead className="text-xs font-black text-zinc-500">Client</TableHead>
+                          <TableHead className="text-xs font-black text-zinc-500 text-right">Base Price</TableHead>
+                          <TableHead className="text-xs font-black text-zinc-500 text-right">Profit Margin (₹)</TableHead>
+                          <TableHead className="text-xs font-black text-zinc-500 text-right">Profit Margin (%)</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="text-xs font-semibold text-zinc-700">
+                        {filteredOrders.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="py-12 text-center text-zinc-400 font-medium italic">
+                              No orders found in selected date range.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          <>
+                            {filteredOrders.map(o => (
+                              <TableRow key={o.id} className="hover:bg-zinc-50/35 transition-colors h-9">
+                                <TableCell className="font-mono font-bold text-zinc-950">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedOrderForModal(o)}
+                                    className="font-mono font-bold text-indigo-650 hover:text-indigo-800 hover:underline transition-colors bg-transparent border-none cursor-pointer p-0"
+                                  >
+                                    #{o.orderNumber || o.id.substring(0, 8)}
+                                  </button>
+                                </TableCell>
+                                <TableCell>{convertToDate(o.createdAt).toLocaleDateString('en-IN')}</TableCell>
+                                <TableCell className="font-bold text-zinc-900">{o.clientName}</TableCell>
+                                <TableCell className="text-right font-bold font-mono text-zinc-900">
+                                  {formatCurrency(o.calculated?.summary?.totalWithProfit || 0)}
+                                </TableCell>
+                                <TableCell className="text-right font-bold font-mono text-zinc-900">
+                                  {formatCurrency(o.calculated?.summary?.profit || 0)}
+                                </TableCell>
+                                <TableCell className="text-right font-bold font-mono text-zinc-900">
+                                  {(o.calculated?.summary?.profitMarginUsed || 0).toFixed(1)}%
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                            <TableRow className="bg-zinc-50/70 border-t-2 border-zinc-200 font-black h-10 text-zinc-950">
+                              <TableCell colSpan={3} className="text-xs font-black text-zinc-900">GRAND TOTAL</TableCell>
+                              <TableCell className="text-right text-xs font-black font-mono text-zinc-900">
+                                {formatCurrency(totalBasePrice)}
+                              </TableCell>
+                              <TableCell className="text-right text-xs font-black font-mono text-zinc-900">
+                                {formatCurrency(totalProfitMarginCash)}
+                              </TableCell>
+                              <TableCell className="text-right text-xs font-black font-mono text-zinc-900">
+                                Avg: {avgProfitMarginPct.toFixed(1)}%
+                              </TableCell>
+                            </TableRow>
+                          </>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+
+            </div>
+          )}
+
+          {/* Report 3: Company Sales Details */}
+          {activeReportCard === 'company' && (
+            <div className="space-y-6">
+              
+              {/* Upper Stats Card (Exactly 3 Company Cards or filtered) */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {activeCompaniesList
+                  .filter(compName => selectedCompany === 'all' || compName === selectedCompany)
+                  .map(compName => (
+                    <Card key={compName} className="border-zinc-200 shadow-sm bg-white rounded-2xl">
+                      <CardContent className="p-5 flex items-center gap-4">
+                        <div className="p-3.5 bg-zinc-100 rounded-xl shrink-0">
+                          <Building2 className="h-6 w-6 text-zinc-950" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">
+                            {compName} Sales
+                          </p>
+                          <h3 className="text-2xl font-black text-zinc-950 mt-0.5 font-mono">
+                            {formatCurrency(companySalesMap[compName] || 0)}
+                          </h3>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+              </div>
+
+              {/* Table Data */}
+              <Card className="border-zinc-200 shadow-sm bg-white rounded-2xl overflow-hidden">
+                <CardHeader className="pb-2 border-b border-zinc-100">
+                  <CardTitle className="text-xs font-black uppercase tracking-wider text-zinc-800">
+                    Filtered Orders Sheet
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader className="bg-zinc-50/50">
+                        <TableRow>
+                          <TableHead className="text-xs font-black text-zinc-500">Order ID</TableHead>
+                          <TableHead className="text-xs font-black text-zinc-500">Date</TableHead>
+                          <TableHead className="text-xs font-black text-zinc-500">Client</TableHead>
+                          <TableHead className="text-xs font-black text-zinc-500">Company</TableHead>
+                          <TableHead className="text-xs font-black text-zinc-500 text-right">Final Selling Price</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="text-xs font-semibold text-zinc-700">
+                        {displayOrders.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="py-12 text-center text-zinc-400 font-medium italic">
+                              No orders found in selected date range.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          <>
+                            {displayOrders.map(o => (
+                              <TableRow key={o.id} className="hover:bg-zinc-50/35 transition-colors h-9">
+                                <TableCell className="font-mono font-bold text-zinc-950">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedOrderForModal(o)}
+                                    className="font-mono font-bold text-indigo-650 hover:text-indigo-800 hover:underline transition-colors bg-transparent border-none cursor-pointer p-0"
+                                  >
+                                    #{o.orderNumber || o.id.substring(0, 8)}
+                                  </button>
+                                </TableCell>
+                                <TableCell>{convertToDate(o.createdAt).toLocaleDateString('en-IN')}</TableCell>
+                                <TableCell className="font-bold text-zinc-900">{o.clientName}</TableCell>
+                                <TableCell className="font-bold text-zinc-650">{o.company || 'Pooja Tekno Belt'}</TableCell>
+                                <TableCell className="text-right font-bold font-mono text-zinc-900">
+                                  {formatCurrency(o.totalCost)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                            <TableRow className="bg-zinc-50/70 border-t-2 border-zinc-200 font-black h-10 text-zinc-950">
+                              <TableCell colSpan={4} className="text-xs font-black text-zinc-900">GRAND TOTAL</TableCell>
+                              <TableCell className="text-right text-xs font-black font-mono text-zinc-900">
+                                {formatCurrency(displayOrders.reduce((sum, o) => sum + o.totalCost, 0))}
+                              </TableCell>
+                            </TableRow>
+                          </>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+
+            </div>
+          )}
         </div>
+      )}
+
+      {/* ── ORDER DETAILS DIALOG MODAL ── */}
+      {selectedOrderForModal && (
+        <Dialog open={!!selectedOrderForModal} onOpenChange={(open) => !open && setSelectedOrderForModal(null)}>
+          <DialogContent className="max-w-4xl sm:max-w-5xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-black flex items-center gap-2">
+                Order Specifications <Badge variant="outline" className="font-mono bg-zinc-50">#{selectedOrderForModal.orderNumber || selectedOrderForModal.id.substring(0, 8)}</Badge>
+              </DialogTitle>
+              <DialogDescription className="text-xs font-bold text-zinc-500">
+                Detailed dimensions, BOM components, and price margin breakdown
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6 py-4">
+              <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 space-y-6">
+                
+                {/* Summary Metadata */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-white border border-zinc-200 rounded-2xl shadow-sm">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Client</span>
+                    <p className="text-xs font-black text-zinc-800 mt-0.5">{selectedOrderForModal.clientName}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Company Unit</span>
+                    <p className="text-xs font-bold text-zinc-800 mt-0.5">{selectedOrderForModal.company || 'Pooja Tekno Belt'}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Date</span>
+                    <p className="text-xs font-bold text-zinc-850 mt-0.5">{convertToDate(selectedOrderForModal.updatedAt || selectedOrderForModal.createdAt).toLocaleDateString('en-IN')}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Selling Price</span>
+                    <p className="text-sm font-black text-emerald-700 font-mono mt-0.5">{formatCurrency(Math.round(selectedOrderForModal.totalCost))}</p>
+                  </div>
+                </div>
+
+                {/* Items/BOM Breakdown */}
+                {selectedOrderForModal.items && selectedOrderForModal.items.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Quotation Items ({selectedOrderForModal.items.length})</p>
+                    <div className="border border-zinc-200 rounded-xl overflow-hidden bg-white max-h-[350px] overflow-y-auto shadow-sm">
+                      <Table>
+                        <TableHeader className="bg-zinc-50/50">
+                          <TableRow className="h-10">
+                            <TableHead className="w-[45px] text-center font-black text-[10px] uppercase text-zinc-500">No.</TableHead>
+                            <TableHead className="font-black text-[10px] uppercase text-zinc-500">Belt Details</TableHead>
+                            <TableHead className="font-black text-[10px] uppercase text-zinc-500">Dimensions</TableHead>
+                            <TableHead className="font-black text-[10px] uppercase text-zinc-500">BOM & Customizations</TableHead>
+                            <TableHead className="font-black text-[10px] uppercase text-zinc-500 text-right pr-4">Total Cost</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {selectedOrderForModal.items.map((item, idx) => {
+                            const included = item.selectedBOMOptions?._included || {};
+                            const customRates = item.selectedBOMOptions?._customRates || {};
+                            const remarks = item.selectedBOMOptions?._remarks || {};
+                            const optRemarks = item.selectedBOMOptions?._optRemarks || {};
+
+                            const category = (Array.isArray(config?.beltTypes) ? config.beltTypes : [])?.find?.(t => t.name === item.beltType) || null;
+                            const style = (Array.isArray(category?.styles) ? category.styles : [])?.find?.(s => s.name === item.beltStyle) || null;
+                            const bomItems = style?.bom || [];
+
+                            const includedItems = bomItems.filter(b => included[b.id] !== false);
+                            const adjustedItems = bomItems.filter(b => customRates[b.id] !== undefined).map(b => `${b.name} (₹${customRates[b.id]})`);
+                            const hasRemarks = includedItems.some(b => remarks[b.id]);
+
+                            const subRemarkEntries: { label: string; text: string }[] = [];
+                            includedItems.forEach(b => {
+                              const rawSel = item.selectedBOMOptions?.[b.id];
+                              const selIndices: number[] = Array.isArray(rawSel)
+                                ? rawSel
+                                : rawSel !== undefined ? [rawSel] : [];
+                              selIndices.forEach((optIdx: number) => {
+                                if (b.options?.[optIdx]) {
+                                  const optKey = `${b.id}_${optIdx}`;
+                                  if (optRemarks[optKey]) {
+                                    subRemarkEntries.push({
+                                      label: `${b.name} › ${b.options[optIdx].name || ''}`,
+                                      text: optRemarks[optKey]
+                                    });
+                                  }
+                                }
+                              });
+                            });
+
+                            return (
+                              <TableRow key={item.id || idx} className="text-xs hover:bg-zinc-50/50 transition-colors h-11">
+                                <TableCell className="text-center font-bold text-zinc-400">{idx + 1}</TableCell>
+                                <TableCell className="font-semibold text-zinc-900">
+                                  {item.beltType}
+                                  <div className="text-[9px] text-zinc-400 font-bold">Style: {item.beltStyle || 'Standard'}</div>
+                                </TableCell>
+                                <TableCell className="font-mono text-zinc-600">
+                                  L {item.dimensions.length}{item.dimensions.lengthUnit || 'mm'} x W {item.dimensions.width}{item.dimensions.widthUnit || 'mm'}
+                                  {item.dimensions.hasHoles && (
+                                    <div className="text-[9px] text-indigo-650 font-bold mt-0.5">Holes: {item.dimensions.totalHoles} pcs</div>
+                                  )}
+                                </TableCell>
+                                <TableCell className="max-w-[280px] text-[10px] text-zinc-650 leading-relaxed">
+                                  <div className="space-y-0.5 py-1">
+                                    <div><span className="font-bold text-zinc-400">BOM:</span> {includedItems.map(b => b.name).join(', ') || 'None'}</div>
+                                    {adjustedItems.length > 0 && (
+                                      <div className="text-[9px] text-indigo-650 font-bold">
+                                        <span className="font-extrabold">Adjusted:</span> {adjustedItems.join(', ')}
+                                      </div>
+                                    )}
+                                    {hasRemarks && (
+                                      <div className="text-[9px] text-amber-700 font-medium mt-0.5 space-y-0.5 bg-amber-50/50 p-1 rounded border border-amber-100/50">
+                                        {includedItems.filter(b => remarks[b.id]).map(b => (
+                                          <div key={b.id} className="flex items-start gap-1">
+                                            <span className="font-bold text-amber-600 shrink-0">{b.name}:</span>
+                                            <span className="italic">{remarks[b.id]}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {subRemarkEntries.length > 0 && (
+                                      <div className="text-[9px] text-indigo-700 font-medium mt-0.5 space-y-0.5 bg-indigo-50/50 p-1 rounded border border-indigo-100/50">
+                                        {subRemarkEntries.map((e, i) => (
+                                          <div key={i} className="flex items-start gap-1">
+                                            <span className="font-bold text-indigo-500 shrink-0">{e.label}:</span>
+                                            <span className="italic">{e.text}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right font-mono font-bold text-zinc-900 pr-4">
+                                  {formatCurrency(item.totalCost)}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                ) : (
+                  /* Single Item Details & Pricing Breakdown Table */
+                  <div className="space-y-4">
+                    {/* Item Details */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Item Details</p>
+                        <div className="mt-1 bg-white border border-zinc-200 rounded-xl p-3 text-xs space-y-1">
+                          <div><span className="font-bold text-zinc-500">Belt Type:</span> <span className="font-black text-zinc-800">{selectedOrderForModal.beltType}</span></div>
+                          <div><span className="font-bold text-zinc-500">Belt Style:</span> <span className="font-semibold text-zinc-800">{selectedOrderForModal.beltStyle || 'Standard'}</span></div>
+                          <div><span className="font-bold text-zinc-500">Dimensions:</span> <span className="font-mono text-zinc-800">L {selectedOrderForModal.dimensions.length}{selectedOrderForModal.dimensions.lengthUnit || selectedOrderForModal.dimensions.unit || 'mm'} x W {selectedOrderForModal.dimensions.width}{selectedOrderForModal.dimensions.widthUnit || selectedOrderForModal.dimensions.unit || 'mm'}</span></div>
+                          {selectedOrderForModal.dimensions.hasHoles && (
+                            <div className="text-indigo-650 font-bold">Holes Layout: {selectedOrderForModal.dimensions.totalHoles} pcs ({selectedOrderForModal.dimensions.holeSize}mm size)</div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Financial Margin Info */}
+                      <div>
+                        <p className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Cost & Margin Summary</p>
+                        <div className="mt-1 bg-white border border-zinc-200 rounded-xl p-3 text-xs space-y-1 font-mono">
+                          <div className="flex justify-between">
+                            <span className="font-bold text-zinc-500">Material Cost:</span>
+                            <span className="font-bold text-zinc-800">{formatCurrency(selectedOrderForModal.calculated?.summary?.subtotal || 0)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-bold text-zinc-500">Profit Margin ({selectedOrderForModal.calculated?.summary?.profitMarginUsed || 0}%):</span>
+                            <span className="font-bold text-emerald-700">+{formatCurrency(selectedOrderForModal.calculated?.summary?.profit || 0)}</span>
+                          </div>
+                          <div className="flex justify-between border-t border-dashed border-zinc-200 pt-1 mt-1 font-black">
+                            <span className="text-zinc-800">Base Selling Price:</span>
+                            <span className="text-zinc-950">{formatCurrency(selectedOrderForModal.calculated?.summary?.totalWithProfit || 0)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* BOM Components breakdown */}
+                    {selectedOrderForModal.calculated?.breakdown && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">BOM Components Cost Details</p>
+                        <div className="border border-zinc-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                          <Table>
+                            <TableHeader className="bg-zinc-50/50">
+                              <TableRow className="h-9">
+                                <TableHead className="font-black text-[10px] uppercase text-zinc-500">Component Name</TableHead>
+                                <TableHead className="font-black text-[10px] uppercase text-zinc-500 text-right">Consumption</TableHead>
+                                <TableHead className="font-black text-[10px] uppercase text-zinc-500 text-right">Rate</TableHead>
+                                <TableHead className="font-black text-[10px] uppercase text-zinc-500 text-right pr-4">Calculated Cost</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody className="text-xs font-semibold text-zinc-700">
+                              {Object.keys(selectedOrderForModal.calculated.breakdown).map(key => {
+                                const item = selectedOrderForModal.calculated.breakdown[key];
+                                return (
+                                  <TableRow key={key} className="h-9 hover:bg-zinc-50/20">
+                                    <TableCell className="font-bold text-zinc-850">{key}</TableCell>
+                                    <TableCell className="text-right font-mono">{item.consumption.toFixed(2)} {item.unit || ''}</TableCell>
+                                    <TableCell className="text-right font-mono">₹{item.rate}</TableCell>
+                                    <TableCell className="text-right font-mono font-bold text-zinc-900 pr-4">{formatCurrency(item.cost)}</TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setSelectedOrderForModal(null)}
+                className="border-zinc-350 hover:bg-zinc-100 font-bold text-xs h-10 px-5 rounded-xl cursor-pointer"
+              >
+                Close Details
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

@@ -50,7 +50,7 @@ export const saveRoll = async (roll: any) => {
 // Update remaining area of a roll
 export const updateRoll = async (rollId: string, data: any) => {
   try {
-    const response = await fetch(`/api/rolls/${rollId}`, {
+    const response = await fetch(`/api/rolls/${encodeURIComponent(rollId)}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -69,7 +69,7 @@ export const updateRoll = async (rollId: string, data: any) => {
 // Delete a roll
 export const deleteRoll = async (rollId: string) => {
   try {
-    const response = await fetch(`/api/rolls/${rollId}`, {
+    const response = await fetch(`/api/rolls/${encodeURIComponent(rollId)}`, {
       method: 'DELETE',
     });
     if (!response.ok) {
@@ -84,7 +84,7 @@ export const deleteRoll = async (rollId: string) => {
 // Save cutting placement record
 export const saveCut = async (rollId: string, cut: any) => {
   try {
-    const response = await fetch(`/api/rolls/${rollId}/cuts`, {
+    const response = await fetch(`/api/rolls/${encodeURIComponent(rollId)}/cuts`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -103,7 +103,7 @@ export const saveCut = async (rollId: string, cut: any) => {
 // Delete cutting placement record
 export const deleteCut = async (rollId: string, cutId: string) => {
   try {
-    const response = await fetch(`/api/rolls/${rollId}/cuts/${cutId}`, {
+    const response = await fetch(`/api/rolls/${encodeURIComponent(rollId)}/cuts/${encodeURIComponent(cutId)}`, {
       method: 'DELETE',
     });
     if (!response.ok) {
