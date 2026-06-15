@@ -2441,6 +2441,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     key={roll.id}
                     roll={roll}
                     unit={currentUnit}
+                    onSelectCut={(cut) => handleDeleteCut(roll.id, cut)}
                   />
                 ))}
               </div>
@@ -3229,6 +3230,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             }}
                             manualMode={cuttingMode === 'manual'}
                             manualDimensions={{ width: activeOrderDimensions.width, length: activeOrderDimensions.length }}
+                            onSelectCut={(cut) => handleDeleteCut(roll.id, cut)}
                             onManualPlacementChange={(pos) => {
                               if (pos) {
                                 setManualPlacement({ rollId: roll.id, placement: pos });

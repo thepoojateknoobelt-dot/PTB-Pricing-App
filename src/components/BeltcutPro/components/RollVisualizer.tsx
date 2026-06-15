@@ -251,13 +251,13 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                 <g 
                   key={cut.id} 
                   onClick={(e) => {
-                    // In manual mode, don't let cut clicks interfere with placement
-                    if (manualMode) { e.stopPropagation(); return; }
+                    // Stop propagation so clicking on a cut doesn't trigger manual placement on the container
+                    e.stopPropagation();
                     onSelectCut?.(cut);
                   }} 
-                  className={!manualMode && onSelectCut ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}
+                  className={onSelectCut ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}
                 >
-                  <title>{`Client: ${cut.customerName}\nSize: ${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}${!manualMode ? '\nClick to delete cut' : ''}`}</title>
+                  <title>{`Client: ${cut.customerName}\nSize: ${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}${onSelectCut ? '\nClick to delete cut' : ''}`}</title>
                   <rect 
                     x={cut.x * SCALE} 
                     y={cut.y * SCALE} 
