@@ -15,6 +15,8 @@ interface RollVisualizerProps {
   isExpanded?: boolean;
   onToggleExpand?: () => void;
   onMaximize?: () => void;
+  height?: string;
+  hideTitle?: boolean;
 }
 
 const CONVERSIONS: Record<Unit, number> = {
@@ -36,7 +38,9 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   onManualPlacementConfirm,
   isExpanded = true,
   onToggleExpand,
-  onMaximize
+  onMaximize,
+  height = 'h-[400px]',
+  hideTitle = false
 }) => {
   const [zoom, setZoom] = useState(0.8);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -132,30 +136,32 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
     : true;
 
   return (
-    <div id={`roll-visualizer-${roll.id}`} className={`flex flex-col gap-4 w-full p-6 rounded-3xl border transition-all duration-300 ${manualMode ? 'bg-blue-50/50 border-blue-400 shadow-xl' : 'bg-white border-slate-200 shadow-sm'}`}>
-      <div className="flex justify-between items-center px-2">
-        <div className="flex items-center gap-4">
-          <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-lg shadow-slate-200">
-             <Box size={20} />
-          </div>
-          <div>
-            <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 italic uppercase tracking-tight">
-              Roll {roll.id} 
-              <span className={`text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${isReuse ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                {isReuse ? 'REUSE' : 'FRESH'}
-              </span>
-              <span className={`text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${roll.cuts.length > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700'}`}>
-                {roll.cuts.length > 0 ? 'REMNANT' : 'FULL'}
-              </span>
-              {roll.status === 'refused' && (
-                <span className="text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest bg-rose-100 text-rose-700">
-                  REFUSED
+    <div id={`roll-visualizer-${roll.id}`} className={`flex flex-col gap-4 w-full p-6 rounded-3xl border transition-all duration-300 ${(height.includes('full') || height.includes('1') || height.includes('vh')) ? 'flex-grow h-full' : ''} ${manualMode ? 'bg-blue-50/50 border-blue-400 shadow-xl' : 'bg-white border-slate-200 shadow-sm'}`}>
+      <div className={`flex items-center px-2 ${hideTitle ? 'justify-end' : 'justify-between'}`}>
+        {!hideTitle && (
+          <div className="flex items-center gap-4">
+            <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-lg shadow-slate-200">
+               <Box size={20} />
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 italic uppercase tracking-tight">
+                Roll {roll.id} 
+                <span className={`text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${isReuse ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                  {isReuse ? 'REUSE' : 'FRESH'}
                 </span>
-              )}
-            </h3>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{roll.materialType}</p>
+                <span className={`text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${roll.cuts.length > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700'}`}>
+                  {roll.cuts.length > 0 ? 'REMNANT' : 'FULL'}
+                </span>
+                {roll.status === 'refused' && (
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest bg-rose-100 text-rose-700">
+                    REFUSED
+                  </span>
+                )}
+              </h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{roll.materialType}</p>
+            </div>
           </div>
-        </div>
+        )}
         <div className="flex items-center gap-2">
           {manualMode && (
             <span className="text-[9px] font-black text-blue-600 bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200 uppercase tracking-wider animate-pulse">
@@ -199,7 +205,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
       {isExpanded && (
         <div 
           ref={containerRef}
-          className={`w-full h-[400px] rounded-3xl overflow-auto border-4 relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : 'bg-slate-50 border-white shadow-inner'}`}
+          className={`w-full ${height} rounded-3xl overflow-auto border-4 relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : 'bg-slate-50 border-white shadow-inner'}`}
         onMouseMove={handleMouseMove}
         onClick={handleClick}
         onMouseLeave={() => { setMousePos(null); setIsValidPos(false); }}

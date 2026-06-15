@@ -5737,12 +5737,12 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
         const displayRemainingArea = formatDisplayValue(remainingArea);
 
         return (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 md:p-10">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 md:p-8">
             <div
               className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
               onClick={() => setFullscreenRollId(null)}
             />
-            <div className="relative bg-white rounded-[32px] shadow-2xl w-full max-w-5xl h-full max-h-[85vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200 text-left">
+            <div className="relative bg-white rounded-[32px] shadow-2xl w-full max-w-7xl h-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200 text-left">
               {/* Header */}
               <div className="p-6 border-b border-zinc-150 flex items-center justify-between bg-slate-50/50 shrink-0">
                 <div className="flex items-center gap-3">
@@ -5779,109 +5779,107 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                 </div>
               </div>
 
-              {/* Body */}
-              <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+              {/* Body Content: Responsive Split Layout */}
+              <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
                 
-                {/* Stats Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Dimensions</p>
-                    <p className="text-base font-black text-slate-800 mt-1">{lenVal}{currentUnit} x {widVal}{currentUnit}</p>
+                {/* Left Column: Visualizer Layout Pane (occupies remaining width) */}
+                <div className="flex-1 p-6 md:p-8 flex flex-col overflow-hidden bg-slate-50/50">
+                  <div className="flex items-center justify-between mb-3 shrink-0">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Interactive Nesting Layout</p>
                   </div>
-                  <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Area</p>
-                    <p className="text-base font-black text-slate-800 mt-1">{displayTotalArea} {areaUnit}</p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Remaining Area</p>
-                    <p className="text-base font-black text-slate-800 mt-1">{displayRemainingArea} {areaUnit}</p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Efficiency</p>
-                    <p className="text-base font-black text-emerald-600 mt-1">{efficiencyVal}%</p>
+                  
+                  <div className="flex-1 bg-white border border-slate-200 rounded-[24px] p-4 shadow-sm flex flex-col overflow-hidden">
+                    <RollVisualizer
+                      roll={roll}
+                      unit={currentUnit}
+                      isExpanded={true}
+                      onSelectCut={(cut) => handleDeleteCut(roll.id, cut)}
+                      hideTitle={true}
+                      height="h-full flex-grow min-h-[400px]"
+                    />
                   </div>
                 </div>
 
-                {/* Visualizer Frame */}
-                <div className="bg-white border border-slate-200 rounded-[24px] p-2 md:p-4 shadow-sm">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 mb-2">Interactive Nesting Layout</p>
-                  <RollVisualizer
-                    roll={roll}
-                    unit={currentUnit}
-                    isExpanded={true}
-                    onSelectCut={(cut) => handleDeleteCut(roll.id, cut)}
-                  />
-                </div>
+                {/* Right Column: Stats & Cuts Allocations Sidebar (fixed width on desktop) */}
+                <div className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-zinc-150 bg-white flex flex-col overflow-hidden h-full">
+                  
+                  {/* Scrollable Sidebar Content */}
+                  <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    
+                    {/* Stats Grid */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Roll Metrics</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-slate-50 border border-slate-150 rounded-2xl p-3.5">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Dimensions</p>
+                          <p className="text-sm font-black text-slate-800 mt-1">{lenVal}{currentUnit} x {widVal}{currentUnit}</p>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-150 rounded-2xl p-3.5">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Area</p>
+                          <p className="text-sm font-black text-slate-800 mt-1">{displayTotalArea} {areaUnit}</p>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-150 rounded-2xl p-3.5">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Remaining</p>
+                          <p className="text-sm font-black text-slate-800 mt-1">{displayRemainingArea} {areaUnit}</p>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-150 rounded-2xl p-3.5">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Efficiency</p>
+                          <p className="text-sm font-black text-emerald-600 mt-1">{efficiencyVal}%</p>
+                        </div>
+                      </div>
+                    </div>
 
-                {/* Allocations Table */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Cuts Allocations Details ({cuts.length})</h4>
-                  <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50/70 border-b border-slate-200">
-                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider w-12">S.No</th>
-                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Client Name</th>
-                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Cut ID</th>
-                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Dimensions</th>
-                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Type</th>
-                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Date & Time</th>
-                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider w-16 text-center">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
+                    {/* Cuts Allocations Details list */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Cuts Allocations ({cuts.length})</h4>
+                      <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
                         {cuts.map((cut, idx) => {
                           let dateStr = 'N/A';
                           const tsMatch = cut.id.match(/C-(\d+)/);
                           if (tsMatch) {
                             const d = new Date(parseInt(tsMatch[1], 10));
                             if (!isNaN(d.getTime())) {
-                              dateStr = `${d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+                              dateStr = `${d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
                             }
                           }
                           const lenCut = fromMeters(cut.length).toFixed(1);
                           const widCut = fromMeters(cut.width).toFixed(1);
                           return (
-                            <tr key={cut.id} className="hover:bg-slate-50/50 transition duration-150">
-                              <td className="px-4 py-3 text-slate-400">#{idx + 1}</td>
-                              <td className="px-4 py-3 text-slate-800">
-                                {isInventoryCutName(cut.customerName) ? (
-                                  <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded text-[10px] font-black tracking-wider uppercase">
-                                    REUSE STOCK
+                            <div key={cut.id} className="p-3.5 bg-slate-50 border border-slate-150 rounded-2xl flex items-center justify-between hover:bg-slate-100 transition duration-150">
+                              <div className="min-w-0 flex-1 pr-2">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[9px] font-bold text-slate-400">#{idx + 1}</span>
+                                  <span className="text-xs font-black text-slate-850 truncate">
+                                    {isInventoryCutName(cut.customerName) ? (
+                                      <span className="bg-emerald-55 text-white px-1.5 py-0.5 rounded text-[8px] font-black tracking-widest uppercase">REUSE</span>
+                                    ) : (
+                                      cut.customerName || 'N/A'
+                                    )}
                                   </span>
-                                ) : (
-                                  cut.customerName || 'N/A'
-                                )}
-                              </td>
-                              <td className="px-4 py-3 font-mono text-[10px] text-slate-500">{cut.id.substring(0, 12)}</td>
-                              <td className="px-4 py-3 font-black text-slate-800">{lenCut}{currentUnit} x {widCut}{currentUnit}</td>
-                              <td className="px-4 py-3">
-                                <span className={`inline-flex px-2 py-0.5 rounded-[6px] text-[8px] font-black tracking-widest uppercase ${cut.isInventoryCut ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}>
-                                  {cut.isInventoryCut ? 'REUSE' : 'CLIENT'}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-slate-500">{dateStr}</td>
-                              <td className="px-4 py-3 text-center">
-                                <button
-                                  onClick={() => handleDeleteCut(roll.id, cut)}
-                                  className="p-1.5 hover:bg-rose-50 text-rose-500 rounded-lg transition active:scale-95 cursor-pointer border border-transparent hover:border-rose-100"
-                                  title="Delete Cut Allocation"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </td>
-                            </tr>
+                                </div>
+                                <div className="flex flex-col gap-0.5 mt-1.5 text-[10px] text-slate-500 font-bold">
+                                  <span className="text-slate-800 font-black">{lenCut}{currentUnit} x {widCut}{currentUnit}</span>
+                                  <span className="text-[9px] text-slate-400 font-medium">{dateStr}</span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteCut(roll.id, cut)}
+                                className="p-1.5 hover:bg-rose-50 text-rose-500 rounded-lg transition border border-transparent hover:border-rose-100 cursor-pointer active:scale-95 shrink-0"
+                                title="Delete Allocation"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           );
                         })}
                         {cuts.length === 0 && (
-                          <tr>
-                            <td colSpan={7} className="px-4 py-8 text-center text-slate-400 font-medium bg-slate-50/30">
-                              No cuts allocated to this roll yet.
-                            </td>
-                          </tr>
+                          <div className="py-12 text-center text-slate-400 text-xs font-medium border-2 border-dashed border-slate-200 rounded-3xl">
+                            No cuts allocated to this roll yet.
+                          </div>
                         )}
-                      </tbody>
-                    </table>
+                      </div>
+                    </div>
+
                   </div>
                 </div>
 
