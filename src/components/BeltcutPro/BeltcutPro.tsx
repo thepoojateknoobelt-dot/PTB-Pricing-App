@@ -4920,6 +4920,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                           <th className="px-5 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">Material</th>
                           <th className="px-5 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">Source Roll</th>
                           <th className="px-5 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">Entry Date &amp; Time</th>
+                          <th className="px-5 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right pr-8">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-100 text-xs font-semibold text-slate-700">
@@ -4946,6 +4947,19 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                 </span>
                               </td>
                               <td className="px-5 py-3 font-bold text-slate-450">{dateStr}</td>
+                              <td className="px-5 py-3 text-right pr-6">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteCut(item.rollId, item.cut);
+                                  }}
+                                  className="p-1.5 text-red-650 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
+                                  title="Delete/Undo this cut and restore area"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </td>
                             </tr>
                           );
                         })}
@@ -5022,6 +5036,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                           <th className="px-5 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">Dimensions</th>
                           <th className="px-5 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">Type</th>
                           <th className="px-5 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">Entry Date &amp; Time</th>
+                          <th className="px-5 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right pr-8">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-100 text-xs font-semibold text-slate-700">
@@ -5071,6 +5086,19 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                 )}
                               </td>
                               <td className="px-5 py-3 font-bold text-slate-450">{dateStr}</td>
+                              <td className="px-5 py-3 text-right pr-6">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteCut(selectedRollId, cut);
+                                  }}
+                                  className="p-1.5 text-red-655 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
+                                  title="Delete/Undo this cut and restore area"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </td>
                             </tr>
                           );
                         })}
