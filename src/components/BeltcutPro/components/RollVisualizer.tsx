@@ -207,7 +207,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
       {isExpanded && (
         <div 
           ref={containerRef}
-          className={`w-full ${height} ${noBorder ? 'border border-slate-200 rounded-2xl shadow-none' : 'border-4 border-white shadow-inner rounded-3xl'} overflow-auto relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : 'bg-slate-50'}`}
+          className={`w-full ${height} ${noBorder ? 'border-0 rounded-none shadow-none' : 'border-4 border-white shadow-inner rounded-3xl'} overflow-auto relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : 'bg-slate-50'}`}
         >
           <div style={{ 
             width: (viewWidth + RULER_SIZE) * zoom, 

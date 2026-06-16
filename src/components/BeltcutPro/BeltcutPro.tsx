@@ -5833,7 +5833,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
               <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
                 
                 {/* Left Column: Visualizer Layout Pane (occupies remaining width) */}
-                <div className="flex-1 p-4 md:p-5 flex flex-col overflow-hidden bg-slate-50">
+                <div className="flex-1 p-0 flex flex-col overflow-hidden bg-slate-50">
                   <RollVisualizer
                     roll={roll}
                     unit={currentUnit}
