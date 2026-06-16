@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Roll, Cut, Unit } from '../types';
 import { isSpaceAvailable } from '../services/optimizationEngine';
 import { Box, ChevronDown, ChevronUp, Maximize2 } from 'lucide-react';
+import { getShortRollId } from '../utils';
 
 interface RollVisualizerProps {
   roll: Roll;
@@ -81,9 +82,9 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
     const unscaledX = (e.clientX - rect.left) / zoom;
     const unscaledY = (e.clientY - rect.top) / zoom;
     
-    // Scale back to raw meters
-    const rawX = unscaledX / SCALE;
-    const rawY = unscaledY / SCALE;
+    // Scale back to raw meters after subtracting ruler size
+    const rawX = (unscaledX - RULER_SIZE) / SCALE;
+    const rawY = (unscaledY - RULER_SIZE) / SCALE;
     
     // Snap to 10cm grid
     const x = Math.max(0, Math.min(roll.fullLength - manualDimensions.length, Math.round(rawX * 10) / 10));
@@ -146,8 +147,8 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                <Box size={20} />
             </div>
             <div>
-              <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 italic uppercase tracking-tight">
-                Roll {roll.id} 
+              <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 italic uppercase tracking-tight" title={roll.id}>
+                Roll {getShortRollId(roll.id)} 
                 <span className={`text-[10px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${isReuse ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
                   {isReuse ? 'REUSE' : 'FRESH'}
                 </span>
@@ -207,209 +208,145 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
       {isExpanded && (
         <div 
           ref={containerRef}
-          className={`w-full ${height} ${noBorder ? 'border-0 rounded-none shadow-none' : 'border-4 border-white shadow-inner rounded-3xl'} overflow-auto relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : 'bg-slate-50'}`}
-        >
-          <div style={{ 
-            width: (viewWidth + RULER_SIZE) * zoom, 
-            height: (viewHeight + RULER_SIZE + 40) * zoom, 
-            position: 'relative',
-            display: 'flex',
-            flexDirection: 'column'
-          }}>
-            {/* ROW 1: Corner + X-Axis Ruler */}
-            <div style={{ display: 'flex', flexDirection: 'row', height: RULER_SIZE * zoom, width: '100%' }}>
-              {/* Corner */}
-              <div style={{
-                position: 'sticky',
-                top: 0,
-                left: 0,
-                zIndex: 30,
-                width: RULER_SIZE * zoom,
-                height: RULER_SIZE * zoom,
-                backgroundColor: '#f8fafc',
-                borderRight: '1px solid #cbd5e1',
-                borderBottom: '1px solid #cbd5e1',
-                boxSizing: 'border-box',
-                flexShrink: 0
-              }} />
-              
-              {/* X-Axis Ruler */}
-              <div style={{
-                position: 'sticky',
-                top: 0,
-                zIndex: 20,
-                height: RULER_SIZE * zoom,
-                width: viewWidth * zoom,
-                flexShrink: 0
-              }}>
-                <svg 
-                  width={viewWidth * zoom} 
-                  height={RULER_SIZE * zoom} 
-                  viewBox={`0 0 ${viewWidth} ${RULER_SIZE}`}
-                  className="roll-x-ruler-svg"
-                  style={{ display: 'block' }}
+          className={`w-full ${height} ${noBorder ? 'border border-slate-200 rounded-2xl shadow-none' : 'border-4 border-white shadow-inner rounded-3xl'} overflow-auto relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : 'bg-slate-50'}`}
+        onMouseMove={handleMouseMove}
+        onClick={handleClick}
+        onMouseLeave={() => { setMousePos(null); setIsValidPos(false); }}
+      >
+        <div style={{ width: (viewWidth + RULER_SIZE) * zoom, height: (viewHeight + RULER_SIZE + 40) * zoom, position: 'relative' }}>
+          <svg 
+            ref={svgRef}
+            width={(viewWidth + RULER_SIZE) * zoom} 
+            height={(viewHeight + RULER_SIZE + 40) * zoom} 
+            viewBox={`0 0 ${viewWidth + RULER_SIZE} ${viewHeight + RULER_SIZE + 40}`}
+            className="absolute top-0 left-0 roll-layout-svg"
+          >
+            <defs>
+              <pattern id="suggested-pattern-auto" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <line x1="0" y1="0" x2="0" y2="14" stroke="#10b981" strokeWidth="3.5" opacity="0.35" />
+              </pattern>
+              <pattern id="suggested-pattern-manual" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <line x1="0" y1="0" x2="0" y2="14" stroke="#3b82f6" strokeWidth="3.5" opacity="0.35" />
+              </pattern>
+              <pattern id="suggested-pattern-invalid" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <line x1="0" y1="0" x2="0" y2="14" stroke="#ef4444" strokeWidth="3.5" opacity="0.35" />
+              </pattern>
+            </defs>
+            <g transform={`translate(${RULER_SIZE}, 0)`}>
+              <rect width={viewWidth} height={RULER_SIZE} fill="#f8fafc" stroke="#e2e8f0" />
+              {lengthMarkers.map(m => (
+                <g key={`l-${m}`} transform={`translate(${m * SCALE}, 0)`}>
+                  <line y1="28" y2="40" stroke="#cbd5e1" strokeWidth="2" />
+                  <text x="4" y="20" fontSize="10" fill="#64748b" fontWeight="900">{formatVal(m)}{unit}</text>
+                </g>
+              ))}
+            </g>
+
+            <g transform={`translate(0, ${RULER_SIZE})`}>
+              <rect width={RULER_SIZE} height={viewHeight} fill="#f8fafc" stroke="#e2e8f0" />
+              {/* Minor ticks every 0.5m */}
+              {widthTicks.map(m => (
+                <g key={`wt-${m}`} transform={`translate(0, ${m * SCALE})`}>
+                  <line x1={Number.isInteger(m) ? 38 : 44} x2={RULER_SIZE} stroke="#cbd5e1" strokeWidth={Number.isInteger(m) ? 2 : 1} />
+                </g>
+              ))}
+              {/* Labels only every 1m, horizontal, right-aligned */}
+              {widthLabels.map(m => (
+                <g key={`wl-${m}`} transform={`translate(0, ${m * SCALE})`}>
+                  <text
+                    x={RULER_SIZE - 6}
+                    y={m === 0 ? 11 : 5}
+                    fontSize="9"
+                    fill="#64748b"
+                    fontWeight="700"
+                    textAnchor="end"
+                  >
+                    {formatVal(m)}{unit}
+                  </text>
+                </g>
+              ))}
+            </g>
+
+            <g transform={`translate(${RULER_SIZE}, ${RULER_SIZE})`}>
+              <rect width={viewWidth} height={viewHeight} fill="#ffffff" stroke="#cbd5e1" strokeWidth="1" />
+
+              {roll.cuts.map((cut) => (
+                <g 
+                  key={cut.id} 
+                  onClick={(e) => {
+                    // Stop propagation so clicking on a cut doesn't trigger manual placement on the container
+                    e.stopPropagation();
+                    onSelectCut?.(cut);
+                  }} 
+                  className={onSelectCut ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}
                 >
-                  <rect width={viewWidth} height={RULER_SIZE} fill="#f8fafc" stroke="#e2e8f0" />
-                  {lengthMarkers.map(m => (
-                    <g key={`l-${m}`} transform={`translate(${m * SCALE}, 0)`}>
-                      <line y1="28" y2="40" stroke="#cbd5e1" strokeWidth="2" />
-                      <text x="4" y="20" fontSize="10" fill="#64748b" fontWeight="900">{formatVal(m)}{unit}</text>
-                    </g>
-                  ))}
-                </svg>
-              </div>
-            </div>
+                  <title>{`Client: ${cut.customerName}\nSize: ${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}${onSelectCut ? '\nClick to delete cut' : ''}`}</title>
+                  <rect 
+                    x={cut.x * SCALE} 
+                    y={cut.y * SCALE} 
+                    width={cut.length * SCALE} 
+                    height={cut.width * SCALE} 
+                    fill={cut.isInventoryCut ? '#1e293b' : (cut.color || '#334155')} 
+                    fillOpacity="0.9" 
+                    stroke="#0f172a" 
+                    strokeWidth="2" 
+                    rx="4" 
+                  />
+                  <text 
+                    x={(cut.x + cut.length / 2) * SCALE} 
+                    y={(cut.y + cut.width / 2) * SCALE} 
+                    textAnchor="middle" 
+                    dominantBaseline="middle" 
+                    fontSize="9.5" 
+                    fontWeight="black" 
+                    fill="white"
+                  >
+                    <tspan x={(cut.x + cut.length / 2) * SCALE} dy="-5">
+                      {cut.isInventoryCut ? 'REUSE' : cut.customerName.substring(0, 12)}
+                    </tspan>
+                    <tspan x={(cut.x + cut.length / 2) * SCALE} dy="13" fontSize="8" fontWeight="black" fill="rgba(255, 255, 255, 0.85)">
+                      {`${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}`}
+                    </tspan>
+                  </text>
+                </g>
+              ))}
 
-            {/* ROW 2: Y-Axis Ruler + Main Canvas */}
-            <div style={{ display: 'flex', flexDirection: 'row', width: '100%', height: (viewHeight + 40) * zoom }}>
-              {/* Y-Axis Ruler */}
-              <div style={{
-                position: 'sticky',
-                left: 0,
-                zIndex: 20,
-                width: RULER_SIZE * zoom,
-                height: viewHeight * zoom,
-                flexShrink: 0
-              }}>
-                <svg 
-                  width={RULER_SIZE * zoom} 
-                  height={viewHeight * zoom} 
-                  viewBox={`0 0 ${RULER_SIZE} ${viewHeight}`}
-                  className="roll-y-ruler-svg"
-                  style={{ display: 'block' }}
-                >
-                  <rect width={RULER_SIZE} height={viewHeight} fill="#f8fafc" stroke="#e2e8f0" />
-                  {widthTicks.map(m => (
-                    <g key={`wt-${m}`} transform={`translate(0, ${m * SCALE})`}>
-                      <line x1={Number.isInteger(m) ? 38 : 44} x2={RULER_SIZE} stroke="#cbd5e1" strokeWidth={Number.isInteger(m) ? 2 : 1} />
-                    </g>
-                  ))}
-                  {widthLabels.map(m => (
-                    <g key={`wl-${m}`} transform={`translate(0, ${m * SCALE})`}>
-                      <text
-                        x={RULER_SIZE - 6}
-                        y={m === 0 ? 11 : 5}
-                        fontSize="9"
-                        fill="#64748b"
-                        fontWeight="700"
-                        textAnchor="end"
-                      >
-                        {formatVal(m)}{unit}
-                      </text>
-                    </g>
-                  ))}
-                </svg>
-              </div>
+              {/* Manual mode live ghost preview */}
+              {manualMode && mousePos && manualDimensions && (
+                <rect
+                  x={mousePos.x * SCALE}
+                  y={mousePos.y * SCALE}
+                  width={manualDimensions.length * SCALE}
+                  height={manualDimensions.width * SCALE}
+                  fill={isValidPos ? 'url(#suggested-pattern-manual)' : 'url(#suggested-pattern-invalid)'}
+                  stroke={isValidPos ? '#3b82f6' : '#ef4444'}
+                  strokeWidth="3"
+                  strokeDasharray="8,4"
+                  rx="4"
+                  style={{ pointerEvents: 'none' }}
+                />
+              )}
 
-              {/* Main Canvas Container */}
-              <div 
-                style={{
-                  width: viewWidth * zoom,
-                  height: (viewHeight + 40) * zoom,
-                  flexShrink: 0
-                }}
-                onMouseMove={handleMouseMove}
-                onClick={handleClick}
-                onMouseLeave={handleMouseLeave}
-              >
-                <svg 
-                  ref={svgRef}
-                  width={viewWidth * zoom} 
-                  height={viewHeight * zoom} 
-                  viewBox={`0 0 ${viewWidth} ${viewHeight}`}
-                  className="roll-layout-svg"
-                  style={{ display: 'block' }}
-                >
-                  <defs>
-                    <pattern id="suggested-pattern-auto" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                      <line x1="0" y1="0" x2="0" y2="14" stroke="#10b981" strokeWidth="3.5" opacity="0.35" />
-                    </pattern>
-                    <pattern id="suggested-pattern-manual" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                      <line x1="0" y1="0" x2="0" y2="14" stroke="#3b82f6" strokeWidth="3.5" opacity="0.35" />
-                    </pattern>
-                    <pattern id="suggested-pattern-invalid" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                      <line x1="0" y1="0" x2="0" y2="14" stroke="#ef4444" strokeWidth="3.5" opacity="0.35" />
-                    </pattern>
-                  </defs>
-
-                  <rect width={viewWidth} height={viewHeight} fill="#ffffff" stroke="#cbd5e1" strokeWidth="1" />
-
-                  {roll.cuts.map((cut) => (
-                    <g 
-                      key={cut.id} 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectCut?.(cut);
-                      }} 
-                      className={onSelectCut ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}
-                    >
-                      <title>{`Client: ${cut.customerName}\nSize: ${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}${onSelectCut ? '\nClick to delete cut' : ''}`}</title>
-                      <rect 
-                        x={cut.x * SCALE} 
-                        y={cut.y * SCALE} 
-                        width={cut.length * SCALE} 
-                        height={cut.width * SCALE} 
-                        fill={cut.isInventoryCut ? '#1e293b' : (cut.color || '#334155')} 
-                        fillOpacity="0.9" 
-                        stroke="#0f172a" 
-                        strokeWidth="2" 
-                        rx="4" 
-                      />
-                      <text 
-                        x={(cut.x + cut.length / 2) * SCALE} 
-                        y={(cut.y + cut.width / 2) * SCALE} 
-                        textAnchor="middle" 
-                        dominantBaseline="middle" 
-                        fontSize="9.5" 
-                        fontWeight="black" 
-                        fill="white"
-                      >
-                        <tspan x={(cut.x + cut.length / 2) * SCALE} dy="-5">
-                          {cut.isInventoryCut ? 'REUSE' : cut.customerName.substring(0, 12)}
-                        </tspan>
-                        <tspan x={(cut.x + cut.length / 2) * SCALE} dy="13" fontSize="8" fontWeight="black" fill="rgba(255, 255, 255, 0.85)">
-                          {`${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}`}
-                        </tspan>
-                      </text>
-                    </g>
-                  ))}
-
-                  {manualMode && mousePos && manualDimensions && (
-                    <rect
-                      x={mousePos.x * SCALE}
-                      y={mousePos.y * SCALE}
-                      width={manualDimensions.length * SCALE}
-                      height={manualDimensions.width * SCALE}
-                      fill={isValidPos ? 'url(#suggested-pattern-manual)' : 'url(#suggested-pattern-invalid)'}
-                      stroke={isValidPos ? '#3b82f6' : '#ef4444'}
-                      strokeWidth="3"
-                      strokeDasharray="8,4"
-                      rx="4"
-                      style={{ pointerEvents: 'none' }}
-                    />
-                  )}
-
-                  {suggestedPlacement && (
-                    <g className="animate-in fade-in zoom-in duration-300">
-                      <rect 
-                        x={suggestedPlacement.x * SCALE} 
-                        y={suggestedPlacement.y * SCALE} 
-                        width={suggestedPlacement.length * SCALE} 
-                        height={suggestedPlacement.width * SCALE} 
-                        fill={manualMode ? (isSuggestedValid ? "url(#suggested-pattern-manual)" : "url(#suggested-pattern-invalid)") : "url(#suggested-pattern-auto)"} 
-                        stroke={manualMode ? (isSuggestedValid ? "#3b82f6" : "#ef4444") : "#10b981"} 
-                        strokeWidth="5" 
-                        strokeDasharray="10,5" 
-                        className="animate-pulse" 
-                        rx="6"
-                      />
-                    </g>
-                  )}
-                </svg>
-              </div>
-            </div>
-          </div>
+              {suggestedPlacement && (
+                <g className="animate-in fade-in zoom-in duration-300">
+                  <rect 
+                    x={suggestedPlacement.x * SCALE} 
+                    y={suggestedPlacement.y * SCALE} 
+                    width={suggestedPlacement.length * SCALE} 
+                    height={suggestedPlacement.width * SCALE} 
+                    fill={manualMode ? (isSuggestedValid ? "url(#suggested-pattern-manual)" : "url(#suggested-pattern-invalid)") : "url(#suggested-pattern-auto)"} 
+                    stroke={manualMode ? (isSuggestedValid ? "#3b82f6" : "#ef4444") : "#10b981"} 
+                    strokeWidth="5" 
+                    strokeDasharray="10,5" 
+                    className="animate-pulse" 
+                    rx="6"
+                  />
+                </g>
+              )}
+            </g>
+          </svg>
         </div>
+      </div>
       )}
     </div>
   );

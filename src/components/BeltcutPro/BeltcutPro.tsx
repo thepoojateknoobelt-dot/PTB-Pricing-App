@@ -19,6 +19,7 @@ import {
 import { findGlobalBestPlacement, isSpaceAvailable } from './services/optimizationEngine';
 import RollVisualizer from './components/RollVisualizer';
 import StatsCard from './components/StatsCard';
+import { getShortRollId } from './utils';
 
 const CONVERSIONS: Record<Unit, number> = {
   'm': 1,
@@ -1817,11 +1818,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
 
     // Find visualizer container (either the fullscreen modal's or the dashboard one)
     const container = document.getElementById(`roll-visualizer-${rollId}`);
-    const layoutSvg = container?.querySelector('svg.roll-layout-svg');
-    const xRulerSvg = container?.querySelector('svg.roll-x-ruler-svg');
-    const yRulerSvg = container?.querySelector('svg.roll-y-ruler-svg');
-
-    if (!layoutSvg || !xRulerSvg || !yRulerSvg) {
+    const svgEl = container?.querySelector('svg.roll-layout-svg');
+    if (!svgEl) {
       alert("Visualizer layout not found. Please make sure the roll is expanded and visible.");
       return;
     }
@@ -1832,43 +1830,22 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       return;
     }
 
-    // Clone SVGs and customize for print
-    const xRulerClone = xRulerSvg.cloneNode(true) as SVGElement;
-    const yRulerClone = yRulerSvg.cloneNode(true) as SVGElement;
-    const layoutClone = layoutSvg.cloneNode(true) as SVGElement;
-
+    // Clone the SVG and customize for print
+    const svgClone = svgEl.cloneNode(true) as SVGElement;
     // Set unscaled dimensions for high resolution scaling on paper
-    const unscaledLength = roll.fullLength * 35;
-    const unscaledWidth = roll.fullWidth * 35;
+    const unscaledWidth = roll.fullLength * 35 + 55;
+    const unscaledHeight = roll.fullWidth * 35 + 55 + 40;
+    svgClone.setAttribute('width', unscaledWidth.toString());
+    svgClone.setAttribute('height', unscaledHeight.toString());
+    
+    svgClone.style.width = '100%';
+    svgClone.style.height = 'auto';
+    svgClone.style.maxWidth = '100%';
+    svgClone.style.maxHeight = 'none'; // Ensure whole nesting height is printed
+    // Remove pointer cursor or interactive classes
+    svgClone.removeAttribute('class');
 
-    xRulerClone.setAttribute('width', unscaledLength.toString());
-    xRulerClone.setAttribute('height', '55');
-    xRulerClone.style.width = '100%';
-    xRulerClone.style.height = 'auto';
-
-    yRulerClone.setAttribute('width', '55');
-    yRulerClone.setAttribute('height', unscaledWidth.toString());
-    yRulerClone.style.width = '55px';
-    yRulerClone.style.height = 'auto';
-
-    layoutClone.setAttribute('width', unscaledLength.toString());
-    layoutClone.setAttribute('height', unscaledWidth.toString());
-    layoutClone.style.width = '100%';
-    layoutClone.style.height = 'auto';
-    layoutClone.removeAttribute('class');
-
-    const svgHtml = `
-      <div style="display: flex; flex-direction: column; width: 100%; max-width: 100%;">
-        <div style="display: flex; flex-direction: row; width: 100%;">
-          <div style="width: 55px; height: 55px; background: #f8fafc; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; box-sizing: border-box; flex-shrink: 0;"></div>
-          <div style="flex-grow: 1; min-width: 0;">${xRulerClone.outerHTML}</div>
-        </div>
-        <div style="display: flex; flex-direction: row; width: 100%;">
-          <div style="width: 55px; flex-shrink: 0;">${yRulerClone.outerHTML}</div>
-          <div style="flex-grow: 1; min-width: 0; border: 1px solid #cbd5e1; box-sizing: border-box;">${layoutClone.outerHTML}</div>
-        </div>
-      </div>
-    `;
+    const svgHtml = svgClone.outerHTML;
 
     // Generate cut table rows
     const cutsRows = cuts.map((cut, idx) => {
@@ -4053,7 +4030,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                               <tr key={roll.id} className="hover:bg-slate-50/50 transition-colors">
                                 <td className="px-4 py-3">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="font-black text-sm text-slate-800">{roll.id}</span>
+                                    <span className="font-black text-sm text-slate-800" title={roll.id}>{getShortRollId(roll.id)}</span>
                                     <span className="text-[7.5px] px-1.5 py-0.5 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-full font-black tracking-widest">REUSE</span>
                                   </div>
                                 </td>
@@ -4229,7 +4206,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                               <tr key={roll.id} className="hover:bg-slate-50/50 transition-colors">
                                 <td className="px-4 py-3">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="font-black text-sm text-slate-800">{roll.id}</span>
+                                    <span className="font-black text-sm text-slate-800" title={roll.id}>{getShortRollId(roll.id)}</span>
                                     <span className="text-[7.5px] px-1.5 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-full font-black tracking-widest">MASTER</span>
                                   </div>
                                 </td>
@@ -4995,7 +4972,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                       <tr key={roll.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-black text-zinc-950 text-sm">{roll.id}</span>
+                            <span className="font-black text-zinc-950 text-sm" title={roll.id}>{getShortRollId(roll.id)}</span>
                             <span className={`text-[9px] px-2 py-0.5 rounded-full font-black tracking-widest leading-none ${isRollReuse(roll) ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-indigo-50 text-indigo-700 border border-indigo-100'}`}>
                               {isRollReuse(roll) ? 'REUSE' : 'FRESH'}
                             </span>
@@ -5126,7 +5103,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                           <td className="px-4 py-2.5 text-slate-400">#{idx + 1}</td>
                           <td className="px-4 py-2.5">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-black text-slate-900">{roll.id}</span>
+                              <span className="font-black text-slate-900" title={roll.id}>{getShortRollId(roll.id)}</span>
                               <span className={`text-[9px] px-2 py-0.5 rounded-full font-black tracking-widest leading-none ${isRollReuse(roll) ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
                                 }`}>
                                 {isRollReuse(roll) ? 'REUSE' : 'FRESH'}
@@ -5800,8 +5777,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     <Package size={22} />
                   </div>
                   <div>
-                    <h3 className="font-black text-slate-800 text-lg flex items-center gap-2 italic uppercase">
-                      Roll {roll.id}
+                    <h3 className="font-black text-slate-800 text-lg flex items-center gap-2 italic uppercase" title={roll.id}>
+                      Roll {getShortRollId(roll.id)}
                       <span className={`text-[9px] px-2.5 py-0.5 rounded-full not-italic font-black tracking-widest ${isReuse ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
                         {isReuse ? 'REUSE' : 'FRESH'}
                       </span>
@@ -5833,7 +5810,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
               <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
                 
                 {/* Left Column: Visualizer Layout Pane (occupies remaining width) */}
-                <div className="flex-1 p-0 flex flex-col overflow-hidden bg-slate-50">
+                <div className="flex-1 p-4 md:p-5 flex flex-col overflow-hidden bg-slate-50">
                   <RollVisualizer
                     roll={roll}
                     unit={currentUnit}
