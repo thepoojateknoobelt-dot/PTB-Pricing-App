@@ -1817,8 +1817,11 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
 
     // Find visualizer container (either the fullscreen modal's or the dashboard one)
     const container = document.getElementById(`roll-visualizer-${rollId}`);
-    const svgEl = container?.querySelector('svg.roll-layout-svg');
-    if (!svgEl) {
+    const layoutSvg = container?.querySelector('svg.roll-layout-svg');
+    const xRulerSvg = container?.querySelector('svg.roll-x-ruler-svg');
+    const yRulerSvg = container?.querySelector('svg.roll-y-ruler-svg');
+
+    if (!layoutSvg || !xRulerSvg || !yRulerSvg) {
       alert("Visualizer layout not found. Please make sure the roll is expanded and visible.");
       return;
     }
@@ -1829,22 +1832,43 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       return;
     }
 
-    // Clone the SVG and customize for print
-    const svgClone = svgEl.cloneNode(true) as SVGElement;
-    // Set unscaled dimensions for high resolution scaling on paper
-    const unscaledWidth = roll.fullLength * 35 + 55;
-    const unscaledHeight = roll.fullWidth * 35 + 55 + 40;
-    svgClone.setAttribute('width', unscaledWidth.toString());
-    svgClone.setAttribute('height', unscaledHeight.toString());
-    
-    svgClone.style.width = '100%';
-    svgClone.style.height = 'auto';
-    svgClone.style.maxWidth = '100%';
-    svgClone.style.maxHeight = 'none'; // Ensure whole nesting height is printed
-    // Remove pointer cursor or interactive classes
-    svgClone.removeAttribute('class');
+    // Clone SVGs and customize for print
+    const xRulerClone = xRulerSvg.cloneNode(true) as SVGElement;
+    const yRulerClone = yRulerSvg.cloneNode(true) as SVGElement;
+    const layoutClone = layoutSvg.cloneNode(true) as SVGElement;
 
-    const svgHtml = svgClone.outerHTML;
+    // Set unscaled dimensions for high resolution scaling on paper
+    const unscaledLength = roll.fullLength * 35;
+    const unscaledWidth = roll.fullWidth * 35;
+
+    xRulerClone.setAttribute('width', unscaledLength.toString());
+    xRulerClone.setAttribute('height', '55');
+    xRulerClone.style.width = '100%';
+    xRulerClone.style.height = 'auto';
+
+    yRulerClone.setAttribute('width', '55');
+    yRulerClone.setAttribute('height', unscaledWidth.toString());
+    yRulerClone.style.width = '55px';
+    yRulerClone.style.height = 'auto';
+
+    layoutClone.setAttribute('width', unscaledLength.toString());
+    layoutClone.setAttribute('height', unscaledWidth.toString());
+    layoutClone.style.width = '100%';
+    layoutClone.style.height = 'auto';
+    layoutClone.removeAttribute('class');
+
+    const svgHtml = `
+      <div style="display: flex; flex-direction: column; width: 100%; max-width: 100%;">
+        <div style="display: flex; flex-direction: row; width: 100%;">
+          <div style="width: 55px; height: 55px; background: #f8fafc; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; box-sizing: border-box; flex-shrink: 0;"></div>
+          <div style="flex-grow: 1; min-width: 0;">${xRulerClone.outerHTML}</div>
+        </div>
+        <div style="display: flex; flex-direction: row; width: 100%;">
+          <div style="width: 55px; flex-shrink: 0;">${yRulerClone.outerHTML}</div>
+          <div style="flex-grow: 1; min-width: 0; border: 1px solid #cbd5e1; box-sizing: border-box;">${layoutClone.outerHTML}</div>
+        </div>
+      </div>
+    `;
 
     // Generate cut table rows
     const cutsRows = cuts.map((cut, idx) => {
