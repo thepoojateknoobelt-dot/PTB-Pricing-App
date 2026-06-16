@@ -1707,8 +1707,11 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       <html>
         <head>
           <title>Client Allocations - Roll ${rollId}</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+          <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
           <style>
-            body { font-family: sans-serif; padding: 20px; color: #1e293b; }
+            body { font-family: 'Outfit', sans-serif; padding: 20px; color: #1e293b; }
             .print-header {
               display: flex;
               align-items: center;
@@ -1814,7 +1817,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
 
     // Find visualizer container (either the fullscreen modal's or the dashboard one)
     const container = document.getElementById(`roll-visualizer-${rollId}`);
-    const svgEl = container?.querySelector('svg');
+    const svgEl = container?.querySelector('svg.roll-layout-svg');
     if (!svgEl) {
       alert("Visualizer layout not found. Please make sure the roll is expanded and visible.");
       return;
@@ -1828,11 +1831,16 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
 
     // Clone the SVG and customize for print
     const svgClone = svgEl.cloneNode(true) as SVGElement;
-    // Set explicit scaling for print
-    svgClone.setAttribute('width', '100%');
-    svgClone.setAttribute('height', 'auto');
+    // Set unscaled dimensions for high resolution scaling on paper
+    const unscaledWidth = roll.fullLength * 35 + 55;
+    const unscaledHeight = roll.fullWidth * 35 + 55 + 40;
+    svgClone.setAttribute('width', unscaledWidth.toString());
+    svgClone.setAttribute('height', unscaledHeight.toString());
+    
+    svgClone.style.width = '100%';
+    svgClone.style.height = 'auto';
     svgClone.style.maxWidth = '100%';
-    svgClone.style.maxHeight = '350px';
+    svgClone.style.maxHeight = 'none'; // Ensure whole nesting height is printed
     // Remove pointer cursor or interactive classes
     svgClone.removeAttribute('class');
 
@@ -1870,8 +1878,11 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       <html>
         <head>
           <title>Roll Layout Manifest - Roll ${rollId}</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+          <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
           <style>
-            body { font-family: sans-serif; padding: 25px; color: #1e293b; line-height: 1.5; }
+            body { font-family: 'Outfit', sans-serif; padding: 25px; color: #1e293b; line-height: 1.5; }
             @media print {
               body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
               .no-print { display: none; }
@@ -1928,27 +1939,39 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
               font-weight: 700;
             }
             .stats-grid {
-              display: grid;
-              grid-template-cols: repeat(4, 1fr);
+              display: flex;
+              flex-direction: row;
+              flex-wrap: nowrap;
+              width: 100%;
               gap: 15px;
               margin-bottom: 25px;
             }
             .stat-card {
+              flex: 1;
+              min-width: 0;
               border: 1px solid #e2e8f0;
-              border-radius: 8px;
-              padding: 12px;
+              border-left: 4px solid #cbd5e1;
+              border-radius: 12px;
+              padding: 14px 16px;
               background: #f8fafc;
+              box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
             }
+            .card-material { border-left-color: #6366f1; }
+            .card-dimensions { border-left-color: #3b82f6; }
+            .card-efficiency { border-left-color: #10b981; }
+            .card-cuts { border-left-color: #f59e0b; }
+            
             .stat-label {
               font-size: 9px;
               text-transform: uppercase;
               color: #64748b;
               font-weight: 800;
+              letter-spacing: 0.5px;
               margin-bottom: 4px;
             }
             .stat-value {
-              font-size: 14px;
-              font-weight: bold;
+              font-size: 15px;
+              font-weight: 800;
               color: #0f172a;
             }
             .visualizer-section {
@@ -1991,19 +2014,19 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
           </div>
 
           <div class="stats-grid">
-            <div class="stat-card">
+            <div class="stat-card card-material">
               <div class="stat-label">Material Type</div>
               <div class="stat-value">${roll.materialType}</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card card-dimensions">
               <div class="stat-label">Dimensions</div>
               <div class="stat-value">${lenVal}${currentUnit} x ${widVal}${currentUnit}</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card card-efficiency">
               <div class="stat-label">Efficiency</div>
-              <div class="stat-value">${efficiencyVal}%</div>
+              <div class="stat-value" style="color: #10b981;">${efficiencyVal}%</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card card-cuts">
               <div class="stat-label">Allocated Cuts</div>
               <div class="stat-value">${cuts.length}</div>
             </div>
@@ -2163,8 +2186,11 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       <html>
         <head>
           <title>Cuts History - ${selectedClientName}</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+          <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
           <style>
-            body { font-family: sans-serif; padding: 20px; color: #1e293b; }
+            body { font-family: 'Outfit', sans-serif; padding: 20px; color: #1e293b; }
             .print-header {
               display: flex;
               align-items: center;
@@ -5742,7 +5768,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
               className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
               onClick={() => setFullscreenRollId(null)}
             />
-            <div className="relative bg-white rounded-[32px] shadow-2xl w-full max-w-7xl h-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200 text-left">
+            <div className="relative bg-white rounded-[32px] shadow-2xl w-[96vw] max-w-[1600px] h-[92vh] max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200 text-left">
               {/* Header */}
               <div className="p-6 border-b border-zinc-150 flex items-center justify-between bg-slate-50/50 shrink-0">
                 <div className="flex items-center gap-3">
@@ -5783,21 +5809,16 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
               <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
                 
                 {/* Left Column: Visualizer Layout Pane (occupies remaining width) */}
-                <div className="flex-1 p-6 md:p-8 flex flex-col overflow-hidden bg-slate-50/50">
-                  <div className="flex items-center justify-between mb-3 shrink-0">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Interactive Nesting Layout</p>
-                  </div>
-                  
-                  <div className="flex-1 bg-white border border-slate-200 rounded-[24px] p-4 shadow-sm flex flex-col overflow-hidden">
-                    <RollVisualizer
-                      roll={roll}
-                      unit={currentUnit}
-                      isExpanded={true}
-                      onSelectCut={(cut) => handleDeleteCut(roll.id, cut)}
-                      hideTitle={true}
-                      height="h-full flex-grow min-h-[400px]"
-                    />
-                  </div>
+                <div className="flex-1 p-4 md:p-5 flex flex-col overflow-hidden bg-slate-50">
+                  <RollVisualizer
+                    roll={roll}
+                    unit={currentUnit}
+                    isExpanded={true}
+                    onSelectCut={(cut) => handleDeleteCut(roll.id, cut)}
+                    hideTitle={true}
+                    noBorder={true}
+                    height="h-full flex-grow"
+                  />
                 </div>
 
                 {/* Right Column: Stats & Cuts Allocations Sidebar (fixed width on desktop) */}

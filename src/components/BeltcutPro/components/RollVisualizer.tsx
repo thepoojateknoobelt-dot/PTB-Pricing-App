@@ -17,6 +17,7 @@ interface RollVisualizerProps {
   onMaximize?: () => void;
   height?: string;
   hideTitle?: boolean;
+  noBorder?: boolean;
 }
 
 const CONVERSIONS: Record<Unit, number> = {
@@ -40,7 +41,8 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   onToggleExpand,
   onMaximize,
   height = 'h-[400px]',
-  hideTitle = false
+  hideTitle = false,
+  noBorder = false
 }) => {
   const [zoom, setZoom] = useState(0.8);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -136,7 +138,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
     : true;
 
   return (
-    <div id={`roll-visualizer-${roll.id}`} className={`flex flex-col gap-4 w-full p-6 rounded-3xl border transition-all duration-300 ${(height.includes('full') || height.includes('1') || height.includes('vh')) ? 'flex-grow h-full' : ''} ${manualMode ? 'bg-blue-50/50 border-blue-400 shadow-xl' : 'bg-white border-slate-200 shadow-sm'}`}>
+    <div id={`roll-visualizer-${roll.id}`} className={`flex flex-col gap-4 w-full ${(height.includes('full') || height.includes('1') || height.includes('vh')) ? 'flex-grow h-full' : ''} ${noBorder ? 'p-0 bg-transparent border-0 shadow-none' : 'p-6 rounded-3xl border bg-white border-slate-200 shadow-sm'} ${manualMode && !noBorder ? 'bg-blue-50/50 border-blue-400 shadow-xl' : ''} transition-all duration-300`}>
       <div className={`flex items-center px-2 ${hideTitle ? 'justify-end' : 'justify-between'}`}>
         {!hideTitle && (
           <div className="flex items-center gap-4">
@@ -205,7 +207,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
       {isExpanded && (
         <div 
           ref={containerRef}
-          className={`w-full ${height} rounded-3xl overflow-auto border-4 relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : 'bg-slate-50 border-white shadow-inner'}`}
+          className={`w-full ${height} ${noBorder ? 'border border-slate-200 rounded-2xl shadow-none' : 'border-4 border-white shadow-inner rounded-3xl'} overflow-auto relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : 'bg-slate-50'}`}
         onMouseMove={handleMouseMove}
         onClick={handleClick}
         onMouseLeave={() => { setMousePos(null); setIsValidPos(false); }}
@@ -216,7 +218,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
             width={(viewWidth + RULER_SIZE) * zoom} 
             height={(viewHeight + RULER_SIZE + 40) * zoom} 
             viewBox={`0 0 ${viewWidth + RULER_SIZE} ${viewHeight + RULER_SIZE + 40}`}
-            className="absolute top-0 left-0"
+            className="absolute top-0 left-0 roll-layout-svg"
           >
             <defs>
               <pattern id="suggested-pattern-auto" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
