@@ -244,7 +244,8 @@ async function initializeDatabase() {
         y NUMERIC NOT NULL,
         status VARCHAR(50) NOT NULL,
         color VARCHAR(50),
-        is_inventory_cut BOOLEAN DEFAULT FALSE
+        is_inventory_cut BOOLEAN DEFAULT FALSE,
+        so_number VARCHAR(255)
       )
     `);
 
@@ -257,6 +258,13 @@ async function initializeDatabase() {
       await pool.query(`UPDATE rolls SET is_reuse = TRUE WHERE id LIKE 'REUSE-%' AND is_reuse = FALSE`);
     } catch (alterErr) {
       console.warn('Failed to add columns to rolls table:', alterErr);
+    }
+
+    // Schema alterations for cuts table
+    try {
+      await pool.query(`ALTER TABLE cuts ADD COLUMN IF NOT EXISTS so_number VARCHAR(255)`);
+    } catch (alterErr) {
+      console.warn('Failed to add so_number column to cuts table:', alterErr);
     }
 
     // Schema alterations for material type reorder levels
@@ -682,14 +690,14 @@ async function smartCutForQuotation(quotationId: string, clientName: string): Pr
     const color = COLORS[alloc.itemIndex % COLORS.length];
 
     await pool.query(
-      `INSERT INTO cuts (id, roll_id, order_id, customer_name, width, length, x, y, status, color, is_inventory_cut)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO cuts (id, roll_id, order_id, customer_name, width, length, x, y, status, color, is_inventory_cut, so_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        ON CONFLICT (id) DO NOTHING`,
       [
         cutId, alloc.rollId, quotationId, clientName,
         alloc.widthM, alloc.lengthM,
         alloc.x, alloc.y,
-        'planned', color, false
+        'planned', color, false, null
       ]
     );
 
@@ -1448,7 +1456,8 @@ app.get('/api/rolls', async (req, res) => {
           y: parseFloat(c.y),
           status: c.status,
           color: c.color,
-          isInventoryCut: c.is_inventory_cut
+          isInventoryCut: c.is_inventory_cut,
+          soNumber: c.so_number || null
         }))
     }));
     res.json(rolls);
@@ -1623,15 +1632,15 @@ app.delete('/api/rolls/:id', async (req, res) => {
 });
 
 app.post('/api/rolls/:rollId/cuts', async (req, res) => {
-  const { id, orderId, customerName, width, length, x, y, status, color, isInventoryCut } = req.body;
+  const { id, orderId, customerName, width, length, x, y, status, color, isInventoryCut, soNumber } = req.body;
   const rollId = req.params.rollId;
   try {
     await pool.query(
-      `INSERT INTO cuts (id, roll_id, order_id, customer_name, width, length, x, y, status, color, is_inventory_cut) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [id, rollId, orderId, customerName, width, length, x, y, status, color, isInventoryCut || false]
+      `INSERT INTO cuts (id, roll_id, order_id, customer_name, width, length, x, y, status, color, is_inventory_cut, so_number) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [id, rollId, orderId, customerName, width, length, x, y, status, color, isInventoryCut || false, soNumber || null]
     );
-    res.json({ id, orderId, customerName, width, length, x, y, status, color, isInventoryCut });
+    res.json({ id, orderId, customerName, width, length, x, y, status, color, isInventoryCut, soNumber });
   } catch (err) {
     console.error('Failed to save cut', err);
     res.status(500).json({ error: 'Failed to save cut' });

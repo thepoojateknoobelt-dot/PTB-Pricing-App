@@ -132,7 +132,13 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   // Only label every 1m to avoid overlap
   const widthLabels = Array.from({ length: Math.floor(roll.fullWidth) + 1 }, (_, i) => i);
 
-  const formatVal = (m: number) => (m * conv).toFixed(unit === 'm' ? 1 : 0);
+  const formatVal = (m: number) => {
+    const val = m * conv;
+    if (unit === 'm' || unit === 'ft' || unit === 'in') {
+      return Number(val.toFixed(2)).toString();
+    }
+    return Number(val.toFixed(1)).toString();
+  };
 
   const isSuggestedValid = suggestedPlacement 
     ? isSpaceAvailable(roll, suggestedPlacement.x, suggestedPlacement.y, suggestedPlacement.width, suggestedPlacement.length)
@@ -280,7 +286,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                   }} 
                   className={onSelectCut ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}
                 >
-                  <title>{`Client: ${cut.customerName}\nSize: ${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}${onSelectCut ? '\nClick to delete cut' : ''}`}</title>
+                  <title>{`Client: ${cut.customerName}${cut.soNumber ? `\nS.O. No: ${cut.soNumber}` : ''}\nSize: ${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}${onSelectCut ? '\nClick to delete cut' : ''}`}</title>
                   <rect 
                     x={cut.x * SCALE} 
                     y={cut.y * SCALE} 
@@ -301,12 +307,28 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                     fontWeight="black" 
                     fill="white"
                   >
-                    <tspan x={(cut.x + cut.length / 2) * SCALE} dy="-5">
-                      {cut.isInventoryCut ? 'REUSE' : cut.customerName.substring(0, 12)}
-                    </tspan>
-                    <tspan x={(cut.x + cut.length / 2) * SCALE} dy="13" fontSize="8" fontWeight="black" fill="rgba(255, 255, 255, 0.85)">
-                      {`${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}`}
-                    </tspan>
+                    {!cut.soNumber ? (
+                      <>
+                        <tspan x={(cut.x + cut.length / 2) * SCALE} dy="-5">
+                          {cut.isInventoryCut ? 'REUSE' : cut.customerName.substring(0, 12)}
+                        </tspan>
+                        <tspan x={(cut.x + cut.length / 2) * SCALE} dy="13" fontSize="8" fontWeight="black" fill="rgba(255, 255, 255, 0.85)">
+                          {`${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}`}
+                        </tspan>
+                      </>
+                    ) : (
+                      <>
+                        <tspan x={(cut.x + cut.length / 2) * SCALE} dy="-10">
+                          {cut.isInventoryCut ? 'REUSE' : cut.customerName.substring(0, 12)}
+                        </tspan>
+                        <tspan x={(cut.x + cut.length / 2) * SCALE} dy="11" fontSize="8" fontWeight="black" fill="rgba(255, 255, 255, 0.85)">
+                          {cut.soNumber}
+                        </tspan>
+                        <tspan x={(cut.x + cut.length / 2) * SCALE} dy="11" fontSize="7.5" fontWeight="bold" fill="rgba(255, 255, 255, 0.75)">
+                          {`${formatVal(cut.length)}${unit} x ${formatVal(cut.width)}${unit}`}
+                        </tspan>
+                      </>
+                    )}
                   </text>
                 </g>
               ))}

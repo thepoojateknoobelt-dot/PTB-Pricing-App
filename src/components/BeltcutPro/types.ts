@@ -11,6 +11,7 @@ export interface Cut {
   status: 'planned' | 'completed' | 'scrap';
   color?: string;
   isInventoryCut?: boolean;
+  soNumber?: string;
 }
 
 export interface Roll {
@@ -37,6 +38,7 @@ export interface Order {
   materialType: string;
   date: string;
   isInventoryCut?: boolean;
+  soNumber?: string;
 }
 
 export interface OptimizationCandidate {

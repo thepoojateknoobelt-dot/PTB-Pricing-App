@@ -794,7 +794,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     quantity: 1,
     materialType: MATERIAL_TYPES[0],
     date: new Date().toISOString(),
-    isInventoryCut: false
+    isInventoryCut: false,
+    soNumber: ''
   });
 
   useEffect(() => {
@@ -912,7 +913,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
             quantity: 1,
             materialType: selectedOrder.materialType,
             date: new Date().toISOString(),
-            isInventoryCut: false
+            isInventoryCut: false,
+            soNumber: ''
           });
           setSelectedOrderNumber('');
           setOrderSearchQuery('');
@@ -923,22 +925,13 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     }
   }, [selectedOrderData, completedItemIndices, cutPurpose, justCutExecuted]);
 
-  // Cut rotation & orientation state
-  const [cutOrientation, setCutOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
-
-  // Compute active dimensions respecting orientation swap
+  // Compute active dimensions (strictly horizontal: length along X-axis, width along Y-axis)
   const activeOrderDimensions = useMemo(() => {
-    if (cutOrientation === 'vertical') {
-      return {
-        width: selectedOrder.requiredLength,
-        length: selectedOrder.requiredWidth
-      };
-    }
     return {
       width: selectedOrder.requiredWidth,
       length: selectedOrder.requiredLength
     };
-  }, [selectedOrder.requiredWidth, selectedOrder.requiredLength, cutOrientation]);
+  }, [selectedOrder.requiredWidth, selectedOrder.requiredLength]);
 
   const [optimizationResults, setOptimizationResults] = useState<OptimizationCandidate[]>([]);
   const [currentOptionIndex, setCurrentOptionIndex] = useState(0);
@@ -1039,15 +1032,17 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   }, [cuttingMode, manualPlacement, rolls, activeOrderDimensions]);
 
   const visibleRolls = useMemo(() => {
-    let active = rolls.filter(r =>
-      r.materialType === selectedOrder.materialType &&
-      r.status !== 'refused' &&
-      r.remainingSqm > 0.01
-    );
+    // In inventory/scrap mode with an explicitly selected roll,
+    // bypass materialType filter so the roll always shows on first click
+    const isTargetedMode = (cutPurpose === 'scrap' || cutPurpose === 'inventory') && !!cuttingSelectedRollId;
 
-    if ((cutPurpose === 'scrap' || cutPurpose === 'inventory') && cuttingSelectedRollId) {
-      active = active.filter(r => r.id === cuttingSelectedRollId);
-    }
+    let active = rolls.filter(r => {
+      if (r.status === 'refused') return false;
+      if (r.remainingSqm <= 0.01) return false;
+      // When a specific target roll is selected, show it regardless of material type
+      if (isTargetedMode) return r.id === cuttingSelectedRollId;
+      return r.materialType === selectedOrder.materialType;
+    });
 
     let list = [...active];
     list.sort((a, b) => {
@@ -1091,6 +1086,20 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       setExpandedRollId(null);
     }
   }, [visibleRolls, expandedRollId]);
+
+  // When a target roll is explicitly selected in inventory/scrap mode,
+  // immediately expand and scroll to it (first-click fix)
+  useEffect(() => {
+    if (cuttingSelectedRollId && (cutPurpose === 'inventory' || cutPurpose === 'scrap')) {
+      setExpandedRollId(cuttingSelectedRollId);
+      setTimeout(() => {
+        const element = document.getElementById(`roll-visualizer-${cuttingSelectedRollId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 150);
+    }
+  }, [cuttingSelectedRollId, cutPurpose]);
 
   const stats = useMemo(() => {
     const activeRollsList = rolls.filter(r => r.status !== 'refused');
@@ -1164,6 +1173,14 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   const toMeters = (val: number) => val / CONVERSIONS[currentUnit];
   const fromMeters = (val: number) => val * CONVERSIONS[currentUnit];
 
+  const formatCutDim = (valInMeters: number): string => {
+    const converted = fromMeters(valInMeters);
+    if (currentUnit === 'm' || currentUnit === 'ft' || currentUnit === 'in') {
+      return Number(converted.toFixed(2)).toString();
+    }
+    return Number(converted.toFixed(1)).toString();
+  };
+
   const formatDisplayValue = (val: number): string => {
     if (val === 0) return '0';
     return val.toLocaleString(undefined, {
@@ -1173,7 +1190,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   };
 
   const handleCalculateBestFit = () => {
-    if (!selectedOrder.isInventoryCut && cutPurpose !== 'scrap' && !selectedOrder.customerName.trim()) {
+    const isInventory = cutPurpose === 'inventory' || cutPurpose === 'scrap' || !!selectedOrder.isInventoryCut;
+    if (!isInventory && !selectedOrder.customerName.trim()) {
       alert("Party Name is compulsory for client orders.");
       return;
     }
@@ -1207,10 +1225,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
 
   const handleExecuteCutWithPlacement = async (result: any, targetRoll: Roll) => {
     try {
-      const isInventory = !!selectedOrder.isInventoryCut;
+      const isInventory = cutPurpose === 'inventory' || cutPurpose === 'scrap' || !!selectedOrder.isInventoryCut;
       const clientName = (selectedOrder.customerName || '').trim();
 
-      if (!isInventory && cutPurpose !== 'scrap' && !clientName) {
+      if (!isInventory && !clientName) {
         alert("Party Name is compulsory for Client Cuts. Please enter a Customer Name in the left panel.");
         return;
       }
@@ -1254,9 +1272,9 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       return;
     }
 
-    const isInventory = !!selectedOrder.isInventoryCut;
+    const isInventory = cutPurpose === 'inventory' || cutPurpose === 'scrap' || !!selectedOrder.isInventoryCut;
     const clientName = (selectedOrder.customerName || '').trim();
-    if (!isInventory && cutPurpose !== 'scrap' && !clientName) {
+    if (!isInventory && !clientName) {
       alert("Party Name is compulsory for Client Cuts. Please enter a Customer Name in the left panel.");
       return;
     }
@@ -1341,7 +1359,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
           y: placement.y,
           status: 'completed',
           color: cutColor,
-          isInventoryCut: isInventory
+          isInventoryCut: isInventory,
+          soNumber: selectedOrder.soNumber || null
         };
 
         const liveRoll = activeRolls.find(r => r.id === rollId);
@@ -1390,13 +1409,14 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       } else {
         setSelectedOrder({
           id: `O-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          customerName: '',
+          customerName: cutPurpose === 'inventory' ? 'REUSE STOCK' : (cutPurpose === 'scrap' ? 'SCRAP' : ''),
           requiredWidth: 0,
           requiredLength: 0,
           quantity: 1,
           materialType: selectedOrder.materialType,
           date: new Date().toISOString(),
-          isInventoryCut: false
+          isInventoryCut: cutPurpose === 'inventory' || cutPurpose === 'scrap',
+          soNumber: ''
         });
         setSelectedOrderNumber('');
         setOrderSearchQuery('');
@@ -1419,17 +1439,19 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     const { rollId, placement } = currentResultObj;
     const cutDate = new Date().toISOString();
 
+    const isInventory = cutPurpose === 'inventory' || cutPurpose === 'scrap' || !!selectedOrder.isInventoryCut;
     const newCut: Cut = {
       id: `C-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
       orderId: selectedOrder.id,
-      customerName: selectedOrder.isInventoryCut ? 'REUSE STOCK' : (cutPurpose === 'scrap' ? 'SCRAP WASTE' : (selectedOrder.customerName || '').trim()),
+      customerName: (cutPurpose === 'scrap') ? 'SCRAP WASTE' : (isInventory ? 'REUSE STOCK' : (selectedOrder.customerName || '').trim()),
       width: activeOrderDimensions.width,
       length: activeOrderDimensions.length,
       x: placement.x,
       y: placement.y,
       status: 'completed',
-      color: selectedOrder.isInventoryCut ? '#1e293b' : (cutPurpose === 'scrap' ? '#ef4444' : CUT_COLORS[Math.floor(Math.random() * CUT_COLORS.length)]),
-      isInventoryCut: selectedOrder.isInventoryCut
+      color: (cutPurpose === 'scrap') ? '#ef4444' : (isInventory ? '#1e293b' : CUT_COLORS[Math.floor(Math.random() * CUT_COLORS.length)]),
+      isInventoryCut: isInventory,
+      soNumber: selectedOrder.soNumber || null
     };
 
     const currentAction = actionOverride || leftoverAction;
@@ -1485,7 +1507,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       }
 
       // 4. If it's an inventory cut, create a new roll in stock representing this cut
-      if (selectedOrder.isInventoryCut && cutPurpose !== 'scrap') {
+      if (isInventory && cutPurpose !== 'scrap') {
         const newInvRollId = `REUSE-${rollId}-${newCut.id}`;
         const newInvRoll = {
           id: newInvRollId,
@@ -1565,13 +1587,14 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       } else {
         setSelectedOrder({
           id: `O-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          customerName: '',
+          customerName: cutPurpose === 'inventory' ? 'REUSE STOCK' : (cutPurpose === 'scrap' ? 'SCRAP' : ''),
           requiredWidth: 0,
           requiredLength: 0,
           quantity: 1,
           materialType: selectedOrder.materialType,
           date: new Date().toISOString(),
-          isInventoryCut: false
+          isInventoryCut: cutPurpose === 'inventory' || cutPurpose === 'scrap',
+          soNumber: ''
         });
         setSelectedOrderNumber('');
         setOrderSearchQuery('');
@@ -1862,7 +1885,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       return `
         <tr>
           <td>#${idx + 1}</td>
-          <td>${isInventoryCutName(cut.customerName) ? 'REUSE STOCK' : (cut.customerName || 'N/A')}</td>
+          <td>${isInventoryCutName(cut.customerName) ? 'REUSE STOCK' : (cut.customerName || 'N/A')}${cut.soNumber ? ` (${cut.soNumber})` : ''}</td>
           <td>${cut.id.substring(0, 12)}</td>
           <td>${lenVal}${currentUnit} x ${widVal}${currentUnit}</td>
           <td>${cut.isInventoryCut ? 'REUSE' : 'CLIENT'}</td>
@@ -2086,7 +2109,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       }
       return [
         idx + 1,
-        `"${isInventoryCutName(cut.customerName) ? 'REUSE STOCK' : (cut.customerName || '')}"`,
+        `"${isInventoryCutName(cut.customerName) ? 'REUSE STOCK' : (cut.customerName || '')}${cut.soNumber ? ` (${cut.soNumber})` : ''}"`,
         cut.id,
         fromMeters(cut.length).toFixed(2),
         fromMeters(cut.width).toFixed(2),
@@ -2125,7 +2148,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
         }
       }
       return [
-        allOrdersMap[item.cut.orderId] || 'Manual',
+        allOrdersMap[item.cut.orderId] || (item.cut.soNumber ? `Manual (${item.cut.soNumber})` : 'Manual'),
         item.cut.id,
         fromMeters(item.cut.length).toFixed(2),
         fromMeters(item.cut.width).toFixed(2),
@@ -2173,7 +2196,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       const widVal = fromMeters(item.cut.width).toFixed(1);
       return `
         <tr>
-          <td>${allOrdersMap[item.cut.orderId] || 'Manual'}</td>
+          <td>${allOrdersMap[item.cut.orderId] || (item.cut.soNumber ? `Manual (${item.cut.soNumber})` : 'Manual')}</td>
           <td>${item.cut.id.substring(0, 12)}</td>
           <td>${lenVal}${currentUnit} x ${widVal}${currentUnit}</td>
           <td>${item.rollMaterial || 'N/A'}</td>
@@ -2565,7 +2588,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                   setTableSearchQuery('');
                   if (tab.id === 'cutting') {
                     setCutPurpose('order');
-                    setSelectedOrder(prev => ({ ...prev, isInventoryCut: false, customerName: '' }));
+                    setSelectedOrder(prev => ({ ...prev, isInventoryCut: false, customerName: '', soNumber: '' }));
                     setSelectedOrderNumber('');
                     setOrderSearchQuery('');
                   }
@@ -2739,16 +2762,16 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                 setCuttingSelectedRollId('');
                                 setRollSearchQuery('');
                                 if (purpose === 'manual') {
-                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: false, customerName: '', quantity: 1 }));
+                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: false, customerName: '', soNumber: '', quantity: 1 }));
                                   setSelectedOrderNumber('');
                                 } else if (purpose === 'order') {
-                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: false, customerName: '', quantity: 1 }));
+                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: false, customerName: '', soNumber: '', quantity: 1 }));
                                   setSelectedOrderNumber('');
                                 } else if (purpose === 'scrap') {
-                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: true, customerName: 'SCRAP', quantity: 1 }));
+                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: true, customerName: 'SCRAP', soNumber: '', quantity: 1 }));
                                   setSelectedOrderNumber('');
                                 } else if (purpose === 'inventory') {
-                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: true, customerName: 'REUSE STOCK', quantity: 1 }));
+                                  setSelectedOrder(prev => ({ ...prev, isInventoryCut: true, customerName: 'REUSE STOCK', soNumber: '', quantity: 1 }));
                                   setSelectedOrderNumber('');
                                 }
                               }}
@@ -2850,7 +2873,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                             customerName: (o.clientName || '').trim(),
                                             requiredWidth: firstWidth,
                                             requiredLength: firstLength,
-                                            materialType: matchMaterialType(firstItem.beltType)
+                                            materialType: matchMaterialType(firstItem.beltType),
+                                            soNumber: `#${o.orderNumber}`
                                           }));
                                         } else {
                                           setSelectedItemIndex(null);
@@ -2860,7 +2884,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                             customerName: (o.clientName || '').trim(),
                                             requiredWidth: wMtr,
                                             requiredLength: lMtr,
-                                            materialType: matchMaterialType(o.beltType)
+                                            materialType: matchMaterialType(o.beltType),
+                                            soNumber: `#${o.orderNumber}`
                                           }));
                                         }
                                         toast.success(`Order #${o.orderNumber} loaded: ${(o.clientName || '').trim()}`);
@@ -2895,52 +2920,70 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                         <>
                           {/* Display Party Name for client purposes (manual & order) */}
                           {(cutPurpose === 'manual' || cutPurpose === 'order') && (
-                            <div className="space-y-1 relative">
-                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
-                                <span className="flex items-center gap-1"><User size={11} /> Party Name <span className="text-red-500">*</span></span>
-                                {isExactPartyMatch && (
-                                  <span className="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded uppercase animate-pulse">
-                                    ✓ Registered
-                                  </span>
-                                )}
-                              </label>
-                              <input
-                                type="text"
-                                value={selectedOrder.customerName}
-                                disabled={cutPurpose === 'order'} // read-only if order is loaded
-                                onChange={(e) => {
-                                  setSelectedOrder({ ...selectedOrder, customerName: e.target.value });
-                                  setShowPartySuggestions(true);
-                                }}
-                                onFocus={() => { if (cutPurpose === 'manual') setShowPartySuggestions(true); }}
-                                onBlur={() => {
-                                  setTimeout(() => setShowPartySuggestions(false), 200);
-                                }}
-                                placeholder="Enter Customer Name"
-                                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg focus:border-zinc-900 focus:outline-none font-bold text-xs disabled:bg-slate-50 disabled:text-slate-600 disabled:cursor-not-allowed"
-                              />
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1 relative">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
+                                  <span className="flex items-center gap-1"><User size={11} /> Party Name <span className="text-red-500">*</span></span>
+                                  {isExactPartyMatch && (
+                                    <span className="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-1 py-0.2 rounded uppercase animate-pulse">
+                                      ✓ Registered
+                                    </span>
+                                  )}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={selectedOrder.customerName}
+                                  disabled={cutPurpose === 'order'} // read-only if order is loaded
+                                  onChange={(e) => {
+                                    setSelectedOrder({ ...selectedOrder, customerName: e.target.value });
+                                    setShowPartySuggestions(true);
+                                  }}
+                                  onFocus={() => { if (cutPurpose === 'manual') setShowPartySuggestions(true); }}
+                                  onBlur={() => {
+                                    setTimeout(() => setShowPartySuggestions(false), 200);
+                                  }}
+                                  placeholder="Customer Name"
+                                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg focus:border-zinc-900 focus:outline-none font-bold text-xs disabled:bg-slate-50 disabled:text-slate-650 disabled:cursor-not-allowed"
+                                />
 
-                              {/* Auto-complete Suggestions Dropdown */}
-                              {showPartySuggestions && partySuggestions.length > 0 && (
-                                <div className="absolute left-0 right-0 top-[100%] mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-36 overflow-y-auto divide-y divide-slate-100 animate-in fade-in duration-100">
-                                  {partySuggestions.map((name) => (
-                                    <button
-                                      key={name}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedOrder({ ...selectedOrder, customerName: name });
-                                        setShowPartySuggestions(false);
-                                      }}
-                                      className="w-full text-left px-2.5 py-1.5 hover:bg-slate-50 font-bold text-xs text-slate-800 transition-colors flex justify-between items-center"
-                                    >
-                                      <span>{name}</span>
-                                      <span className="text-[8px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded uppercase">
-                                        Existing Party
-                                      </span>
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
+                                {/* Auto-complete Suggestions Dropdown */}
+                                {showPartySuggestions && partySuggestions.length > 0 && (
+                                  <div className="absolute left-0 right-0 top-[100%] mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-36 overflow-y-auto divide-y divide-slate-100 animate-in fade-in duration-100">
+                                    {partySuggestions.map((name) => (
+                                      <button
+                                        key={name}
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedOrder({ ...selectedOrder, customerName: name });
+                                          setShowPartySuggestions(false);
+                                        }}
+                                        className="w-full text-left px-2.5 py-1.5 hover:bg-slate-50 font-bold text-xs text-slate-800 transition-colors flex justify-between items-center"
+                                      >
+                                        <span>{name}</span>
+                                        <span className="text-[8px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded uppercase">
+                                          Existing Party
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="space-y-1">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                                  <span>S.O. No.</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  value={selectedOrder.soNumber || ''}
+                                  disabled={cutPurpose === 'order'} // read-only if order is loaded
+                                  onChange={(e) => {
+                                    setSelectedOrder({ ...selectedOrder, soNumber: e.target.value });
+                                  }}
+                                  placeholder="S.O. Number"
+                                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg focus:border-zinc-900 focus:outline-none font-bold text-xs disabled:bg-slate-50 disabled:text-slate-650 disabled:cursor-not-allowed"
+                                />
+                              </div>
                             </div>
                           )}
 
@@ -3134,6 +3177,14 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                             setRollSearchQuery(`${r.id} (${fromMeters(r.fullLength).toFixed(1)}${currentUnit} × ${fromMeters(r.fullWidth).toFixed(1)}${currentUnit})`);
                                             // Sync selectedOrder's materialType with the selected roll
                                             setSelectedOrder(prev => ({ ...prev, materialType: r.materialType }));
+                                            // Immediately expand this roll in the visualizer (first-click fix)
+                                            setExpandedRollId(r.id);
+                                            setTimeout(() => {
+                                              const element = document.getElementById(`roll-visualizer-${r.id}`);
+                                              if (element) {
+                                                element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                              }
+                                            }, 100);
                                             setShowRollDropdown(false);
                                             toast.success(`Target roll selected: ${r.id}`);
                                           }}
@@ -3178,45 +3229,6 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             <div className="space-y-1">
                               <div className="flex items-center justify-between w-full">
                                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                  Width ({currentUnit})
-                                </label>
-                                {cutPurpose === 'order' && selectedOrderNumber && (
-                                  isOrderDimensionsUnlocked ? (
-                                    <span className="text-[7.5px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-1 py-0.2 rounded uppercase flex items-center gap-0.5">🔓 Unlocked</span>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (window.confirm("Are you sure you want to unlock and edit these dimensions?")) {
-                                          setIsOrderDimensionsUnlocked(true);
-                                        }
-                                      }}
-                                      className="text-[7.5px] font-black text-orange-600 bg-orange-50 hover:bg-orange-100 border border-orange-200 px-1.5 py-0.5 rounded uppercase flex items-center gap-0.5 transition cursor-pointer"
-                                    >
-                                      🔒 Locked
-                                    </button>
-                                  )
-                                )}
-                              </div>
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={selectedOrder.requiredWidth === 0 ? '' : fromMeters(selectedOrder.requiredWidth)}
-                                onChange={(e) => {
-                                  if (cutPurpose === 'order' && selectedOrderNumber && !isOrderDimensionsUnlocked) return;
-                                  const val = parseFloat(e.target.value);
-                                  setSelectedOrder({ ...selectedOrder, requiredWidth: isNaN(val) ? 0 : toMeters(val) });
-                                }}
-                                readOnly={cutPurpose === 'order' && !!selectedOrderNumber && !isOrderDimensionsUnlocked}
-                                className={`w-full px-2.5 py-1 border rounded-lg focus:outline-none font-bold text-xs ${cutPurpose === 'order' && selectedOrderNumber && !isOrderDimensionsUnlocked
-                                  ? 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
-                                  : 'border-slate-200 focus:border-zinc-950 bg-white'
-                                  }`}
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <div className="flex items-center justify-between w-full">
-                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
                                   Length ({currentUnit})
                                 </label>
                                 {cutPurpose === 'order' && selectedOrderNumber && (
@@ -3245,6 +3257,45 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                   if (cutPurpose === 'order' && selectedOrderNumber && !isOrderDimensionsUnlocked) return;
                                   const val = parseFloat(e.target.value);
                                   setSelectedOrder({ ...selectedOrder, requiredLength: isNaN(val) ? 0 : toMeters(val) });
+                                }}
+                                readOnly={cutPurpose === 'order' && !!selectedOrderNumber && !isOrderDimensionsUnlocked}
+                                className={`w-full px-2.5 py-1 border rounded-lg focus:outline-none font-bold text-xs ${cutPurpose === 'order' && selectedOrderNumber && !isOrderDimensionsUnlocked
+                                  ? 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
+                                  : 'border-slate-200 focus:border-zinc-950 bg-white'
+                                  }`}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between w-full">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                  Width ({currentUnit})
+                                </label>
+                                {cutPurpose === 'order' && selectedOrderNumber && (
+                                  isOrderDimensionsUnlocked ? (
+                                    <span className="text-[7.5px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-1 py-0.2 rounded uppercase flex items-center gap-0.5">🔓 Unlocked</span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (window.confirm("Are you sure you want to unlock and edit these dimensions?")) {
+                                          setIsOrderDimensionsUnlocked(true);
+                                        }
+                                      }}
+                                      className="text-[7.5px] font-black text-orange-600 bg-orange-50 hover:bg-orange-100 border border-orange-200 px-1.5 py-0.5 rounded uppercase flex items-center gap-0.5 transition cursor-pointer"
+                                    >
+                                      🔒 Locked
+                                    </button>
+                                  )
+                                )}
+                              </div>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={selectedOrder.requiredWidth === 0 ? '' : fromMeters(selectedOrder.requiredWidth)}
+                                onChange={(e) => {
+                                  if (cutPurpose === 'order' && selectedOrderNumber && !isOrderDimensionsUnlocked) return;
+                                  const val = parseFloat(e.target.value);
+                                  setSelectedOrder({ ...selectedOrder, requiredWidth: isNaN(val) ? 0 : toMeters(val) });
                                 }}
                                 readOnly={cutPurpose === 'order' && !!selectedOrderNumber && !isOrderDimensionsUnlocked}
                                 className={`w-full px-2.5 py-1 border rounded-lg focus:outline-none font-bold text-xs ${cutPurpose === 'order' && selectedOrderNumber && !isOrderDimensionsUnlocked
@@ -5205,10 +5256,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                           }
                           return (
                             <tr key={item.cut.id} className="hover:bg-slate-50/50">
-                              <td className="px-5 py-3 text-zinc-950 font-bold">{allOrdersMap[item.cut.orderId] || 'Manual'}</td>
+                              <td className="px-5 py-3 text-zinc-950 font-bold">{allOrdersMap[item.cut.orderId] || (item.cut.soNumber ? `Manual (${item.cut.soNumber})` : 'Manual')}</td>
                               <td className="px-5 py-3 font-mono text-[10px] text-zinc-500">{item.cut.id.substring(0, 12)}</td>
                               <td className="px-5 py-3 text-zinc-950 font-bold">
-                                {fromMeters(item.cut.length).toFixed(1)}{currentUnit} x {fromMeters(item.cut.width).toFixed(1)}{currentUnit}
+                                {formatCutDim(item.cut.length)}{currentUnit} x {formatCutDim(item.cut.width)}{currentUnit}
                               </td>
                               <td className="px-5 py-3 text-slate-500">{item.rollMaterial}</td>
                               <td className="px-5 py-3">
@@ -5346,7 +5397,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                               </td>
                               <td className="px-5 py-3 font-mono text-[10px] text-zinc-500">{cut.id.substring(0, 12)}</td>
                               <td className="px-5 py-3 text-zinc-950 font-bold">
-                                {fromMeters(cut.length).toFixed(1)}{currentUnit} x {fromMeters(cut.width).toFixed(1)}{currentUnit}
+                                {formatCutDim(cut.length)}{currentUnit} x {formatCutDim(cut.width)}{currentUnit}
                               </td>
                               <td className="px-5 py-3">
                                 {cut.isInventoryCut ? (
@@ -5864,8 +5915,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                               dateStr = `${d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
                             }
                           }
-                          const lenCut = fromMeters(cut.length).toFixed(1);
-                          const widCut = fromMeters(cut.width).toFixed(1);
+                          const lenCut = formatCutDim(cut.length);
+                          const widCut = formatCutDim(cut.width);
                           return (
                             <div key={cut.id} className="p-3.5 bg-slate-50 border border-slate-150 rounded-2xl flex items-center justify-between hover:bg-slate-100 transition duration-150">
                               <div className="min-w-0 flex-1 pr-2">
