@@ -8,7 +8,6 @@ import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import pg from 'pg';
-import http from 'http';
 
 const { Pool } = pg;
 
@@ -2554,43 +2553,19 @@ app.post('/api/audit-logs', authenticate, async (req: any, res) => {
   }
 });
 
-// PresencePro Proxy — forwards /presence-proxy/* to localhost:3001
-// This avoids Chrome's Private Network Access block when embedding as iframe
-app.use('/presence-proxy', (req: any, res: any) => {
-  const target = `http://localhost:3001${req.url}`;
-  const options = {
-    hostname: 'localhost',
-    port: 3001,
-    path: req.url === '/' ? '/' : req.url,
-    method: req.method,
-    headers: {
-      ...req.headers,
-      host: 'localhost:3001',
-    },
-  };
+// ─── PresencePro Static Serving ─────────────────────────────────────────────
+// Serves the pre-built PresencePro SPA from /presence on the SAME port (3000).
+// No separate port, no proxy, no Chrome Private Network Access issues.
+const presenceDistPath = path.join(process.cwd(), 'presence-dist');
 
-  const proxyReq = http.request(options, (proxyRes) => {
-    // Forward status and headers
-    res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
-    proxyRes.pipe(res, { end: true });
-  });
+// Serve static assets (JS, CSS, images) under /presence
+app.use('/presence', express.static(presenceDistPath));
 
-  proxyReq.on('error', (err) => {
-    console.error('[presence-proxy] Error:', err.message);
-    res.status(502).send(`
-      <html><body style="font-family:sans-serif;text-align:center;padding:60px;">
-        <h2 style="color:#ef4444;">PresencePro Unavailable</h2>
-        <p>The PresencePro service is not running on port 3001.</p>
-        <p style="color:#64748b;font-size:13px;">Start it with: npm run dev in the Ptb - PresencePro directory</p>
-      </body></html>
-    `);
-  });
-
-  if (req.body) {
-    proxyReq.write(JSON.stringify(req.body));
-  }
-  req.pipe(proxyReq, { end: true });
+// SPA fallback: any /presence/* route returns index.html for client-side routing
+app.get(['/presence', '/presence/*'], (_req, res) => {
+  res.sendFile(path.join(presenceDistPath, 'index.html'));
 });
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Vite Setup
 async function startServer() {
@@ -2600,8 +2575,8 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
-    
-    // Serve index.html transformed by Vite for all non-api routes
+
+    // Serve index.html transformed by Vite for all non-api, non-presence routes
     app.get('*', async (req, res, next) => {
       const url = req.originalUrl;
       try {
@@ -2627,6 +2602,7 @@ async function startServer() {
   if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on http://localhost:${PORT}`);
+      console.log(`PresencePro available at http://localhost:${PORT}/presence`);
     });
   }
 }

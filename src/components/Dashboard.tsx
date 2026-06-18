@@ -407,7 +407,7 @@ export const Dashboard = () => {
   if (activeModule === 'presence') {
     return (
       <div className="min-h-screen bg-zinc-50 overflow-hidden">
-        <PresenceProPortal url="/presence-proxy" onClose={() => handleModuleChange('master')} />
+        <PresenceProPortal url="/presence" onClose={() => handleModuleChange('master')} />
       </div>
     );
   }
