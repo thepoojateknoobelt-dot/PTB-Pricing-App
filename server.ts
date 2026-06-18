@@ -1002,6 +1002,13 @@ app.post('/api/auth/login', async (req, res) => {
   const loginIdentifier = username || (email ? email.split('@')[0] : '');
   console.log('Login request received for:', loginIdentifier);
 
+  const isSecure = !!(req.secure || req.headers['x-forwarded-proto'] === 'https');
+  const cookieOptions: any = {
+    httpOnly: true,
+    sameSite: isSecure ? 'none' : 'lax',
+    secure: isSecure
+  };
+
   // Direct bypass check for admin/admin
   if ((loginIdentifier === 'admin' || loginIdentifier === 'admin_user') && password === 'admin') {
     console.log('Login bypassed for admin/admin');
@@ -1013,7 +1020,7 @@ app.post('/api/auth/login', async (req, res) => {
       permission: 'write',
       allowedPages: ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production', 'nesting_dashboard', 'nesting_cutting', 'nesting_rolls_map', 'nesting_details', 'nesting_stock', 'nesting_production', 'nesting_scrub']
     }, JWT_SECRET);
-    return res.cookie('token', token, { httpOnly: true, sameSite: 'none', secure: true }).json({ 
+    return res.cookie('token', token, cookieOptions).json({ 
       user: { 
         id: 'admin_user', 
         username: 'admin', 
@@ -1067,7 +1074,7 @@ app.post('/api/auth/login', async (req, res) => {
       permission: user.permission || 'write',
       allowedPages: userPages
     }, JWT_SECRET);
-    res.cookie('token', token, { httpOnly: true, sameSite: 'none', secure: true }).json({ 
+    res.cookie('token', token, cookieOptions).json({ 
       user: { 
         id: user.id, 
         username: user.username, 
