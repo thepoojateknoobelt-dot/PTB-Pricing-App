@@ -330,6 +330,53 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                       </>
                     )}
                   </text>
+
+                  {/* Width indicator — inside-left of each cut */}
+                  {cut.width * SCALE > 22 && (() => {
+                    // Place INSIDE the cut, 10px from left edge
+                    const cx = cut.x * SCALE + 10;
+                    const topY = cut.y * SCALE + 4;
+                    const botY = (cut.y + cut.width) * SCALE - 4;
+                    const midY = (cut.y + cut.width / 2) * SCALE;
+                    const labelW = 28;
+                    const labelH = 12;
+                    return (
+                      <g style={{ pointerEvents: 'none' }}>
+                        {/* Top segment of vertical line */}
+                        <line x1={cx} y1={topY} x2={cx} y2={midY - labelH / 2 - 2} stroke="rgba(255,255,255,0.85)" strokeWidth="1.5" />
+                        {/* Bottom segment of vertical line */}
+                        <line x1={cx} y1={midY + labelH / 2 + 2} x2={cx} y2={botY} stroke="rgba(255,255,255,0.85)" strokeWidth="1.5" />
+                        {/* Top cap */}
+                        <line x1={cx - 4} y1={topY} x2={cx + 4} y2={topY} stroke="rgba(255,255,255,0.85)" strokeWidth="1.5" />
+                        {/* Bottom cap */}
+                        <line x1={cx - 4} y1={botY} x2={cx + 4} y2={botY} stroke="rgba(255,255,255,0.85)" strokeWidth="1.5" />
+                        {/* Pill background for label */}
+                        <rect
+                          x={cx - labelH / 2}
+                          y={midY - labelW / 2}
+                          width={labelH}
+                          height={labelW}
+                          rx={5}
+                          fill="rgba(0,0,0,0.45)"
+                          transform={`rotate(-90, ${cx}, ${midY})`}
+                        />
+                        {/* Width label rotated 90° */}
+                        <text
+                          x={cx}
+                          y={midY}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontSize="8"
+                          fontWeight="900"
+                          fill="white"
+                          transform={`rotate(-90, ${cx}, ${midY})`}
+                          style={{ letterSpacing: '0.3px' }}
+                        >
+                          {`${formatVal(cut.width)}${unit}`}
+                        </text>
+                      </g>
+                    );
+                  })()}
                 </g>
               ))}
 
