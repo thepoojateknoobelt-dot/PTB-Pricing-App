@@ -1138,6 +1138,32 @@ app.post('/api/departments', authenticate, async (req, res) => {
   }
 });
 
+app.put('/api/departments/:id', authenticate, async (req, res) => {
+  const { id } = req.params;
+  const { name, otBufferEnabled } = req.body;
+  try {
+    await pool.query(
+      'UPDATE departments SET name = $1, ot_buffer_enabled = $2 WHERE id = $3',
+      [name, otBufferEnabled, id]
+    );
+    res.json({ id, name, otBufferEnabled });
+  } catch (err) {
+    console.error('Failed to update department', err);
+    res.status(500).json({ error: 'Failed to update department' });
+  }
+});
+
+app.delete('/api/departments/:id', authenticate, async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM departments WHERE id = $1', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to delete department', err);
+    res.status(500).json({ error: 'Failed to delete department' });
+  }
+});
+
 // HRMS API: Shifts
 app.get('/api/shifts', authenticate, async (req, res) => {
   try {
@@ -1166,6 +1192,32 @@ app.post('/api/shifts', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Failed to add shift', err);
     res.status(500).json({ error: 'Failed to add shift' });
+  }
+});
+
+app.put('/api/shifts/:id', authenticate, async (req, res) => {
+  const { id } = req.params;
+  const { name, checkIn, checkOut, remark } = req.body;
+  try {
+    await pool.query(
+      'UPDATE shifts SET name = $1, check_in = $2, check_out = $3, remark = $4 WHERE id = $5',
+      [name, checkIn, checkOut, remark || null, id]
+    );
+    res.json({ id, name, checkIn, checkOut, remark });
+  } catch (err) {
+    console.error('Failed to update shift', err);
+    res.status(500).json({ error: 'Failed to update shift' });
+  }
+});
+
+app.delete('/api/shifts/:id', authenticate, async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM shifts WHERE id = $1', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to delete shift', err);
+    res.status(500).json({ error: 'Failed to delete shift' });
   }
 });
 
@@ -1297,10 +1349,40 @@ app.post('/api/holidays', authenticate, async (req, res) => {
   }
 });
 
+app.put('/api/holidays/:date/:name', authenticate, async (req, res) => {
+  const { date, name } = req.params;
+  const { dayType, appliesTo, departments, newDate, newName } = req.body;
+  try {
+    const finalDate = newDate || date;
+    const finalName = newName || name;
+    await pool.query(
+      `UPDATE holidays 
+       SET date = $1, name = $2, day_type = $3, applies_to = $4, departments = $5 
+       WHERE date = $6 AND name = $7`,
+      [finalDate, finalName, dayType, appliesTo, JSON.stringify(departments || []), date, name]
+    );
+    res.json({ date: finalDate, name: finalName, dayType, appliesTo, departments });
+  } catch (err) {
+    console.error('Failed to update holiday', err);
+    res.status(500).json({ error: 'Failed to update holiday' });
+  }
+});
+
+app.delete('/api/holidays/:date/:name', authenticate, async (req, res) => {
+  const { date, name } = req.params;
+  try {
+    await pool.query('DELETE FROM holidays WHERE date = $1 AND name = $2', [date, name]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to delete holiday', err);
+    res.status(500).json({ error: 'Failed to delete holiday' });
+  }
+});
+
 // HRMS API: Salary Advances
 app.post('/api/salary-advances', authenticate, async (req, res) => {
-  const { empId, amount, remark, adminEmail } = req.body;
-  const yymm = getYYMM();
+  const { empId, amount, remark, adminEmail, yymm } = req.body;
+  const targetYYMM = yymm || getYYMM();
   const entryId = 'adv-' + Date.now();
   const newEntry = {
     id: entryId,
@@ -1310,12 +1392,12 @@ app.post('/api/salary-advances', authenticate, async (req, res) => {
     createdAt: new Date().toISOString()
   };
   try {
-    const existRes = await pool.query('SELECT * FROM salary_advances WHERE emp_id = $1 AND yymm = $2', [empId, yymm]);
+    const existRes = await pool.query('SELECT * FROM salary_advances WHERE emp_id = $1 AND yymm = $2', [empId, targetYYMM]);
     if (existRes.rowCount === 0) {
       const entries = { [entryId]: newEntry };
       await pool.query(
         'INSERT INTO salary_advances (emp_id, yymm, total_advance, entries) VALUES ($1, $2, $3, $4)',
-        [empId, yymm, amount, JSON.stringify(entries)]
+        [empId, targetYYMM, amount, JSON.stringify(entries)]
       );
     } else {
       const current = existRes.rows[0];
@@ -1324,7 +1406,7 @@ app.post('/api/salary-advances', authenticate, async (req, res) => {
       const newTotal = parseFloat(current.total_advance || 0) + amount;
       await pool.query(
         'UPDATE salary_advances SET total_advance = $1, entries = $2 WHERE emp_id = $3 AND yymm = $4',
-        [newTotal, JSON.stringify(entries), empId, yymm]
+        [newTotal, JSON.stringify(entries), empId, targetYYMM]
       );
     }
     res.json({ success: true });
@@ -1336,17 +1418,43 @@ app.post('/api/salary-advances', authenticate, async (req, res) => {
 
 app.get('/api/salary-advances/:empId', authenticate, async (req, res) => {
   const empId = req.params.empId;
-  const yymm = req.query.yymm as string || getYYMM();
+  const yymm = req.query.yymm as string;
   try {
-    const result = await pool.query('SELECT * FROM salary_advances WHERE emp_id = $1 AND yymm = $2', [empId, yymm]);
-    if (result.rowCount === 0) {
-      return res.json({ totalAdvance: 0, entries: {} });
+    if (yymm === 'ALL') {
+      const result = await pool.query('SELECT * FROM salary_advances WHERE emp_id = $1', [empId]);
+      let grandTotal = 0;
+      const allEntries: Record<string, any> = {};
+      for (const row of result.rows) {
+        const entries = typeof row.entries === 'string' ? JSON.parse(row.entries) : (row.entries || {});
+        Object.entries(entries).forEach(([key, entry]: [string, any]) => {
+          allEntries[key] = {
+            ...entry,
+            yymm: row.yymm
+          };
+        });
+        grandTotal += parseFloat(row.total_advance || 0);
+      }
+      return res.json({ totalAdvance: grandTotal, entries: allEntries });
+    } else {
+      const targetYYMM = yymm || getYYMM();
+      const result = await pool.query('SELECT * FROM salary_advances WHERE emp_id = $1 AND yymm = $2', [empId, targetYYMM]);
+      if (result.rowCount === 0) {
+        return res.json({ totalAdvance: 0, entries: {} });
+      }
+      const row = result.rows[0];
+      const entries = typeof row.entries === 'string' ? JSON.parse(row.entries) : (row.entries || {});
+      const enrichedEntries: Record<string, any> = {};
+      Object.entries(entries).forEach(([key, entry]: [string, any]) => {
+        enrichedEntries[key] = {
+          ...entry,
+          yymm: row.yymm
+        };
+      });
+      res.json({
+        totalAdvance: parseFloat(row.total_advance || 0),
+        entries: enrichedEntries
+      });
     }
-    const row = result.rows[0];
-    res.json({
-      totalAdvance: parseFloat(row.total_advance || 0),
-      entries: typeof row.entries === 'string' ? JSON.parse(row.entries) : (row.entries || {})
-    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to retrieve advances' });
