@@ -12,15 +12,16 @@ import { Reports } from './Reports';
 import { ActivityLog } from './ActivityLog';
 import { Config, Client } from '../types';
 import { cn } from '../lib/utils';
-import { Loader2, Factory, Calculator as CalcIcon, Scissors, ArrowRight, ArrowLeft, Menu } from 'lucide-react';
+import { Loader2, Factory, Calculator as CalcIcon, Scissors, ArrowRight, ArrowLeft, Menu, Clock } from 'lucide-react';
 import { Background3D } from './Background3D';
+import { PresenceProPortal } from './PresenceProPortal';
 
 export const Dashboard = () => {
   const { user } = useAuth();
 
   const getInitialModule = () => {
     const params = new URLSearchParams(window.location.search);
-    return (params.get('module') as 'master' | 'pricing' | 'production') || 'master';
+    return (params.get('module') as 'master' | 'pricing' | 'production' | 'presence') || 'master';
   };
 
   const getInitialTab = () => {
@@ -28,14 +29,14 @@ export const Dashboard = () => {
     return params.get('tab') || 'dashboard';
   };
 
-  const [activeModule, setActiveModule] = useState<'master' | 'pricing' | 'production'>(getInitialModule);
+  const [activeModule, setActiveModule] = useState<'master' | 'pricing' | 'production' | 'presence'>(getInitialModule);
   const [activeTab, setActiveTab] = useState(getInitialTab);
   const [config, setConfig] = useState<Config | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const handleModuleChange = (mod: 'master' | 'pricing' | 'production') => {
+  const handleModuleChange = (mod: 'master' | 'pricing' | 'production' | 'presence') => {
     setActiveModule(mod);
     const params = new URLSearchParams(window.location.search);
     params.set('module', mod);
@@ -64,7 +65,7 @@ export const Dashboard = () => {
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       const params = new URLSearchParams(window.location.search);
-      const mod = (params.get('module') as 'master' | 'pricing' | 'production') || 'master';
+      const mod = (params.get('module') as 'master' | 'pricing' | 'production' | 'presence') || 'master';
       const tab = params.get('tab') || 'dashboard';
       setActiveModule(mod);
       setActiveTab(tab);
@@ -249,7 +250,7 @@ export const Dashboard = () => {
             const hasPricingAccess = user?.role === 'admin' || user?.allowedPages?.some(p => p !== 'production');
             const hasProductionAccess = user?.role === 'admin' || user?.allowedPages?.includes('production');
             return (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 w-full max-w-4xl">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 w-full max-w-5xl">
                 {/* PTB Pricing Portal Button Card */}
                 <button
                   onClick={() => hasPricingAccess && handleModuleChange('pricing')}
@@ -351,6 +352,37 @@ export const Dashboard = () => {
                     {hasProductionAccess && <ArrowRight className="h-4 w-4 group-hover:translate-x-1.5 transition-transform duration-300" />}
                   </div>
                 </button>
+
+                {/* PresencePro Portal Button Card */}
+                <button
+                  onClick={() => handleModuleChange('presence')}
+                  className="group text-left p-6 sm:p-8 glass-panel rounded-3xl transition-all duration-500 ease-out shadow-[0_20px_50px_rgba(0,0,0,0.03)] relative overflow-hidden flex flex-col justify-between min-h-[260px] sm:min-h-[300px] transform hover:shadow-[0_30px_60px_rgba(59,130,246,0.14)] cursor-pointer hover:-translate-y-2"
+                >
+                  {/* Radial Hover Glow */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-[120px] transition-transform duration-500 group-hover:scale-110" />
+                  
+                  <div className="space-y-5 relative z-10 w-full">
+                    <div className="flex justify-between items-start w-full">
+                      <div className="p-4 rounded-2xl w-fit transition-all duration-500 shadow-md bg-blue-500/10 text-blue-600 group-hover:scale-110 group-hover:bg-blue-500 group-hover:text-white shadow-blue-500/5">
+                        <Clock className="h-7 w-7" />
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="text-xl sm:text-2xl font-bold text-zinc-950 group-hover:text-blue-600 transition-colors tracking-tight">
+                        PresencePro
+                      </h3>
+                      <p className="text-zinc-600 text-xs mt-2.5 leading-relaxed font-medium">
+                        Track shift schedules, manage departments, monitor daily attendance logs, and process minute-based precise payroll and salary advances.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex items-center gap-2 text-xs font-black text-zinc-700 group-hover:text-blue-600 transition-colors uppercase tracking-wider relative z-10">
+                    <span>Access PresencePro</span>
+                    <ArrowRight className="h-4 w-4 group-hover:translate-x-1.5 transition-transform duration-300" />
+                  </div>
+                </button>
               </div>
             );
           })()}
@@ -368,6 +400,14 @@ export const Dashboard = () => {
     return (
       <div className="min-h-screen bg-zinc-50 overflow-hidden">
         <BeltcutPro onBackToMaster={() => handleModuleChange('master')} />
+      </div>
+    );
+  }
+
+  if (activeModule === 'presence') {
+    return (
+      <div className="min-h-screen bg-zinc-50 overflow-hidden">
+        <PresenceProPortal url="http://localhost:3001" onClose={() => handleModuleChange('master')} />
       </div>
     );
   }

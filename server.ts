@@ -306,6 +306,124 @@ async function initializeDatabase() {
       console.warn('Failed to initialize custom_material_types table:', typeErr);
     }
 
+    // Create HRMS Departments table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS departments (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        ot_buffer_enabled BOOLEAN DEFAULT FALSE NOT NULL
+      )
+    `);
+
+    // Create HRMS Shifts table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS shifts (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        check_in VARCHAR(50) NOT NULL,
+        check_out VARCHAR(50) NOT NULL,
+        remark TEXT
+      )
+    `);
+
+    // Create HRMS Employees table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS employees (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        phone VARCHAR(50) NOT NULL,
+        department VARCHAR(255) NOT NULL,
+        shift VARCHAR(255) NOT NULL,
+        monthly_salary NUMERIC NOT NULL DEFAULT 0,
+        week_off VARCHAR(50) NOT NULL,
+        status VARCHAR(50) DEFAULT 'active' NOT NULL,
+        image_url TEXT,
+        embedding JSONB,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create HRMS Holidays table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS holidays (
+        date VARCHAR(50) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        day_type VARCHAR(50) NOT NULL,
+        applies_to VARCHAR(50) NOT NULL,
+        departments JSONB NOT NULL,
+        created_by VARCHAR(255) NOT NULL,
+        PRIMARY KEY (date, name)
+      )
+    `);
+
+    // Create HRMS Salary Advances table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS salary_advances (
+        emp_id VARCHAR(255) NOT NULL,
+        yymm VARCHAR(10) NOT NULL,
+        total_advance NUMERIC DEFAULT 0,
+        entries JSONB DEFAULT '{}'::jsonb,
+        PRIMARY KEY (emp_id, yymm)
+      )
+    `);
+
+    // Create HRMS Attendance table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS attendance (
+        emp_id VARCHAR(255) NOT NULL,
+        date VARCHAR(50) NOT NULL,
+        check_in_local VARCHAR(100),
+        check_out_local VARCHAR(100),
+        check_in_server VARCHAR(100),
+        check_out_server VARCHAR(100),
+        status VARCHAR(50),
+        metrics JSONB,
+        PRIMARY KEY (emp_id, date)
+      )
+    `);
+
+    // Create HRMS Payroll Bulk table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS payroll_bulk (
+        yymm VARCHAR(10) PRIMARY KEY,
+        report_data JSONB
+      )
+    `);
+
+    // Create HRMS Payroll Individual table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS payroll_individual (
+        yymm VARCHAR(10) NOT NULL,
+        emp_id VARCHAR(255) NOT NULL,
+        calc_data JSONB,
+        PRIMARY KEY (yymm, emp_id)
+      )
+    `);
+
+    // Prepopulate departments if empty
+    try {
+      const deptCheck = await pool.query('SELECT COUNT(*) FROM departments');
+      if (parseInt(deptCheck.rows[0].count, 10) === 0) {
+        await pool.query("INSERT INTO departments (id, name, ot_buffer_enabled) VALUES ($1, $2, $3)", ['Admin', 'Admin', false]);
+        await pool.query("INSERT INTO departments (id, name, ot_buffer_enabled) VALUES ($1, $2, $3)", ['Production', 'Production', true]);
+        await pool.query("INSERT INTO departments (id, name, ot_buffer_enabled) VALUES ($1, $2, $3)", ['Sales', 'Sales', false]);
+        console.log('Seeded default departments.');
+      }
+    } catch (deptErr) {
+      console.warn('Failed to pre-populate default departments:', deptErr);
+    }
+
+    // Prepopulate shifts if empty
+    try {
+      const shiftCheck = await pool.query('SELECT COUNT(*) FROM shifts');
+      if (parseInt(shiftCheck.rows[0].count, 10) === 0) {
+        await pool.query("INSERT INTO shifts (id, name, check_in, check_out, remark) VALUES ($1, $2, $3, $4, $5)", ['Day Shift', 'Day Shift', '09:30', '18:30', 'Standard Day Shift']);
+        console.log('Seeded default shifts.');
+      }
+    } catch (shiftErr) {
+      console.warn('Failed to pre-populate default shifts:', shiftErr);
+    }
+
     console.log('Database schema checked/created successfully.');
 
     // Cleanup any auto-logged refused/waste/reuse stock issues from material_issues table
@@ -377,7 +495,7 @@ async function initializeDatabase() {
 initializeDatabase();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
 
 app.use(express.json());
@@ -880,11 +998,12 @@ const authenticate = (req: any, res: any, next: any) => {
 
 // Auth Routes
 app.post('/api/auth/login', async (req, res) => {
-  console.log('Login request received for:', req.body.username);
-  const { username, password } = req.body;
+  const { username, email, password } = req.body;
+  const loginIdentifier = username || (email ? email.split('@')[0] : '');
+  console.log('Login request received for:', loginIdentifier);
 
   // Direct bypass check for admin/admin
-  if (username === 'admin' && password === 'admin') {
+  if ((loginIdentifier === 'admin' || loginIdentifier === 'admin_user') && password === 'admin') {
     console.log('Login bypassed for admin/admin');
     const token = jwt.sign({ 
       id: 'admin_user', 
@@ -894,7 +1013,7 @@ app.post('/api/auth/login', async (req, res) => {
       permission: 'write',
       allowedPages: ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production', 'nesting_dashboard', 'nesting_cutting', 'nesting_rolls_map', 'nesting_details', 'nesting_stock', 'nesting_production', 'nesting_scrub']
     }, JWT_SECRET);
-    return res.cookie('token', token, { httpOnly: true }).json({ 
+    return res.cookie('token', token, { httpOnly: true, sameSite: 'none', secure: true }).json({ 
       user: { 
         id: 'admin_user', 
         username: 'admin', 
@@ -907,12 +1026,12 @@ app.post('/api/auth/login', async (req, res) => {
   }
 
   try {
-    const normalizedUsername = username.toLowerCase().trim().replace(/\s+/g, '_');
+    const normalizedUsername = loginIdentifier.toLowerCase().trim().replace(/\s+/g, '_');
     
     // Select user from PG
     const result = await pool.query(
       'SELECT * FROM users WHERE id = $1 OR username_lower = $2 OR username = $3',
-      [normalizedUsername, normalizedUsername, username]
+      [normalizedUsername, normalizedUsername, loginIdentifier]
     );
 
     let user = result.rows[0];
@@ -922,7 +1041,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     if (!user) {
-      console.warn('User not found:', username);
+      console.warn('User not found:', loginIdentifier);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -931,11 +1050,11 @@ app.post('/api/auth/login', async (req, res) => {
       : password === user.password;
 
     if (!isMatch) {
-      console.warn('Invalid password for user:', username);
+      console.warn('Invalid password for user:', loginIdentifier);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    console.log('Login successful for:', username);
+    console.log('Login successful for:', loginIdentifier);
     const userPages = user.role === 'admin'
       ? ['dashboard', 'calculator', 'quotations', 'clients', 'reports', 'activity', 'users', 'config', 'production', 'nesting_dashboard', 'nesting_cutting', 'nesting_rolls_map', 'nesting_details', 'nesting_stock', 'nesting_production', 'nesting_scrub']
       : (user.allowed_pages || 'dashboard,calculator,quotations,clients').split(',');
@@ -948,7 +1067,7 @@ app.post('/api/auth/login', async (req, res) => {
       permission: user.permission || 'write',
       allowedPages: userPages
     }, JWT_SECRET);
-    res.cookie('token', token, { httpOnly: true }).json({ 
+    res.cookie('token', token, { httpOnly: true, sameSite: 'none', secure: true }).json({ 
       user: { 
         id: user.id, 
         username: user.username, 
@@ -969,7 +1088,443 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.get('/api/auth/me', authenticate, (req: any, res) => {
-  res.json({ user: req.user });
+  const email = req.user.role === 'admin' ? 'admin@ptb.com' : 'account@ptb.com';
+  res.json({ 
+    user: req.user,
+    email: email
+  });
+});
+
+// Helper to get YYMM format
+const getYYMM = (date: Date = new Date()) => {
+  const yy = date.getFullYear().toString().slice(-2);
+  const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+  return `${yy}${mm}`;
+};
+
+// HRMS API: Departments
+app.get('/api/departments', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM departments ORDER BY name ASC');
+    res.json(result.rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      otBufferEnabled: r.ot_buffer_enabled
+    })));
+  } catch (err) {
+    console.error('Failed to get departments', err);
+    res.status(500).json({ error: 'Failed to retrieve departments' });
+  }
+});
+
+app.post('/api/departments', authenticate, async (req, res) => {
+  const { id, name, otBufferEnabled } = req.body;
+  try {
+    await pool.query(
+      'INSERT INTO departments (id, name, ot_buffer_enabled) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, ot_buffer_enabled = EXCLUDED.ot_buffer_enabled',
+      [id || name, name, otBufferEnabled || false]
+    );
+    res.json({ id: id || name, name, otBufferEnabled: otBufferEnabled || false });
+  } catch (err) {
+    console.error('Failed to add department', err);
+    res.status(500).json({ error: 'Failed to add department' });
+  }
+});
+
+// HRMS API: Shifts
+app.get('/api/shifts', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM shifts ORDER BY name ASC');
+    res.json(result.rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      checkIn: r.check_in,
+      checkOut: r.check_out,
+      remark: r.remark
+    })));
+  } catch (err) {
+    console.error('Failed to get shifts', err);
+    res.status(500).json({ error: 'Failed to retrieve shifts' });
+  }
+});
+
+app.post('/api/shifts', authenticate, async (req, res) => {
+  const { id, name, checkIn, checkOut, remark } = req.body;
+  try {
+    await pool.query(
+      'INSERT INTO shifts (id, name, check_in, check_out, remark) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET check_in = EXCLUDED.check_in, check_out = EXCLUDED.check_out, remark = EXCLUDED.remark',
+      [id || name, name, checkIn, checkOut, remark || null]
+    );
+    res.json({ id: id || name, name, checkIn, checkOut, remark });
+  } catch (err) {
+    console.error('Failed to add shift', err);
+    res.status(500).json({ error: 'Failed to add shift' });
+  }
+});
+
+// HRMS API: Employees
+app.get('/api/employees/next-id', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id FROM employees');
+    let maxNum = 0;
+    for (const r of result.rows) {
+      const m = r.id.match(/^PTB(\d+)$/i);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    }
+    const nextId = `PTB${(maxNum + 1).toString().padStart(3, '0')}`;
+    res.json({ nextId });
+  } catch (err) {
+    console.error('Failed to calculate next employee id', err);
+    res.status(500).json({ error: 'Failed to calculate next ID' });
+  }
+});
+
+app.get('/api/employees', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM employees WHERE status = 'active' ORDER BY id ASC");
+    res.json(result.rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      phone: r.phone,
+      department: r.department,
+      shift: r.shift,
+      monthlySalary: parseFloat(r.monthly_salary || 0),
+      weekOff: r.week_off,
+      status: r.status,
+      imageUrl: r.image_url,
+      embedding: typeof r.embedding === 'string' ? JSON.parse(r.embedding) : r.embedding,
+      createdAt: r.created_at
+    })));
+  } catch (err) {
+    console.error('Failed to get employees', err);
+    res.status(500).json({ error: 'Failed to retrieve employees' });
+  }
+});
+
+app.post('/api/employees', authenticate, async (req, res) => {
+  const { id, name, phone, department, shift, monthlySalary, weekOff, status, imageUrl, embedding } = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO employees (id, name, phone, department, shift, monthly_salary, week_off, status, image_url, embedding, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)`,
+      [id, name, phone, department, shift, monthlySalary || 0, weekOff, status || 'active', imageUrl || null, JSON.stringify(embedding || null)]
+    );
+    res.json({ id, name, phone, department, shift, monthlySalary, weekOff, status, imageUrl, embedding });
+  } catch (err) {
+    console.error('Failed to register employee', err);
+    res.status(500).json({ error: 'Failed to register employee' });
+  }
+});
+
+app.put('/api/employees/:id', authenticate, async (req, res) => {
+  const { name, phone, department, shift, monthlySalary, weekOff, status, imageUrl, embedding } = req.body;
+  try {
+    await pool.query(
+      `UPDATE employees SET
+         name = COALESCE($1, name),
+         phone = COALESCE($2, phone),
+         department = COALESCE($3, department),
+         shift = COALESCE($4, shift),
+         monthly_salary = COALESCE($5, monthly_salary),
+         week_off = COALESCE($6, week_off),
+         status = COALESCE($7, status),
+         image_url = COALESCE($8, image_url),
+         embedding = COALESCE($9, embedding)
+       WHERE id = $10`,
+      [name, phone, department, shift, monthlySalary !== undefined ? monthlySalary : null, weekOff, status, imageUrl, embedding ? JSON.stringify(embedding) : null, req.params.id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to update employee', err);
+    res.status(500).json({ error: 'Failed to update employee' });
+  }
+});
+
+app.delete('/api/employees/:id', authenticate, async (req, res) => {
+  try {
+    await pool.query("UPDATE employees SET status = 'deleted' WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to delete employee', err);
+    res.status(500).json({ error: 'Failed to delete employee' });
+  }
+});
+
+// HRMS API: Holidays
+app.get('/api/holidays', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM holidays ORDER BY date ASC');
+    res.json(result.rows.map(r => ({
+      date: r.date,
+      name: r.name,
+      dayType: r.day_type,
+      appliesTo: r.applies_to,
+      departments: typeof r.departments === 'string' ? JSON.parse(r.departments) : (r.departments || []),
+      createdBy: r.created_by
+    })));
+  } catch (err) {
+    console.error('Failed to get holidays', err);
+    res.status(500).json({ error: 'Failed to retrieve holidays' });
+  }
+});
+
+app.post('/api/holidays', authenticate, async (req, res) => {
+  const { date, name, dayType, appliesTo, departments, createdBy } = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO holidays (date, name, day_type, applies_to, departments, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (date, name) DO UPDATE SET
+         day_type = EXCLUDED.day_type,
+         applies_to = EXCLUDED.applies_to,
+         departments = EXCLUDED.departments`,
+      [date, name, dayType, appliesTo, JSON.stringify(departments || []), createdBy || 'Admin']
+    );
+    res.json({ date, name, dayType, appliesTo, departments, createdBy });
+  } catch (err) {
+    console.error('Failed to add holiday', err);
+    res.status(500).json({ error: 'Failed to add holiday' });
+  }
+});
+
+// HRMS API: Salary Advances
+app.post('/api/salary-advances', authenticate, async (req, res) => {
+  const { empId, amount, remark, adminEmail } = req.body;
+  const yymm = getYYMM();
+  const entryId = 'adv-' + Date.now();
+  const newEntry = {
+    id: entryId,
+    amount,
+    remark,
+    addedBy: adminEmail || 'Admin',
+    createdAt: new Date().toISOString()
+  };
+  try {
+    const existRes = await pool.query('SELECT * FROM salary_advances WHERE emp_id = $1 AND yymm = $2', [empId, yymm]);
+    if (existRes.rowCount === 0) {
+      const entries = { [entryId]: newEntry };
+      await pool.query(
+        'INSERT INTO salary_advances (emp_id, yymm, total_advance, entries) VALUES ($1, $2, $3, $4)',
+        [empId, yymm, amount, JSON.stringify(entries)]
+      );
+    } else {
+      const current = existRes.rows[0];
+      const entries = typeof current.entries === 'string' ? JSON.parse(current.entries) : (current.entries || {});
+      entries[entryId] = newEntry;
+      const newTotal = parseFloat(current.total_advance || 0) + amount;
+      await pool.query(
+        'UPDATE salary_advances SET total_advance = $1, entries = $2 WHERE emp_id = $3 AND yymm = $4',
+        [newTotal, JSON.stringify(entries), empId, yymm]
+      );
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to save salary advance' });
+  }
+});
+
+app.get('/api/salary-advances/:empId', authenticate, async (req, res) => {
+  const empId = req.params.empId;
+  const yymm = req.query.yymm as string || getYYMM();
+  try {
+    const result = await pool.query('SELECT * FROM salary_advances WHERE emp_id = $1 AND yymm = $2', [empId, yymm]);
+    if (result.rowCount === 0) {
+      return res.json({ totalAdvance: 0, entries: {} });
+    }
+    const row = result.rows[0];
+    res.json({
+      totalAdvance: parseFloat(row.total_advance || 0),
+      entries: typeof row.entries === 'string' ? JSON.parse(row.entries) : (row.entries || {})
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to retrieve advances' });
+  }
+});
+
+// HRMS API: Dashboard stats
+app.get('/api/dashboard/stats', authenticate, async (req, res) => {
+  try {
+    const now = new Date();
+    const currentMonthPattern = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-%`;
+    const [empRes, deptRes, holidayRes] = await Promise.all([
+      pool.query("SELECT COUNT(*) FROM employees WHERE status = 'active'"),
+      pool.query("SELECT COUNT(*) FROM departments"),
+      pool.query("SELECT COUNT(*) FROM holidays WHERE date LIKE $1", [currentMonthPattern])
+    ]);
+    res.json({
+      activeEmployees: parseInt(empRes.rows[0].count || 0, 10),
+      totalDepartments: parseInt(deptRes.rows[0].count || 0, 10),
+      upcomingHolidays: parseInt(holidayRes.rows[0].count || 0, 10)
+    });
+  } catch (err) {
+    console.error('Failed to get dashboard stats', err);
+    res.status(500).json({ error: 'Failed to get dashboard stats' });
+  }
+});
+
+// HRMS API: Attendance
+app.get('/api/attendance/date/:dateStr', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM attendance WHERE date = $1', [req.params.dateStr]);
+    res.json(result.rows.map(r => ({
+      empId: r.emp_id,
+      date: r.date,
+      checkInLocal: r.check_in_local,
+      checkOutLocal: r.check_out_local,
+      checkInServer: r.check_in_server,
+      checkOutServer: r.check_out_server,
+      status: r.status,
+      metrics: typeof r.metrics === 'string' ? JSON.parse(r.metrics) : r.metrics
+    })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to get attendance for date' });
+  }
+});
+
+app.get('/api/attendance/monthly/:empId', authenticate, async (req, res) => {
+  const yymm = req.query.yymm as string || getYYMM();
+  const year = '20' + yymm.slice(0, 2);
+  const month = yymm.slice(2);
+  const pattern = `${year}-${month}-%`;
+  try {
+    const result = await pool.query('SELECT * FROM attendance WHERE emp_id = $1 AND date LIKE $2', [req.params.empId, pattern]);
+    res.json(result.rows.map(r => ({
+      empId: r.emp_id,
+      date: r.date,
+      checkInLocal: r.check_in_local,
+      checkOutLocal: r.check_out_local,
+      checkInServer: r.check_in_server,
+      checkOutServer: r.check_out_server,
+      status: r.status,
+      metrics: typeof r.metrics === 'string' ? JSON.parse(r.metrics) : r.metrics
+    })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to get monthly attendance' });
+  }
+});
+
+app.post('/api/attendance/manual', authenticate, async (req, res) => {
+  const { empId, date, checkInLocal, checkOutLocal } = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO attendance (emp_id, date, check_in_local, check_out_local, check_in_server, check_out_server)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT (emp_id, date)
+       DO UPDATE SET
+         check_in_local = EXCLUDED.check_in_local,
+         check_out_local = EXCLUDED.check_out_local,
+         check_out_server = CURRENT_TIMESTAMP`,
+      [empId, date, checkInLocal || '--', checkOutLocal || '--']
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to save manual attendance' });
+  }
+});
+
+// HRMS API: Legacy Cloud Attendance Sync Simulation
+app.get('/api/legacy/attendance/:yymm/:dd', authenticate, async (req, res) => {
+  const { yymm, dd } = req.params;
+  try {
+    const empRes = await pool.query("SELECT id FROM employees WHERE status = 'active'");
+    const records = empRes.rows.map(emp => {
+      // Random check-in between 09:20 and 09:40
+      const inMin = Math.floor(Math.random() * 20) + 20; 
+      const checkInLocal = `09:${inMin}`;
+      // Random check-out between 18:25 and 18:45
+      const outMin = Math.floor(Math.random() * 20) + 25; 
+      const checkOutLocal = `18:${outMin}`;
+      return {
+        empId: emp.id,
+        checkInLocal,
+        checkOutLocal
+      };
+    });
+    res.json(records);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch legacy attendance data' });
+  }
+});
+
+app.post('/api/legacy/import', authenticate, async (req, res) => {
+  const { yymm, dd, records } = req.body;
+  const year = '20' + yymm.slice(0, 2);
+  const month = yymm.slice(2);
+  const dateStr = `${year}-${month}-${dd}`;
+  try {
+    for (const rec of records) {
+      await pool.query(
+        `INSERT INTO attendance (emp_id, date, check_in_local, check_out_local, check_in_server, check_out_server)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         ON CONFLICT (emp_id, date)
+         DO UPDATE SET
+           check_in_local = EXCLUDED.check_in_local,
+           check_out_local = EXCLUDED.check_out_local,
+           check_out_server = CURRENT_TIMESTAMP`,
+        [rec.empId, dateStr, rec.checkInLocal, rec.checkOutLocal]
+      );
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to import legacy attendance records' });
+  }
+});
+
+// HRMS API: Payroll Processing
+app.post('/api/payroll/bulk/:yymm', authenticate, async (req, res) => {
+  const { yymm } = req.params;
+  const report = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO payroll_bulk (yymm, report_data) VALUES ($1, $2)
+       ON CONFLICT (yymm) DO UPDATE SET report_data = EXCLUDED.report_data`,
+      [yymm, JSON.stringify(report)]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to save bulk payroll report' });
+  }
+});
+
+app.post('/api/payroll/individual/:yymm/:empId', authenticate, async (req, res) => {
+  const { yymm, empId } = req.params;
+  const calcData = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO payroll_individual (yymm, emp_id, calc_data) VALUES ($1, $2, $3)
+       ON CONFLICT (yymm, emp_id) DO UPDATE SET calc_data = EXCLUDED.calc_data`,
+      [yymm, empId, JSON.stringify(calcData)]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to save individual payroll record' });
+  }
+});
+
+app.get('/api/payroll/report/:yymm', authenticate, async (req, res) => {
+  const { yymm } = req.params;
+  try {
+    const result = await pool.query('SELECT report_data FROM payroll_bulk WHERE yymm = $1', [yymm]);
+    if (result.rowCount === 0) {
+      return res.json(null);
+    }
+    res.json(typeof result.rows[0].report_data === 'string' ? JSON.parse(result.rows[0].report_data) : result.rows[0].report_data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to get payroll report' });
+  }
 });
 
 // Config Settings Routes
