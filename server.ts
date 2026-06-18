@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import pg from 'pg';
+import http from 'http';
 
 const { Pool } = pg;
 
@@ -2551,6 +2552,44 @@ app.post('/api/audit-logs', authenticate, async (req: any, res) => {
     console.error('Failed to create audit log', err);
     res.status(500).json({ error: 'Failed to create audit log' });
   }
+});
+
+// PresencePro Proxy — forwards /presence-proxy/* to localhost:3001
+// This avoids Chrome's Private Network Access block when embedding as iframe
+app.use('/presence-proxy', (req: any, res: any) => {
+  const target = `http://localhost:3001${req.url}`;
+  const options = {
+    hostname: 'localhost',
+    port: 3001,
+    path: req.url === '/' ? '/' : req.url,
+    method: req.method,
+    headers: {
+      ...req.headers,
+      host: 'localhost:3001',
+    },
+  };
+
+  const proxyReq = http.request(options, (proxyRes) => {
+    // Forward status and headers
+    res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+    proxyRes.pipe(res, { end: true });
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error('[presence-proxy] Error:', err.message);
+    res.status(502).send(`
+      <html><body style="font-family:sans-serif;text-align:center;padding:60px;">
+        <h2 style="color:#ef4444;">PresencePro Unavailable</h2>
+        <p>The PresencePro service is not running on port 3001.</p>
+        <p style="color:#64748b;font-size:13px;">Start it with: npm run dev in the Ptb - PresencePro directory</p>
+      </body></html>
+    `);
+  });
+
+  if (req.body) {
+    proxyReq.write(JSON.stringify(req.body));
+  }
+  req.pipe(proxyReq, { end: true });
 });
 
 // Vite Setup
