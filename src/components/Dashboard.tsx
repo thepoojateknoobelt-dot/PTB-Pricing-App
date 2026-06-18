@@ -405,9 +405,10 @@ export const Dashboard = () => {
   }
 
   if (activeModule === 'presence') {
+    const presenceUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
     return (
       <div className="min-h-screen bg-zinc-50 overflow-hidden">
-        <PresenceProPortal url="http://localhost:3001" onClose={() => handleModuleChange('master')} />
+        <PresenceProPortal url={presenceUrl} onClose={() => handleModuleChange('master')} />
       </div>
     );
   }
