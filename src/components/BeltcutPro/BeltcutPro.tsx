@@ -723,6 +723,9 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
 
   // States for cut execution & leftover management popup
   const [showExecuteModal, setShowExecuteModal] = useState(false);
+  const [multiCutPreview, setMultiCutPreview] = useState<any[] | null>(null);
+  const [isLayoutFrozen, setIsLayoutFrozen] = useState(false);
+  const [viewingSimulatedCutIndex, setViewingSimulatedCutIndex] = useState<number | null>(null);
   const [executingRoll, setExecutingRoll] = useState<Roll | null>(null);
   const [executingResult, setExecutingResult] = useState<any>(null);
   const [leftoverAction, setLeftoverAction] = useState<'keep_roll' | 'scrub' | 'inventory'>('keep_roll');
@@ -1310,44 +1313,261 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       return;
     }
 
-    // ── Multiple pieces: sequential one-by-one cutting ────────────────────────
-    // Work on an in-memory copy so each iteration sees the updated cuts
-    // without waiting for a server round-trip → minimizes scrap.
-    setIsSyncing(true);
-    setCutProgress({ current: 0, total: quantity });
-
-    let activeRolls = rolls
+    // ── Multiple pieces: sequential simulation and preview ────────────────────────
+    let activeRollsSim = rolls
       .filter(r => r.status !== 'refused')
       .map(r => ({ ...r, cuts: [...r.cuts] }));
 
     if ((cutPurpose === 'scrap' || cutPurpose === 'inventory') && cuttingSelectedRollId) {
-      activeRolls = activeRolls.filter(r => r.id === cuttingSelectedRollId);
+      activeRollsSim = activeRollsSim.filter(r => r.id === cuttingSelectedRollId);
     }
 
-    let cutsMade = 0;
-    let lastUsedRollId: string | null = null;
+    const previewList: any[] = [];
+    
+    for (let i = 0; i < quantity; i++) {
+      const candidates = findGlobalBestPlacement(activeRollsSim, {
+        ...selectedOrder,
+        requiredWidth: reqWidth,
+        requiredLength: reqLength
+      });
+
+      if (candidates.length === 0) {
+        previewList.push({
+          pieceIndex: i + 1,
+          rollId: null,
+          error: "No space left"
+        });
+        continue;
+      }
+
+      const best = candidates[0];
+      const { rollId, placement } = best;
+      const liveRoll = activeRollsSim.find(r => r.id === rollId);
+      if (!liveRoll) continue;
+
+      // Capture the state of the roll BEFORE this cut is added
+      const rollStateBefore = {
+        ...liveRoll,
+        cuts: [...liveRoll.cuts]
+      };
+
+      const newRemaining = Math.max(0, liveRoll.remainingSqm - (reqWidth * reqLength));
+      const shouldRefuse = newRemaining < 0.5 || (liveRoll.fullWidth > 0 && (newRemaining / liveRoll.fullWidth) < 0.3);
+
+      previewList.push({
+        pieceIndex: i + 1,
+        rollId: rollId,
+        materialType: liveRoll.materialType,
+        rollWidth: liveRoll.fullWidth,
+        rollLength: liveRoll.fullLength,
+        x: placement.x,
+        y: placement.y,
+        width: reqWidth,
+        length: reqLength,
+        remainingSqmAfter: newRemaining,
+        shouldRefuseAfter: shouldRefuse,
+        rollStateBefore: rollStateBefore
+      });
+
+      // Update simulated roll state
+      const tempCut: Cut = {
+        id: `temp-${i}`,
+        orderId: selectedOrder.id,
+        customerName: 'temp',
+        width: reqWidth,
+        length: reqLength,
+        x: placement.x,
+        y: placement.y,
+        status: 'completed',
+        color: '#000',
+        isInventoryCut: isInventory,
+        soNumber: selectedOrder.soNumber || null
+      };
+      liveRoll.cuts.push(tempCut);
+      liveRoll.remainingSqm = newRemaining;
+      if (shouldRefuse) liveRoll.status = 'refused';
+    }
+
+    setMultiCutPreview(previewList);
+  };
+
+  const commitSinglePreviewCut = async (index: number) => {
+    if (!multiCutPreview) return;
+    const item = multiCutPreview[index];
+    if (!item || !item.rollId || item.isExecuted) return;
+
+    setIsSyncing(true);
+
+    const isInventory = cutPurpose === 'inventory' || cutPurpose === 'scrap' || !!selectedOrder.isInventoryCut;
+    const clientName = (selectedOrder.customerName || '').trim();
     const cutColor = isInventory ? '#1e293b' : (cutPurpose === 'scrap' ? '#ef4444' : CUT_COLORS[Math.floor(Math.random() * CUT_COLORS.length)]);
     const customerName = isInventory ? 'REUSE STOCK' : (cutPurpose === 'scrap' ? 'SCRAP WASTE' : clientName);
 
+    const reqWidth = activeOrderDimensions.width || 0;
+    const reqLength = activeOrderDimensions.length || 0;
+
     try {
-      for (let i = 0; i < quantity; i++) {
-        setCutProgress({ current: i + 1, total: quantity });
+      const newCut: Cut = {
+        id: `C-${Date.now()}-${index}-${Math.floor(Math.random() * 10000)}`,
+        orderId: selectedOrder.id,
+        customerName,
+        width: reqWidth,
+        length: reqLength,
+        x: item.x,
+        y: item.y,
+        status: 'completed',
+        color: cutColor,
+        isInventoryCut: isInventory,
+        soNumber: selectedOrder.soNumber || null
+      };
 
-        // Re-optimise on the current in-memory roll state
-        const candidates = findGlobalBestPlacement(activeRolls, {
-          ...selectedOrder,
-          requiredWidth: reqWidth,
-          requiredLength: reqLength
-        });
+      // Persist to database
+      await updateRoll(item.rollId, {
+        remainingSqm: item.remainingSqmAfter,
+        status: item.shouldRefuseAfter ? 'refused' : 'active'
+      });
+      await saveCut(item.rollId, newCut);
 
-        if (candidates.length === 0) {
-          toast.error(`Only ${cutsMade} of ${quantity} pieces could be cut — no space left for piece ${i + 1}.`);
-          break;
+      // Auto leftover logic (keep_roll, scrub, inventory)
+      const currentRoll = rolls.find(r => r.id === item.rollId);
+      const autoAction = item.shouldRefuseAfter ? 'scrub' : (isRollReuse(currentRoll!) ? 'inventory' : 'keep_roll');
+
+      // Create new remnant reusable roll in stock if action is inventory
+      if (autoAction === 'inventory' && currentRoll) {
+        const remainingLength = Math.max(0, currentRoll.fullLength - (item.x + reqLength));
+        const leftoverW = currentRoll.fullWidth;
+        const leftoverL = remainingLength;
+        if (leftoverW > 0 && leftoverL > 0) {
+          const newReuseRollId = `REUSE-${item.rollId}-${Date.now().toString().slice(-4)}`;
+          const newReuseRoll = {
+            id: newReuseRollId,
+            materialType: currentRoll.materialType,
+            fullWidth: leftoverW,
+            fullLength: leftoverL,
+            totalSqm: leftoverW * leftoverL,
+            remainingSqm: leftoverW * leftoverL,
+            isArchived: false,
+            isReuse: true,
+            parentRollId: item.rollId,
+            status: 'active'
+          };
+          await saveRoll(newReuseRoll);
         }
+      }
 
-        const best = candidates[0];
-        const { rollId, placement } = best;
-        lastUsedRollId = rollId;
+      // If it's an inventory cut, create new stock roll and issue material log
+      if (isInventory && cutPurpose !== 'scrap' && currentRoll) {
+        const newInvRollId = `REUSE-${item.rollId}-${newCut.id}`;
+        const newInvRoll = {
+          id: newInvRollId,
+          materialType: currentRoll.materialType,
+          fullWidth: newCut.width,
+          fullLength: newCut.length,
+          totalSqm: newCut.width * newCut.length,
+          remainingSqm: newCut.width * newCut.length,
+          isArchived: false,
+          isReuse: true,
+          parentRollId: item.rollId,
+          status: 'active'
+        };
+        await saveRoll(newInvRoll);
+
+        const matchingStock = materialStocks.find(s => s.name === currentRoll.materialType);
+        const cutArea = parseFloat((newCut.width * newCut.length).toFixed(4));
+        try {
+          await fetch('/api/material-issues', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              materialId: matchingStock?.id || '',
+              materialName: currentRoll.materialType,
+              quantity: cutArea,
+              unit: matchingStock?.unit || 'sqm',
+              issuedTo: 'REUSE STOCK',
+              notes: `Auto-logged on inventory cut from parent Roll ${item.rollId}`
+            })
+          });
+          await loadMaterialStocksData();
+          await loadMaterialIssues();
+        } catch (issueErr) {
+          console.error("Failed to auto-log material issue for inventory cut:", issueErr);
+        }
+      }
+
+      // If it's a scrap cut, create a new refused roll in stock representing this scrap piece
+      if (cutPurpose === 'scrap' && currentRoll) {
+        const scrapRollId = `SCRAP-${item.rollId}-${Date.now().toString().slice(-5)}`;
+        const scrapEntry = {
+          id: scrapRollId,
+          materialType: currentRoll.materialType,
+          fullWidth: newCut.width,
+          fullLength: newCut.length,
+          totalSqm: newCut.width * newCut.length,
+          remainingSqm: newCut.width * newCut.length,
+          isArchived: false,
+          isReuse: isRollReuse(currentRoll),
+          parentRollId: item.rollId,
+          status: 'refused'
+        };
+        await saveRoll(scrapEntry);
+      }
+
+      // Reload rolls
+      await loadRollsData();
+      setLastCutRollId(item.rollId);
+
+      // Mark this cut as executed in multiCutPreview state
+      setMultiCutPreview(prev => {
+        if (!prev) return null;
+        const updated = [...prev];
+        updated[index] = { ...updated[index], isExecuted: true };
+        return updated;
+      });
+
+      setViewingSimulatedCutIndex(null);
+      toast.success(`✂️ Piece #${item.pieceIndex} cut executed successfully!`);
+    } catch (err) {
+      console.error('Error in single preview cut execution:', err);
+      toast.error('Failed to execute cut. Please try again.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const commitMultiCuts = async (previewList: any[]) => {
+    const remainingCuts = previewList.filter(p => p.rollId && !p.isExecuted);
+    const totalRemaining = remainingCuts.length;
+
+    if (totalRemaining === 0) {
+      setMultiCutPreview(null);
+      setViewingSimulatedCutIndex(null);
+      setOptimizationResults([]);
+      setCurrentOptionIndex(0);
+      setManualPlacement(null);
+      toast.success("✅ Multi-cut sequence completed successfully!");
+      return;
+    }
+
+    setIsSyncing(true);
+    setCutProgress({ current: 0, total: totalRemaining });
+    setMultiCutPreview(null);
+    setViewingSimulatedCutIndex(null);
+
+    const isInventory = cutPurpose === 'inventory' || cutPurpose === 'scrap' || !!selectedOrder.isInventoryCut;
+    const clientName = (selectedOrder.customerName || '').trim();
+    const cutColor = isInventory ? '#1e293b' : (cutPurpose === 'scrap' ? '#ef4444' : CUT_COLORS[Math.floor(Math.random() * CUT_COLORS.length)]);
+    const customerName = isInventory ? 'REUSE STOCK' : (cutPurpose === 'scrap' ? 'SCRAP WASTE' : clientName);
+
+    const reqWidth = activeOrderDimensions.width || 0;
+    const reqLength = activeOrderDimensions.length || 0;
+
+    let cutsMade = 0;
+    let lastUsedRollId: string | null = null;
+
+    try {
+      for (let i = 0; i < totalRemaining; i++) {
+        const p = remainingCuts[i];
+        setCutProgress({ current: i + 1, total: totalRemaining });
 
         const newCut: Cut = {
           id: `C-${Date.now()}-${i}-${Math.floor(Math.random() * 10000)}`,
@@ -1355,32 +1575,107 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
           customerName,
           width: reqWidth,
           length: reqLength,
-          x: placement.x,
-          y: placement.y,
+          x: p.x,
+          y: p.y,
           status: 'completed',
           color: cutColor,
           isInventoryCut: isInventory,
           soNumber: selectedOrder.soNumber || null
         };
 
-        const liveRoll = activeRolls.find(r => r.id === rollId);
-        if (!liveRoll) break;
-
-        const newRemaining = Math.max(0, liveRoll.remainingSqm - (reqWidth * reqLength));
-        const shouldRefuse = newRemaining < 0.5 || (liveRoll.fullWidth > 0 && (newRemaining / liveRoll.fullWidth) < 0.3);
-
         // Persist to database
-        await updateRoll(rollId, {
-          remainingSqm: newRemaining,
-          status: shouldRefuse ? 'refused' : 'active'
+        await updateRoll(p.rollId, {
+          remainingSqm: p.remainingSqmAfter,
+          status: p.shouldRefuseAfter ? 'refused' : 'active'
         });
-        await saveCut(rollId, newCut);
+        await saveCut(p.rollId, newCut);
 
-        // Update in-memory state for next iteration
-        liveRoll.cuts.push(newCut);
-        liveRoll.remainingSqm = newRemaining;
-        if (shouldRefuse) liveRoll.status = 'refused';
+        // Auto leftover logic (keep_roll, scrub, inventory)
+        const currentRoll = rolls.find(r => r.id === p.rollId);
+        const autoAction = p.shouldRefuseAfter ? 'scrub' : (isRollReuse(currentRoll!) ? 'inventory' : 'keep_roll');
 
+        // Create new remnant reusable roll in stock if action is inventory
+        if (autoAction === 'inventory' && currentRoll) {
+          const remainingLength = Math.max(0, currentRoll.fullLength - (p.x + reqLength));
+          const leftoverW = currentRoll.fullWidth;
+          const leftoverL = remainingLength;
+          if (leftoverW > 0 && leftoverL > 0) {
+            const newReuseRollId = `REUSE-${p.rollId}-${Date.now().toString().slice(-4)}`;
+            const newReuseRoll = {
+              id: newReuseRollId,
+              materialType: currentRoll.materialType,
+              fullWidth: leftoverW,
+              fullLength: leftoverL,
+              totalSqm: leftoverW * leftoverL,
+              remainingSqm: leftoverW * leftoverL,
+              isArchived: false,
+              isReuse: true,
+              parentRollId: p.rollId,
+              status: 'active'
+            };
+            await saveRoll(newReuseRoll);
+          }
+        }
+
+        // If it's an inventory cut, create a new roll in stock representing this cut
+        if (isInventory && cutPurpose !== 'scrap' && currentRoll) {
+          const newInvRollId = `REUSE-${p.rollId}-${newCut.id}`;
+          const newInvRoll = {
+            id: newInvRollId,
+            materialType: currentRoll.materialType,
+            fullWidth: newCut.width,
+            fullLength: newCut.length,
+            totalSqm: newCut.width * newCut.length,
+            remainingSqm: newCut.width * newCut.length,
+            isArchived: false,
+            isReuse: true,
+            parentRollId: p.rollId,
+            status: 'active'
+          };
+          await saveRoll(newInvRoll);
+
+          // Log material issue to Production (Beltcut) for inventory cuts
+          const matchingStock = materialStocks.find(s => s.name === currentRoll.materialType);
+          const cutArea = parseFloat((newCut.width * newCut.length).toFixed(4));
+          try {
+            await fetch('/api/material-issues', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                materialId: matchingStock?.id || '',
+                materialName: currentRoll.materialType,
+                quantity: cutArea,
+                unit: matchingStock?.unit || 'sqm',
+                issuedTo: 'REUSE STOCK',
+                notes: `Auto-logged on inventory cut from parent Roll ${p.rollId}`
+              })
+            });
+            await loadMaterialStocksData();
+            await loadMaterialIssues();
+          } catch (issueErr) {
+            console.error("Failed to auto-log material issue for inventory cut:", issueErr);
+          }
+        }
+
+        // If it's a scrap cut, create a new refused roll in stock representing this scrap piece
+        if (cutPurpose === 'scrap' && currentRoll) {
+          const scrapRollId = `SCRAP-${p.rollId}-${Date.now().toString().slice(-5)}`;
+          const scrapEntry = {
+            id: scrapRollId,
+            materialType: currentRoll.materialType,
+            fullWidth: newCut.width,
+            fullLength: newCut.length,
+            totalSqm: newCut.width * newCut.length,
+            remainingSqm: newCut.width * newCut.length,
+            isArchived: false,
+            isReuse: isRollReuse(currentRoll),
+            parentRollId: p.rollId,
+            status: 'refused'
+          };
+          await saveRoll(scrapEntry);
+        }
+
+        lastUsedRollId = p.rollId;
         cutsMade++;
       }
 
@@ -1388,11 +1683,11 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       await loadRollsData();
       if (lastUsedRollId) setLastCutRollId(lastUsedRollId);
 
-      const allDone = cutsMade === quantity;
+      const allDone = cutsMade === totalRemaining;
       if (allDone) {
-        toast.success(`✅ ${cutsMade} piece${cutsMade > 1 ? 's' : ''} cut successfully from Roll ${lastUsedRollId}!`);
+        toast.success(`✅ ${cutsMade} piece${cutsMade > 1 ? 's' : ''} cut successfully!`);
       } else {
-        toast.warning(`⚠️ ${cutsMade} of ${quantity} pieces cut — insufficient space for remaining pieces.`);
+        toast.warning(`⚠️ Only ${cutsMade} pieces cut successfully.`);
       }
       setJustCutExecuted(true);
     } catch (err) {
@@ -2518,9 +2813,23 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     <div className="flex h-screen bg-zinc-50 overflow-hidden relative w-full text-slate-900">
       {isSyncing && (
         <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-50 flex items-center justify-center">
-          <div className="bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3">
-            <Loader2 className="animate-spin text-blue-400" />
-            <span className="font-black text-xs uppercase tracking-widest">Syncing with Database...</span>
+          <div className="bg-slate-900 text-white px-6 py-5 rounded-2xl shadow-2xl flex flex-col items-center gap-3 min-w-[260px]">
+            <div className="flex items-center gap-3">
+              <Loader2 className="animate-spin text-blue-400" />
+              <span className="font-black text-xs uppercase tracking-widest">
+                {cutProgress
+                  ? `Cutting piece ${cutProgress.current} of ${cutProgress.total}...`
+                  : 'Syncing with Database...'}
+              </span>
+            </div>
+            {cutProgress && cutProgress.total > 1 && (
+              <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="h-full bg-emerald-400 transition-all duration-300"
+                  style={{ width: `${(cutProgress.current / cutProgress.total) * 100}%` }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3327,6 +3636,41 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                               {materialTypes.map(type => <option key={type} value={type}>{type}</option>)}
                               <option value="__ADD_NEW__" className="text-indigo-600 font-bold bg-indigo-50 font-black">+ Add Custom Material Type...</option>
                             </select>
+                          </div>
+
+                          {/* PCS / Quantity field */}
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                              <Layers size={11} /> PCS / Quantity (Pieces)
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedOrder({ ...selectedOrder, quantity: Math.max(1, (selectedOrder.quantity || 1) - 1) })}
+                                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-sm flex items-center justify-center transition cursor-pointer"
+                              >
+                                −
+                              </button>
+                              <input
+                                type="number"
+                                min={1}
+                                value={selectedOrder.quantity || 1}
+                                onChange={(e) => setSelectedOrder({ ...selectedOrder, quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                                className="flex-1 px-2.5 py-1 border border-slate-200 rounded-lg focus:border-zinc-950 focus:outline-none font-bold text-xs text-center"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setSelectedOrder({ ...selectedOrder, quantity: (selectedOrder.quantity || 1) + 1 })}
+                                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-sm flex items-center justify-center transition cursor-pointer"
+                              >
+                                +
+                              </button>
+                            </div>
+                            {(selectedOrder.quantity || 1) > 1 && (
+                              <p className="text-[8.5px] text-emerald-600 font-bold flex items-center gap-1 mt-0.5">
+                                <Check size={10} className="text-emerald-500" /> Pieces will be cut sequentially to minimize scrap
+                              </p>
+                            )}
                           </div>
                         </>
                       )}
@@ -5458,6 +5802,251 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
         </div>
       </main>
 
+      {/* ═══ MULTI-CUT PREVIEW MODAL ═══ */}
+      {multiCutPreview && (() => {
+        const allPlaceableExecuted = multiCutPreview.filter(p => p.rollId).every(p => p.isExecuted);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-zinc-950/65 backdrop-blur-md transition-opacity duration-300"
+              onClick={() => { setMultiCutPreview(null); setViewingSimulatedCutIndex(null); }}
+            />
+            <div className="relative bg-white rounded-3xl shadow-2xl border border-zinc-150 w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-250 text-left">
+              {/* Header */}
+              <div className="p-5 border-b border-zinc-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-white">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-center shadow-sm text-indigo-600">
+                    <Scissors size={20} className="animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-zinc-950 text-sm tracking-wide uppercase">Confirm Cuts Sequence</h3>
+                    <p className="text-[10px] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">Line by line preview of cuts to be executed</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setMultiCutPreview(null); setViewingSimulatedCutIndex(null); }}
+                  className="p-2 text-slate-450 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Content List / Detail Visualizer */}
+              {viewingSimulatedCutIndex !== null ? (() => {
+                const item = multiCutPreview[viewingSimulatedCutIndex];
+                return (
+                  <div className="flex-grow flex flex-col overflow-hidden bg-slate-50 p-6 space-y-4">
+                    {/* Sub Header / Back Button */}
+                    <div className="flex items-center justify-between pb-3 border-b border-zinc-200">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setViewingSimulatedCutIndex(null)}
+                          className="px-4 py-2 bg-white border border-zinc-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-black tracking-wide uppercase transition-all duration-150 cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+                        >
+                          <ArrowLeft size={13} className="stroke-[3]" /> Back to List
+                        </button>
+                        {item.rollId && (
+                          !item.isExecuted ? (
+                            <button
+                              onClick={() => commitSinglePreviewCut(viewingSimulatedCutIndex)}
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black tracking-wide uppercase transition-all duration-150 shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5"
+                            >
+                              <Scissors size={13} className="stroke-[3]" /> Execute This Cut
+                            </button>
+                          ) : (
+                            <span className="px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-150 rounded-xl text-xs font-black uppercase tracking-wide flex items-center gap-1.5 shadow-sm">
+                              <Check size={13} className="stroke-[3]" /> Cut Executed
+                            </span>
+                          )
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Selected Roll for Cut #{item.pieceIndex}</span>
+                        <p className="text-xs font-black text-slate-800 uppercase font-mono">{item.rollId}</p>
+                      </div>
+                    </div>
+
+                    {/* Cut Specifications Info Box */}
+                    <div className="bg-indigo-50/50 border border-indigo-150 rounded-2xl p-4 flex flex-col sm:flex-row justify-between gap-4 items-start sm:items-center">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-indigo-900 tracking-tight uppercase">Cut Details</span>
+                          <span className="text-[8.5px] font-black uppercase bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-lg border border-indigo-200">PIECE #{item.pieceIndex}</span>
+                        </div>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">{item.materialType}</p>
+                      </div>
+                      <div className="flex gap-6 text-[11px] font-bold text-slate-700">
+                        <div>
+                          <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Dimensions</span>
+                          <span className="font-mono text-zinc-900 text-sm font-black">{formatCutDim(item.length)}{currentUnit} × {formatCutDim(item.width)}{currentUnit}</span>
+                        </div>
+                        <div>
+                          <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Placement Coordinates</span>
+                          <span className="font-mono text-zinc-900 text-sm font-black">x={item.x.toFixed(2)}m, y={item.y.toFixed(2)}m</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Visualizer Area */}
+                    <div className="flex-grow flex flex-col overflow-hidden bg-white border border-zinc-200 rounded-3xl p-4 min-h-[300px]">
+                      {item.rollStateBefore ? (
+                        <RollVisualizer
+                          roll={item.rollStateBefore}
+                          unit={currentUnit}
+                          isExpanded={true}
+                          hideTitle={true}
+                          noBorder={true}
+                          height="h-full flex-grow"
+                          suggestedPlacement={{
+                            x: item.x,
+                            y: item.y,
+                            width: item.width,
+                            length: item.length
+                          }}
+                        />
+                      ) : (
+                        <div className="py-20 text-center text-zinc-400 text-xs font-medium border-2 border-dashed border-zinc-200 rounded-3xl">
+                          No layout details available for this roll.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })() : (
+                <div className="p-6 overflow-y-auto flex-1 space-y-3 bg-slate-50/50 animate-in fade-in duration-200">
+                  {multiCutPreview.map((item, idx) => {
+                    const isSuccessful = !!item.rollId;
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => isSuccessful && setViewingSimulatedCutIndex(idx)}
+                        className={`p-4 rounded-2xl border transition-all duration-200 flex items-start justify-between gap-4 ${
+                          isSuccessful
+                            ? item.isExecuted
+                              ? 'bg-emerald-50/10 border-emerald-200/60 shadow-sm cursor-pointer hover:bg-emerald-50/20 hover:border-emerald-300'
+                              : 'bg-white border-zinc-200 shadow-sm cursor-pointer hover:bg-slate-50 hover:border-zinc-450 hover:shadow-md'
+                            : 'bg-rose-50/70 border-rose-200 shadow-sm'
+                        }`}
+                        title={isSuccessful ? "Click to view layout placement on roll" : undefined}
+                      >
+                        <div className="flex items-start gap-3.5">
+                          {/* Left Badge */}
+                          <span className={`w-8 h-8 rounded-xl font-black text-xs flex items-center justify-center shrink-0 ${
+                            isSuccessful
+                              ? item.isExecuted
+                                ? 'bg-emerald-600 text-white shadow-sm'
+                                : 'bg-zinc-950 text-white shadow-sm'
+                              : 'bg-rose-600 text-white'
+                          }`}>
+                            #{item.pieceIndex}
+                          </span>
+
+                          {/* Cut Info */}
+                          <div className="space-y-1">
+                            {isSuccessful ? (
+                              <>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-black text-slate-800 tracking-tight uppercase">
+                                    Cutting in Roll
+                                  </span>
+                                  <span className="font-mono font-black text-[10px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-150 shadow-sm">
+                                    {item.rollId}
+                                  </span>
+                                  {item.shouldRefuseAfter && (
+                                    <span className="text-[8.5px] font-black uppercase bg-amber-50 text-amber-700 px-2 py-0.5 rounded-lg border border-amber-200">
+                                      ⚠️ SCRAP / REFUSE LIMIT REACHED
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                                  {item.materialType}
+                                </p>
+                                <div className="flex gap-4 pt-1 text-[11px] font-bold text-slate-600">
+                                  <span>Cut Size: <span className="font-mono text-zinc-900">{formatCutDim(item.length)}{currentUnit} × {formatCutDim(item.width)}{currentUnit}</span></span>
+                                  <span>Pos: <span className="font-mono text-zinc-900">x={item.x.toFixed(2)}m, y={item.y.toFixed(2)}m</span></span>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-black text-rose-800 tracking-tight uppercase">
+                                    Out of Stock Space
+                                  </span>
+                                  <span className="text-[8.5px] font-black uppercase bg-rose-100 text-rose-700 px-2 py-0.5 rounded-lg border border-rose-200">
+                                    NO PLACEMENT FOUND
+                                  </span>
+                                </div>
+                                <p className="text-[10.5px] font-semibold text-rose-600 leading-relaxed">
+                                  Insufficient space or matching rolls available for this piece.
+                                </p>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Right side area details */}
+                        {isSuccessful && (
+                          <div className="text-right flex flex-col items-end shrink-0 gap-1.5">
+                            <div>
+                              <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider block">Remaining Area</span>
+                              <span className="font-mono text-xs font-black text-emerald-600 bg-emerald-50 border border-emerald-150 px-2.5 py-0.5 rounded-lg shadow-sm block mt-0.5">
+                                {fromMeters(item.remainingSqmAfter).toFixed(2)}{currentUnit}²
+                              </span>
+                            </div>
+                            {!item.isExecuted ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  commitSinglePreviewCut(idx);
+                                }}
+                                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition active:scale-95 cursor-pointer shadow-sm mt-1 flex items-center gap-1"
+                              >
+                                <Scissors size={10} className="stroke-[3]" /> Execute
+                              </button>
+                            ) : (
+                              <span className="text-[10px] font-black uppercase bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg border border-emerald-150 shadow-sm mt-1 flex items-center gap-1">
+                                <Check size={10} className="stroke-[3]" /> Executed
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Footer */}
+              <div className="p-4 border-t border-zinc-150 bg-slate-50 flex justify-between items-center gap-3">
+                <div className="text-left">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total pieces</p>
+                  <p className="text-sm font-black text-slate-800">
+                    {multiCutPreview.filter(p => p.rollId).length} / {multiCutPreview.length} cuts can be placed
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setMultiCutPreview(null); setViewingSimulatedCutIndex(null); }}
+                    className="px-4 py-2 bg-white border border-zinc-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-black tracking-wide uppercase transition-all duration-150 cursor-pointer shadow-sm active:scale-95"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => commitMultiCuts(multiCutPreview)}
+                    disabled={multiCutPreview.filter(p => p.rollId).length === 0}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white rounded-xl text-xs font-black tracking-wide uppercase transition-all duration-150 shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check size={14} className="stroke-[3]" />
+                    {allPlaceableExecuted ? 'Finish & Close' : 'Confirm & Execute'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ═══ REQUEST MATERIAL MODAL ═══ */}
       {showRequestModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -5820,7 +6409,11 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
               className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
               onClick={() => setFullscreenRollId(null)}
             />
-            <div className="relative bg-white rounded-[32px] shadow-2xl w-[96vw] max-w-[1600px] h-[92vh] max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200 text-left">
+            <div className={`relative bg-white rounded-[32px] shadow-2xl w-[96vw] max-w-[1600px] flex flex-col border border-slate-200 animate-in fade-in zoom-in-95 duration-200 text-left transition-all duration-300 ease-in-out ${
+              isLayoutFrozen
+                ? 'h-[92vh] max-h-[92vh] overflow-hidden'
+                : 'h-auto max-h-[92vh] overflow-y-auto'
+            }`}>
               {/* Header */}
               <div className="p-6 border-b border-zinc-150 flex items-center justify-between bg-slate-50/50 shrink-0">
                 <div className="flex items-center gap-3">
@@ -5843,6 +6436,16 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                 
                 <div className="flex items-center gap-3">
                   <button
+                    onClick={() => setIsLayoutFrozen(!isLayoutFrozen)}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all duration-300 ease-in-out cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95 shrink-0 uppercase tracking-wider border ${
+                      isLayoutFrozen
+                        ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent shadow-indigo-100'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 shadow-sm'
+                    }`}
+                  >
+                    <span>{isLayoutFrozen ? '📌 Frozen Layout' : '🔓 Freeze Layout'}</span>
+                  </button>
+                  <button
                     onClick={() => handlePrintRollLayout(roll.id)}
                     className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95 shrink-0 uppercase tracking-wider"
                   >
@@ -5858,10 +6461,14 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
               </div>
 
               {/* Body Content: Responsive Split Layout */}
-              <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+              <div className={`flex-1 flex flex-col lg:flex-row transition-all duration-300 ease-in-out ${
+                isLayoutFrozen ? 'overflow-hidden' : 'overflow-visible h-auto'
+              }`}>
                 
                 {/* Left Column: Visualizer Layout Pane (occupies remaining width) */}
-                <div className="flex-1 p-4 md:p-5 flex flex-col overflow-hidden bg-slate-50">
+                <div className={`p-4 md:p-5 flex flex-col bg-slate-50 transition-all duration-300 ease-in-out ${
+                  isLayoutFrozen ? 'flex-1 overflow-hidden h-full' : 'w-full lg:flex-1 overflow-visible h-auto'
+                }`}>
                   <RollVisualizer
                     roll={roll}
                     unit={currentUnit}
@@ -5869,15 +6476,19 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     onSelectCut={(cut) => handleDeleteCut(roll.id, cut)}
                     hideTitle={true}
                     noBorder={true}
-                    height="h-full flex-grow"
+                    height={isLayoutFrozen ? 'h-full flex-grow' : 'h-[500px] flex-grow'}
                   />
                 </div>
 
                 {/* Right Column: Stats & Cuts Allocations Sidebar (fixed width on desktop) */}
-                <div className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-zinc-150 bg-white flex flex-col overflow-hidden h-full">
+                <div className={`w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-zinc-150 bg-white flex flex-col transition-all duration-300 ease-in-out ${
+                  isLayoutFrozen ? 'overflow-hidden h-full lg:h-[calc(92vh-88px)] lg:sticky lg:top-0' : 'overflow-visible h-auto'
+                }`}>
                   
                   {/* Scrollable Sidebar Content */}
-                  <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                  <div className={`p-6 space-y-6 transition-all duration-300 ease-in-out ${
+                    isLayoutFrozen ? 'flex-1 overflow-y-auto' : 'overflow-visible h-auto'
+                  }`}>
                     
                     {/* Stats Grid */}
                     <div className="space-y-3">
@@ -5905,7 +6516,9 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     {/* Cuts Allocations Details list */}
                     <div className="space-y-3">
                       <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Cuts Allocations ({cuts.length})</h4>
-                      <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
+                      <div className={`space-y-2.5 transition-all duration-300 ease-in-out ${
+                        isLayoutFrozen ? 'max-h-[350px] overflow-y-auto pr-1' : 'max-h-none overflow-visible'
+                      }`}>
                         {cuts.map((cut, idx) => {
                           let dateStr = 'N/A';
                           const tsMatch = cut.id.match(/C-(\d+)/);
