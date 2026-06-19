@@ -20,7 +20,7 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
   const { user } = useAuth();
   const [search, setSearch] = useState('');
   const [isAdding, setIsAdding] = useState(false);
-  const [formData, setFormData] = useState({ name: '', company: '', city: '' });
+  const [formData, setFormData] = useState({ name: '', company: '', city: '', mobile: '' });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editMargins, setEditMargins] = useState<Record<string, ProfitRange[]>>({});
 
@@ -37,6 +37,7 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
           name: formData.name,
           company: formData.company,
           city: formData.city,
+          mobile: formData.mobile,
           profitMargins: (Array.isArray(config?.beltTypes) ? config.beltTypes : []).reduce((acc, type) => ({
             ...acc,
             [type.name]: defaultRanges
@@ -47,7 +48,7 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
       if (!res.ok) throw new Error('Add failed');
 
       toast.success('Client added');
-      setFormData({ name: '', company: '', city: '' });
+      setFormData({ name: '', company: '', city: '', mobile: '' });
       onRefresh?.();
     } catch (err) {
       toast.error('Failed to add client');
@@ -134,7 +135,8 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
   const filteredClients = clients.filter(c => 
     c.name.toLowerCase().includes(search.toLowerCase()) || 
     c.company.toLowerCase().includes(search.toLowerCase()) ||
-    c.city.toLowerCase().includes(search.toLowerCase())
+    c.city.toLowerCase().includes(search.toLowerCase()) ||
+    (c.mobile || '').toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -175,15 +177,19 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
           <form onSubmit={handleAddClient}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>Client Name</Label>
+                <Label>Client Name <span className="text-rose-500">*</span></Label>
                 <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
               </div>
               <div className="space-y-2">
-                <Label>Company Name</Label>
+                <Label>Company Name <span className="text-rose-500">*</span></Label>
                 <Input value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} required />
               </div>
               <div className="space-y-2">
-                <Label>City</Label>
+                <Label>Mobile Number</Label>
+                <Input value={formData.mobile} onChange={(e) => setFormData({ ...formData, mobile: e.target.value })} placeholder="e.g. 9876543210" />
+              </div>
+              <div className="space-y-2">
+                <Label>City <span className="text-rose-500">*</span></Label>
                 <Input value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} required />
               </div>
               <p className="text-xs text-zinc-500 italic">Default profit ranges will be set to 20%. You can customize them after adding.</p>
@@ -217,6 +223,7 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
                   <TableHead>Client Name</TableHead>
                   <TableHead>Company</TableHead>
                   <TableHead>City</TableHead>
+                  <TableHead>Mobile Number</TableHead>
                   <TableHead>Profit Margins</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -227,6 +234,7 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
                     <TableCell className="font-medium">{c.name}</TableCell>
                     <TableCell>{c.company}</TableCell>
                     <TableCell>{c.city}</TableCell>
+                    <TableCell>{c.mobile || '-'}</TableCell>
                     <TableCell>
                       {editingId === c.id ? (
                         <div className="space-y-4 max-w-2xl bg-zinc-50 p-4 rounded-xl border border-zinc-200">
