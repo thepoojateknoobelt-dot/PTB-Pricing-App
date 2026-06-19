@@ -7,9 +7,13 @@ const pool = new Pool({
 
 async function main() {
   try {
-    const res = await pool.query('SELECT * FROM clients');
-    console.log('Clients count:', res.rows.length);
-    console.log('Clients:', res.rows);
+    const res = await pool.query(`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_name = 'employees'
+    `);
+    console.log('Columns of employees table:');
+    console.log(JSON.stringify(res.rows, null, 2));
   } catch (err) {
     console.error('Error querying DB:', err);
   } finally {
