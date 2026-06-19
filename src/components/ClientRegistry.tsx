@@ -23,6 +23,10 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
   const [formData, setFormData] = useState({ name: '', company: '', city: '', mobile: '' });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editMargins, setEditMargins] = useState<Record<string, ProfitRange[]>>({});
+  const [editName, setEditName] = useState('');
+  const [editCompany, setEditCompany] = useState('');
+  const [editCity, setEditCity] = useState('');
+  const [editMobile, setEditMobile] = useState('');
 
   const handleAddClient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,23 +61,27 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
     }
   };
 
-  const handleUpdateMargins = async (clientId: string) => {
+  const handleUpdateClient = async (clientId: string) => {
     try {
       const res = await fetch(`/api/clients/${clientId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          name: editName,
+          company: editCompany,
+          city: editCity,
+          mobile: editMobile,
           profitMargins: editMargins
         })
       });
 
       if (!res.ok) throw new Error('Update failed');
 
-      toast.success('Margins updated');
+      toast.success('Client updated successfully');
       setEditingId(null);
       onRefresh?.();
     } catch (err) {
-      toast.error('Failed to update margins');
+      toast.error('Failed to update client');
     }
   };
 
@@ -231,10 +239,34 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
               <TableBody>
                 {filteredClients.map((c) => (
                   <TableRow key={c.id}>
-                    <TableCell className="font-medium">{c.name}</TableCell>
-                    <TableCell>{c.company}</TableCell>
-                    <TableCell>{c.city}</TableCell>
-                    <TableCell>{c.mobile || '-'}</TableCell>
+                    <TableCell className="font-medium">
+                      {editingId === c.id ? (
+                        <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="h-8 text-xs" />
+                      ) : (
+                        c.name
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {editingId === c.id ? (
+                        <Input value={editCompany} onChange={(e) => setEditCompany(e.target.value)} className="h-8 text-xs" />
+                      ) : (
+                        c.company
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {editingId === c.id ? (
+                        <Input value={editCity} onChange={(e) => setEditCity(e.target.value)} className="h-8 text-xs" />
+                      ) : (
+                        c.city
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {editingId === c.id ? (
+                        <Input value={editMobile} onChange={(e) => setEditMobile(e.target.value)} className="h-8 text-xs font-mono" />
+                      ) : (
+                        c.mobile || '-'
+                      )}
+                    </TableCell>
                     <TableCell>
                       {editingId === c.id ? (
                         <div className="space-y-4 max-w-2xl bg-zinc-50 p-4 rounded-xl border border-zinc-200">
@@ -318,8 +350,8 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
                           ))}
                           <div className="flex justify-end gap-2 pt-2 border-t">
                             <Button size="sm" variant="ghost" className="h-8 text-zinc-500" onClick={() => setEditingId(null)}>Cancel</Button>
-                            <Button size="sm" className="h-8 gap-1" onClick={() => handleUpdateMargins(c.id)}>
-                              <Save className="h-4 w-4" /> Save All Margins
+                            <Button size="sm" className="h-8 gap-1" onClick={() => handleUpdateClient(c.id)}>
+                              <Save className="h-4 w-4" /> Save Changes
                             </Button>
                           </div>
                         </div>
@@ -344,9 +376,13 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
                             onClick={() => {
                               setEditingId(c.id);
                               setEditMargins(c.profitMargins || {});
+                              setEditName(c.name || '');
+                              setEditCompany(c.company || '');
+                              setEditCity(c.city || '');
+                              setEditMobile(c.mobile || '');
                             }}
                            >
-                            <Edit2 className="h-3 w-3" /> Edit Ranges
+                            <Edit2 className="h-3 w-3" /> Edit Details
                            </Button>
                         </div>
                       )}
