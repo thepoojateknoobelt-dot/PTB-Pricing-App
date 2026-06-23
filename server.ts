@@ -171,6 +171,27 @@ async function initializeDatabase() {
       console.warn('Failed to add reorder_level column:', alterErr);
     }
 
+    // Add lots column if it doesn't exist yet
+    try {
+      await pool.query(`ALTER TABLE material_stocks ADD COLUMN IF NOT EXISTS lots JSONB`);
+    } catch (alterErr) {
+      console.warn('Failed to add lots column:', alterErr);
+    }
+
+    // Add lot_number column to material_requests if it doesn't exist yet
+    try {
+      await pool.query(`ALTER TABLE material_requests ADD COLUMN IF NOT EXISTS lot_number VARCHAR(255)`);
+    } catch (alterErr) {
+      console.warn('Failed to add lot_number column to material_requests:', alterErr);
+    }
+
+    // Add lot_number column to material_issues if it doesn't exist yet
+    try {
+      await pool.query(`ALTER TABLE material_issues ADD COLUMN IF NOT EXISTS lot_number VARCHAR(255)`);
+    } catch (alterErr) {
+      console.warn('Failed to add lot_number column to material_issues:', alterErr);
+    }
+
     // Seed default material stocks if empty
     try {
       const stockCheck = await pool.query('SELECT COUNT(*) FROM material_stocks');
@@ -314,6 +335,62 @@ async function initializeDatabase() {
       }
     } catch (typeErr) {
       console.warn('Failed to initialize custom_material_types table:', typeErr);
+    }
+
+    // Create Ready Belt Stocks table
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS ready_belt_stocks (
+          id VARCHAR(255) PRIMARY KEY,
+          category VARCHAR(255) NOT NULL,
+          belt_stock VARCHAR(255) NOT NULL,
+          size VARCHAR(255) NOT NULL,
+          opening_pisc INT DEFAULT 0,
+          recv_pisc INT DEFAULT 0,
+          issues_pisc INT DEFAULT 0,
+          closing_pisc INT DEFAULT 0,
+          so_no VARCHAR(255),
+          receiver_name VARCHAR(255)
+        )
+      `);
+
+      const readyStockCheck = await pool.query('SELECT COUNT(*) FROM ready_belt_stocks');
+      if (parseInt(readyStockCheck.rows[0].count, 10) === 0) {
+        const seedData = [
+          // BROWN BELT
+          { category: 'BROWN BELT', belt_stock: 'SIALI BELT', size: '97" X 63"', opening_pisc: 0, recv_pisc: 0, issues_pisc: 0, closing_pisc: 0, so_no: '', receiver_name: '' },
+          { category: 'BROWN BELT', belt_stock: 'WITHOUT SILAI', size: '2.20M X 63"', opening_pisc: 1, recv_pisc: 0, issues_pisc: 0, closing_pisc: 1, so_no: '', receiver_name: '' },
+          { category: 'BROWN BELT', belt_stock: 'CROSS JOINT', size: '97" X 63"', opening_pisc: 0, recv_pisc: 0, issues_pisc: 0, closing_pisc: 0, so_no: '', receiver_name: '' },
+          { category: 'BROWN BELT', belt_stock: 'WITHOUT SILAI', size: '2.12M X 63"', opening_pisc: 1, recv_pisc: 0, issues_pisc: 0, closing_pisc: 1, so_no: '', receiver_name: '' },
+          { category: 'BROWN BELT', belt_stock: 'WITHOUT SILAI', size: '97" X 59"', opening_pisc: 1, recv_pisc: 0, issues_pisc: 0, closing_pisc: 1, so_no: '', receiver_name: '' },
+          // BLACK BELT
+          { category: 'BLACK BELT', belt_stock: 'SILAI BELT', size: '97" X 63"', opening_pisc: 7, recv_pisc: 0, issues_pisc: 3, closing_pisc: 4, so_no: '11673 11728', receiver_name: '' },
+          { category: 'BLACK BELT', belt_stock: 'WITHOUT SILAI', size: '97" X 63"', opening_pisc: 3, recv_pisc: 0, issues_pisc: 1, closing_pisc: 2, so_no: '11574', receiver_name: '' },
+          { category: 'BLACK BELT', belt_stock: 'CROSS JOINT', size: '97" X 63"', opening_pisc: 3, recv_pisc: 0, issues_pisc: 0, closing_pisc: 3, so_no: '', receiver_name: '' },
+          { category: 'BLACK BELT', belt_stock: 'WITHOUT SILAI', size: '2.65 M X 63"', opening_pisc: 2, recv_pisc: 0, issues_pisc: 0, closing_pisc: 2, so_no: '', receiver_name: '' },
+          { category: 'BLACK BELT', belt_stock: 'SILAI BELT', size: '85" X 63"', opening_pisc: 1, recv_pisc: 0, issues_pisc: 0, closing_pisc: 1, so_no: '', receiver_name: '' },
+          { category: 'BLACK BELT', belt_stock: 'WITHOUT SILAI', size: '2.77M X 63"', opening_pisc: 0, recv_pisc: 0, issues_pisc: 0, closing_pisc: 0, so_no: '', receiver_name: '' },
+          { category: 'BLACK BELT', belt_stock: 'WITHOUT SILAI', size: '2.78M X 63"', opening_pisc: 4, recv_pisc: 0, issues_pisc: 0, closing_pisc: 4, so_no: '', receiver_name: '' },
+          { category: 'BLACK BELT', belt_stock: 'WITHOUT SILAI', size: '3.03M X 63"', opening_pisc: 3, recv_pisc: 0, issues_pisc: 0, closing_pisc: 3, so_no: '', receiver_name: '' },
+          { category: 'BLACK BELT', belt_stock: 'WITHOUT SILAI', size: '2.91M X 63"', opening_pisc: 6, recv_pisc: 0, issues_pisc: 0, closing_pisc: 6, so_no: '', receiver_name: '' },
+          { category: 'BLACK BELT', belt_stock: 'WITHOUT SILAI', size: '85" X 63"', opening_pisc: 2, recv_pisc: 0, issues_pisc: 0, closing_pisc: 2, so_no: '', receiver_name: '' },
+          { category: 'BLACK BELT', belt_stock: 'WITHOUT SILAI', size: '3.14M X 63INCH', opening_pisc: 0, recv_pisc: 0, issues_pisc: 0, closing_pisc: 0, so_no: '', receiver_name: '' }
+        ];
+
+        for (let idx = 0; idx < seedData.length; idx++) {
+          const item = seedData[idx];
+          const id = `ready-${Date.now()}-${idx}`;
+          await pool.query(
+            `INSERT INTO ready_belt_stocks 
+             (id, category, belt_stock, size, opening_pisc, recv_pisc, issues_pisc, closing_pisc, so_no, receiver_name) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [id, item.category, item.belt_stock, item.size, item.opening_pisc, item.recv_pisc, item.issues_pisc, item.closing_pisc, item.so_no, item.receiver_name]
+          );
+        }
+        console.log('Seeded ready_belt_stocks data successfully.');
+      }
+    } catch (rbCheckErr) {
+      console.warn('Failed to create ready_belt_stocks table:', rbCheckErr);
     }
 
     // Create HRMS Departments table
@@ -1736,7 +1813,8 @@ app.get('/api/material-stocks', async (req, res) => {
       name: row.name,
       quantity: parseFloat(row.quantity),
       unit: row.unit,
-      reorderLevel: parseFloat(row.reorder_level) || 0
+      reorderLevel: parseFloat(row.reorder_level) || 0,
+      lots: typeof row.lots === 'string' ? JSON.parse(row.lots) : (row.lots || [])
     })));
   } catch (err) {
     console.error('Failed to get material stocks', err);
@@ -1746,14 +1824,14 @@ app.get('/api/material-stocks', async (req, res) => {
 
 app.post('/api/material-stocks', async (req: any, res) => {
   try {
-    const { name, quantity, unit, reorderLevel } = req.body;
+    const { name, quantity, unit, reorderLevel, lots } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
     const id = 'stock-' + Date.now();
     await pool.query(
-      'INSERT INTO material_stocks (id, name, quantity, unit, reorder_level) VALUES ($1, $2, $3, $4, $5)', 
-      [id, name.trim(), parseFloat(quantity) || 0, (unit || 'pcs').trim(), parseFloat(reorderLevel) || 0]
+      'INSERT INTO material_stocks (id, name, quantity, unit, reorder_level, lots) VALUES ($1, $2, $3, $4, $5, $6)', 
+      [id, name.trim(), parseFloat(quantity) || 0, (unit || 'pcs').trim(), parseFloat(reorderLevel) || 0, JSON.stringify(lots || [])]
     );
-    res.json({ id, name: name.trim(), quantity: parseFloat(quantity) || 0, unit: (unit || 'pcs').trim(), reorderLevel: parseFloat(reorderLevel) || 0 });
+    res.json({ id, name: name.trim(), quantity: parseFloat(quantity) || 0, unit: (unit || 'pcs').trim(), reorderLevel: parseFloat(reorderLevel) || 0, lots: lots || [] });
   } catch (err: any) {
     console.error('Failed to add material stock', err);
     if (err.code === '23505') {
@@ -1765,13 +1843,13 @@ app.post('/api/material-stocks', async (req: any, res) => {
 
 app.put('/api/material-stocks/:id', async (req: any, res) => {
   try {
-    const { name, quantity, unit, reorderLevel } = req.body;
+    const { name, quantity, unit, reorderLevel, lots } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
     await pool.query(
-      'UPDATE material_stocks SET name = $1, quantity = $2, unit = $3, reorder_level = $4 WHERE id = $5',
-      [name.trim(), parseFloat(quantity) || 0, (unit || 'pcs').trim(), parseFloat(reorderLevel) || 0, req.params.id]
+      'UPDATE material_stocks SET name = $1, quantity = $2, unit = $3, reorder_level = $4, lots = $5 WHERE id = $6',
+      [name.trim(), parseFloat(quantity) || 0, (unit || 'pcs').trim(), parseFloat(reorderLevel) || 0, JSON.stringify(lots || []), req.params.id]
     );
-    res.json({ id: req.params.id, name: name.trim(), quantity: parseFloat(quantity) || 0, unit: (unit || 'pcs').trim(), reorderLevel: parseFloat(reorderLevel) || 0 });
+    res.json({ id: req.params.id, name: name.trim(), quantity: parseFloat(quantity) || 0, unit: (unit || 'pcs').trim(), reorderLevel: parseFloat(reorderLevel) || 0, lots: lots || [] });
   } catch (err: any) {
     console.error('Failed to update material stock', err);
     if (err.code === '23505') {
@@ -1803,9 +1881,37 @@ app.patch('/api/material-stocks/:id/refill', async (req: any, res) => {
     if (addQuantity === undefined || isNaN(addQuantity) || parseFloat(addQuantity) <= 0) {
       return res.status(400).json({ error: 'Valid addQuantity is required' });
     }
+
+    // Fetch current lots to append the new refilled pieces
+    const currentRes = await pool.query('SELECT lots FROM material_stocks WHERE id = $1', [req.params.id]);
+    let lots = [];
+    if (currentRes.rowCount > 0 && currentRes.rows[0].lots) {
+      lots = typeof currentRes.rows[0].lots === 'string' 
+        ? JSON.parse(currentRes.rows[0].lots) 
+        : currentRes.rows[0].lots;
+    }
+    const addQty = parseFloat(addQuantity);
+
+    const isInt = Number.isInteger(addQty);
+    const newPieces = [];
+    if (isInt && addQty > 0) {
+      for (let i = 0; i < addQty; i++) {
+        newPieces.push({ pieceNo: i + 1, weight: 0 });
+      }
+    } else if (addQty > 0) {
+      newPieces.push({ pieceNo: 1, weight: addQty });
+    }
+
+    if (newPieces.length > 0) {
+      lots.push({
+        lotNumber: `Refill-${new Date().toISOString().slice(0, 10)}`,
+        pieces: newPieces
+      });
+    }
+
     const result = await pool.query(
-      'UPDATE material_stocks SET quantity = quantity + $1 WHERE id = $2 RETURNING *',
-      [parseFloat(addQuantity), req.params.id]
+      'UPDATE material_stocks SET quantity = quantity + $1, lots = $2 WHERE id = $3 RETURNING *',
+      [addQty, JSON.stringify(lots), req.params.id]
     );
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Material stock not found' });
@@ -1816,7 +1922,8 @@ app.patch('/api/material-stocks/:id/refill', async (req: any, res) => {
       name: row.name,
       quantity: parseFloat(row.quantity),
       unit: row.unit,
-      reorderLevel: parseFloat(row.reorder_level) || 0
+      reorderLevel: parseFloat(row.reorder_level) || 0,
+      lots: typeof row.lots === 'string' ? JSON.parse(row.lots) : (row.lots || [])
     });
   } catch (err) {
     console.error('Failed to refill stock', err);
@@ -1834,6 +1941,114 @@ app.delete('/api/material-stocks/:id', async (req: any, res) => {
   }
 });
 
+// Ready Belt Stocks Routes
+app.get('/api/ready-belt-stocks', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM ready_belt_stocks ORDER BY category ASC, id ASC');
+    res.json(result.rows.map(row => ({
+      id: row.id,
+      category: row.category,
+      beltStock: row.belt_stock,
+      size: row.size,
+      openingPisc: parseInt(row.opening_pisc, 10) || 0,
+      recvPisc: parseInt(row.recv_pisc, 10) || 0,
+      issuesPisc: parseInt(row.issues_pisc, 10) || 0,
+      closingPisc: parseInt(row.closing_pisc, 10) || 0,
+      soNo: row.so_no || '',
+      receiverName: row.receiver_name || ''
+    })));
+  } catch (err) {
+    console.error('Failed to get ready belt stocks', err);
+    res.status(500).json({ error: 'Failed to retrieve ready belt stocks' });
+  }
+});
+
+app.post('/api/ready-belt-stocks', async (req, res) => {
+  try {
+    const { category, beltStock, size, openingPisc, recvPisc, issuesPisc, soNo, receiverName } = req.body;
+    if (!category || !category.trim()) return res.status(400).json({ error: 'Category is required' });
+    if (!beltStock || !beltStock.trim()) return res.status(400).json({ error: 'Belt Stock name is required' });
+    if (!size || !size.trim()) return res.status(400).json({ error: 'Size is required' });
+
+    const open = parseInt(openingPisc, 10) || 0;
+    const recv = parseInt(recvPisc, 10) || 0;
+    const issue = parseInt(issuesPisc, 10) || 0;
+    const closing = open + recv - issue;
+    const id = 'ready-' + Date.now();
+
+    await pool.query(
+      `INSERT INTO ready_belt_stocks 
+       (id, category, belt_stock, size, opening_pisc, recv_pisc, issues_pisc, closing_pisc, so_no, receiver_name) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [id, category.trim(), beltStock.trim(), size.trim(), open, recv, issue, closing, (soNo || '').trim(), (receiverName || '').trim()]
+    );
+
+    res.json({
+      id,
+      category: category.trim(),
+      beltStock: beltStock.trim(),
+      size: size.trim(),
+      openingPisc: open,
+      recvPisc: recv,
+      issuesPisc: issue,
+      closingPisc: closing,
+      soNo: (soNo || '').trim(),
+      receiverName: (receiverName || '').trim()
+    });
+  } catch (err) {
+    console.error('Failed to add ready belt stock', err);
+    res.status(500).json({ error: 'Failed to add ready belt stock' });
+  }
+});
+
+app.put('/api/ready-belt-stocks/:id', async (req, res) => {
+  try {
+    const { category, beltStock, size, openingPisc, recvPisc, issuesPisc, soNo, receiverName } = req.body;
+    if (!category || !category.trim()) return res.status(400).json({ error: 'Category is required' });
+    if (!beltStock || !beltStock.trim()) return res.status(400).json({ error: 'Belt Stock name is required' });
+    if (!size || !size.trim()) return res.status(400).json({ error: 'Size is required' });
+
+    const open = parseInt(openingPisc, 10) || 0;
+    const recv = parseInt(recvPisc, 10) || 0;
+    const issue = parseInt(issuesPisc, 10) || 0;
+    const closing = open + recv - issue;
+
+    await pool.query(
+      `UPDATE ready_belt_stocks 
+       SET category = $1, belt_stock = $2, size = $3, opening_pisc = $4, recv_pisc = $5, issues_pisc = $6, closing_pisc = $7, so_no = $8, receiver_name = $9 
+       WHERE id = $10`,
+      [category.trim(), beltStock.trim(), size.trim(), open, recv, issue, closing, (soNo || '').trim(), (receiverName || '').trim(), req.params.id]
+    );
+
+    res.json({
+      id: req.params.id,
+      category: category.trim(),
+      beltStock: beltStock.trim(),
+      size: size.trim(),
+      openingPisc: open,
+      recvPisc: recv,
+      issuesPisc: issue,
+      closingPisc: closing,
+      soNo: (soNo || '').trim(),
+      receiverName: (receiverName || '').trim()
+    });
+  } catch (err) {
+    console.error('Failed to update ready belt stock', err);
+    res.status(500).json({ error: 'Failed to update ready belt stock' });
+  }
+});
+
+app.delete('/api/ready-belt-stocks/:id', async (req: any, res) => {
+  try {
+    await pool.query('DELETE FROM ready_belt_stocks WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Failed to delete ready belt stock', err);
+    res.status(500).json({ error: 'Failed to delete ready belt stock' });
+  }
+});
+
+
 // ─── Material Issues / Production Log Routes ──────────────────────────────
 
 app.get('/api/material-issues', async (req, res) => {
@@ -1847,6 +2062,7 @@ app.get('/api/material-issues', async (req, res) => {
       unit: row.unit,
       issuedTo: row.issued_to,
       notes: row.notes || '',
+      lotNumber: row.lot_number || '',
       issuedAt: row.issued_at
     })));
   } catch (err) {
@@ -1857,24 +2073,92 @@ app.get('/api/material-issues', async (req, res) => {
 
 app.post('/api/material-issues', async (req: any, res) => {
   try {
-    const { materialId, materialName, quantity, unit, issuedTo, notes } = req.body;
+    const { materialId, materialName, quantity, unit, issuedTo, notes, lotNumber } = req.body;
     if (!materialName || !issuedTo) return res.status(400).json({ error: 'Material name and issued-to are required' });
     if (!quantity || quantity <= 0) return res.status(400).json({ error: 'Quantity must be greater than 0' });
 
     if (materialId) {
-      const stockRow = await pool.query('SELECT quantity FROM material_stocks WHERE id = $1', [materialId]);
+      const stockRow = await pool.query('SELECT quantity, lots FROM material_stocks WHERE id = $1', [materialId]);
       if (stockRow.rows.length > 0) {
-        const newQty = Math.max(0, parseFloat(stockRow.rows[0].quantity) - parseFloat(quantity));
-        await pool.query('UPDATE material_stocks SET quantity = $1 WHERE id = $2', [newQty, materialId]);
+        const currentQty = parseFloat(stockRow.rows[0].quantity);
+        const qtyToIssue = parseFloat(quantity);
+        const newQty = Math.max(0, currentQty - qtyToIssue);
+        
+        let lots = [];
+        if (stockRow.rows[0].lots) {
+          lots = typeof stockRow.rows[0].lots === 'string' 
+            ? JSON.parse(stockRow.rows[0].lots) 
+            : stockRow.rows[0].lots;
+        }
+        
+        if (lots && lots.length > 0) {
+          let remainingToIssue = qtyToIssue;
+          const isInt = Number.isInteger(qtyToIssue);
+          
+          // Filter to target lot if specified
+          const targetLots = lotNumber 
+            ? lots.filter((l: any) => l.lotNumber === lotNumber)
+            : lots;
+
+          if (isInt) {
+            for (let i = 0; i < targetLots.length; i++) {
+              if (remainingToIssue <= 0) break;
+              const lot = targetLots[i];
+              if (lot.pieces && lot.pieces.length > 0) {
+                const piecesCount = lot.pieces.length;
+                if (piecesCount <= remainingToIssue) {
+                  remainingToIssue -= piecesCount;
+                  lot.pieces = [];
+                } else {
+                  lot.pieces = lot.pieces.slice(remainingToIssue);
+                  remainingToIssue = 0;
+                }
+              }
+            }
+          } else {
+            for (let i = 0; i < targetLots.length; i++) {
+              if (remainingToIssue <= 0) break;
+              const lot = targetLots[i];
+              if (lot.pieces && lot.pieces.length > 0) {
+                while (lot.pieces.length > 0 && remainingToIssue > 0) {
+                  const firstPiece = lot.pieces[0];
+                  if (firstPiece.weight <= remainingToIssue && firstPiece.weight > 0) {
+                    remainingToIssue -= firstPiece.weight;
+                    lot.pieces.shift();
+                  } else {
+                    if (firstPiece.weight > 0) {
+                      firstPiece.weight = parseFloat((firstPiece.weight - remainingToIssue).toFixed(3));
+                    }
+                    remainingToIssue = 0;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
+          // Merge targetLots back into lots
+          if (lotNumber) {
+            lots = lots.map((l: any) => {
+              if (l.lotNumber === lotNumber) {
+                return targetLots.find((tl: any) => tl.lotNumber === lotNumber) || l;
+              }
+              return l;
+            });
+          }
+          lots = lots.filter((l: any) => l.pieces && l.pieces.length > 0);
+        }
+
+        await pool.query('UPDATE material_stocks SET quantity = $1, lots = $2 WHERE id = $3', [newQty, JSON.stringify(lots), materialId]);
       }
     }
 
     const id = 'issue-' + Date.now();
     await pool.query(
-      'INSERT INTO material_issues (id, material_id, material_name, quantity, unit, issued_to, notes) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [id, materialId || '', materialName, parseFloat(quantity), unit || 'pcs', issuedTo.trim(), notes || '']
+      'INSERT INTO material_issues (id, material_id, material_name, quantity, unit, issued_to, notes, lot_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [id, materialId || '', materialName, parseFloat(quantity), unit || 'pcs', issuedTo.trim(), notes || '', lotNumber || null]
     );
-    res.json({ id, materialId: materialId || '', materialName, quantity: parseFloat(quantity), unit: unit || 'pcs', issuedTo: issuedTo.trim(), notes: notes || '', issuedAt: new Date().toISOString() });
+    res.json({ id, materialId: materialId || '', materialName, quantity: parseFloat(quantity), unit: unit || 'pcs', issuedTo: issuedTo.trim(), notes: notes || '', lotNumber: lotNumber || '', issuedAt: new Date().toISOString() });
   } catch (err) {
     console.error('Failed to create material issue', err);
     res.status(500).json({ error: 'Failed to issue material' });
@@ -1895,15 +2179,15 @@ app.delete('/api/material-issues/:id', async (req: any, res) => {
 
 app.post('/api/material-requests', async (req: any, res) => {
   try {
-    const { materialId, materialName, requestedQuantity, unit, requestedBy, notes } = req.body;
+    const { materialId, materialName, requestedQuantity, unit, requestedBy, notes, lotNumber } = req.body;
     if (!materialName || !requestedQuantity || !requestedBy) {
       return res.status(400).json({ error: 'Material name, quantity, and requester name are required' });
     }
     const id = 'req-' + Date.now();
     await pool.query(
-      `INSERT INTO material_requests (id, material_id, material_name, requested_quantity, unit, requested_by, notes) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [id, materialId || null, materialName.trim(), parseFloat(requestedQuantity), (unit || 'pcs').trim(), requestedBy.trim(), notes || '']
+      `INSERT INTO material_requests (id, material_id, material_name, requested_quantity, unit, requested_by, notes, lot_number) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [id, materialId || null, materialName.trim(), parseFloat(requestedQuantity), (unit || 'pcs').trim(), requestedBy.trim(), notes || '', lotNumber || null]
     );
     res.json({ id, success: true });
   } catch (err) {
@@ -1935,6 +2219,7 @@ app.get('/api/material-requests', async (req, res) => {
       approvedQuantity: row.approved_quantity ? parseFloat(row.approved_quantity) : null,
       approvedBy: row.approved_by || '',
       approvalNotes: row.approval_notes || '',
+      lotNumber: row.lot_number || '',
       requestedAt: row.requested_at,
       approvedAt: row.approved_at
     })));
@@ -1946,7 +2231,7 @@ app.get('/api/material-requests', async (req, res) => {
 
 app.post('/api/material-requests/:id/approve', async (req: any, res) => {
   const { id } = req.params;
-  const { approvedQuantity, approvalNotes, approvedBy } = req.body;
+  const { approvedQuantity, approvalNotes, approvedBy, lotNumber } = req.body;
   if (approvedQuantity === undefined || isNaN(approvedQuantity) || parseFloat(approvedQuantity) <= 0) {
     return res.status(400).json({ error: 'Valid approved quantity is required' });
   }
@@ -1966,18 +2251,84 @@ app.post('/api/material-requests/:id/approve', async (req: any, res) => {
 
     await pool.query(
       `UPDATE material_requests 
-       SET status = 'approved', approved_quantity = $1, approved_by = $2, approval_notes = $3, approved_at = CURRENT_TIMESTAMP
-       WHERE id = $4`,
-      [appQty, appBy, appNotes, id]
+       SET status = 'approved', approved_quantity = $1, approved_by = $2, approval_notes = $3, lot_number = $4, approved_at = CURRENT_TIMESTAMP
+       WHERE id = $5`,
+      [appQty, appBy, appNotes, lotNumber || null, id]
     );
 
     const materialId = request.material_id;
     if (materialId) {
-      const stockRes = await pool.query('SELECT quantity FROM material_stocks WHERE id = $1', [materialId]);
+      const stockRes = await pool.query('SELECT quantity, lots FROM material_stocks WHERE id = $1', [materialId]);
       if (stockRes.rowCount! > 0) {
         const currentStock = parseFloat(stockRes.rows[0].quantity);
         const newQty = Math.max(0, currentStock - appQty);
-        await pool.query('UPDATE material_stocks SET quantity = $1 WHERE id = $2', [newQty, materialId]);
+        
+        let lots = [];
+        if (stockRes.rows[0].lots) {
+          lots = typeof stockRes.rows[0].lots === 'string' 
+            ? JSON.parse(stockRes.rows[0].lots) 
+            : stockRes.rows[0].lots;
+        }
+        
+        if (lots && lots.length > 0) {
+          let remainingToIssue = appQty;
+          const isInt = Number.isInteger(appQty);
+          
+          // Filter to target lot if specified
+          const targetLots = lotNumber 
+            ? lots.filter((l: any) => l.lotNumber === lotNumber)
+            : lots;
+
+          if (isInt) {
+            for (let i = 0; i < targetLots.length; i++) {
+              if (remainingToIssue <= 0) break;
+              const lot = targetLots[i];
+              if (lot.pieces && lot.pieces.length > 0) {
+                const piecesCount = lot.pieces.length;
+                if (piecesCount <= remainingToIssue) {
+                  remainingToIssue -= piecesCount;
+                  lot.pieces = [];
+                } else {
+                  lot.pieces = lot.pieces.slice(remainingToIssue);
+                  remainingToIssue = 0;
+                }
+              }
+            }
+          } else {
+            for (let i = 0; i < targetLots.length; i++) {
+              if (remainingToIssue <= 0) break;
+              const lot = targetLots[i];
+              if (lot.pieces && lot.pieces.length > 0) {
+                while (lot.pieces.length > 0 && remainingToIssue > 0) {
+                  const firstPiece = lot.pieces[0];
+                  if (firstPiece.weight <= remainingToIssue && firstPiece.weight > 0) {
+                    remainingToIssue -= firstPiece.weight;
+                    lot.pieces.shift();
+                  } else {
+                    if (firstPiece.weight > 0) {
+                      firstPiece.weight = parseFloat((firstPiece.weight - remainingToIssue).toFixed(3));
+                    }
+                    remainingToIssue = 0;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
+          // Merge targetLots back into lots
+          if (lotNumber) {
+            lots = lots.map((l: any) => {
+              if (l.lotNumber === lotNumber) {
+                return targetLots.find((tl: any) => tl.lotNumber === lotNumber) || l;
+              }
+              return l;
+            });
+          }
+          lots = lots.filter((l: any) => l.pieces && l.pieces.length > 0);
+        }
+
+        await pool.query('UPDATE material_stocks SET quantity = $1, lots = $2 WHERE id = $3', [newQty, JSON.stringify(lots), materialId]);
       }
     }
 
@@ -1986,9 +2337,9 @@ app.post('/api/material-requests/:id/approve', async (req: any, res) => {
     const issueNote = `Approved Qty: ${appQty} (Requested: ${request.requested_quantity}). Note: ${appNotes}`;
 
     await pool.query(
-      `INSERT INTO material_issues (id, material_id, material_name, quantity, unit, issued_to, notes, issued_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
-      [issueId, materialId || '', request.material_name, appQty, request.unit || 'pcs', issuedTo, issueNote]
+      `INSERT INTO material_issues (id, material_id, material_name, quantity, unit, issued_to, notes, lot_number, issued_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)`,
+      [issueId, materialId || '', request.material_name, appQty, request.unit || 'pcs', issuedTo, issueNote, lotNumber || null]
     );
 
     res.json({ success: true });

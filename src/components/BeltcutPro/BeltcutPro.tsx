@@ -12,7 +12,7 @@ import {
 } from './services/firebase';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
-import { Roll, Cut, Order, OptimizationCandidate, Unit, MaterialStock, MaterialIssue, MaterialRequest } from './types';
+import { Roll, Cut, Order, OptimizationCandidate, Unit, MaterialStock, MaterialIssue, MaterialRequest, ReadyBeltStock } from './types';
 import {
   MATERIAL_TYPES,
   CUT_COLORS
@@ -146,6 +146,16 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   const [materialStocks, setMaterialStocks] = useState<MaterialStock[]>([]);
   const [newMaterialStock, setNewMaterialStock] = useState({ name: '', quantity: '', unit: 'pcs', reorderLevel: '' });
   const [config, setConfig] = useState<any>(null);
+  const [formLots, setFormLots] = useState<any[]>([]);
+  const [expandedStockIds, setExpandedStockIds] = useState<string[]>([]);
+
+  // Synchronize lots count with quantity in "Add Material" form
+  useEffect(() => {
+    if (formLots.length > 0) {
+      const totalPieces = formLots.reduce((sum, lot) => sum + (lot.pieces?.length || 0), 0);
+      setNewMaterialStock(prev => ({ ...prev, quantity: totalPieces.toString() }));
+    }
+  }, [formLots]);
 
   const loadConfigData = async () => {
     try {
@@ -159,8 +169,27 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     }
   };
   const [editingMaterialStock, setEditingMaterialStock] = useState<MaterialStock | null>(null);
+
+  // Synchronize lots count with quantity in "Edit Material" inline form
+  useEffect(() => {
+    if (editingMaterialStock) {
+      setFormLots(editingMaterialStock.lots || []);
+    } else {
+      setFormLots([]);
+    }
+  }, [editingMaterialStock?.id]);
+
+  useEffect(() => {
+    if (editingMaterialStock && formLots.length > 0) {
+      const totalPieces = formLots.reduce((sum, lot) => sum + (lot.pieces?.length || 0), 0);
+      if (editingMaterialStock.quantity !== totalPieces) {
+        setEditingMaterialStock(prev => prev ? { ...prev, quantity: totalPieces } : null);
+      }
+    }
+  }, [formLots]);
+
   const [showAddMaterialForm, setShowAddMaterialForm] = useState(false);
-  const [activeInventoryCard, setActiveInventoryCard] = useState<'materials' | 'remnants' | 'fresh' | 'reorder' | 'requests' | null>(null);
+  const [activeInventoryCard, setActiveInventoryCard] = useState<'materials' | 'remnants' | 'fresh' | 'reorder' | 'requests' | 'ready_belt' | null>(null);
   const [editingReorderLevel, setEditingReorderLevel] = useState<Record<string, string>>({}); // stockId -> input value
   const [savingReorderLevel, setSavingReorderLevel] = useState<string | null>(null); // stockId being saved
   const [editingRollReorderLevel, setEditingRollReorderLevel] = useState<Record<string, string>>({}); // rollId -> input value
@@ -183,12 +212,12 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   // Material Requests states
   const [materialRequests, setMaterialRequests] = useState<MaterialRequest[]>([]);
   const [showRequestModal, setShowRequestModal] = useState(false);
-  const [requestForm, setRequestForm] = useState({ materialId: '', quantity: '', notes: '' });
+  const [requestForm, setRequestForm] = useState({ materialId: '', quantity: '', notes: '', lotNumber: '' });
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
 
   const [approvingRequest, setApprovingRequest] = useState<MaterialRequest | null>(null);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
-  const [approvalForm, setApprovalForm] = useState({ approvedQuantity: '', approvalNotes: '' });
+  const [approvalForm, setApprovalForm] = useState({ approvedQuantity: '', approvalNotes: '', lotNumber: '' });
   const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
   const [requestsSubTab, setRequestsSubTab] = useState<'pending' | 'history'>('pending');
   const [reorderSubTab, setReorderSubTab] = useState<'materials' | 'rolls' | 'remnants'>('materials');
@@ -205,6 +234,34 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   const [selectedOrderData, setSelectedOrderData] = useState<any | null>(null);
   const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
   const [justCutExecuted, setJustCutExecuted] = useState(false);
+
+  // Ready Belt Stocks states
+  const [readyBeltStocks, setReadyBeltStocks] = useState<ReadyBeltStock[]>([]);
+  const [readyBeltSearchQuery, setReadyBeltSearchQuery] = useState('');
+  const [showAddReadyBeltForm, setShowAddReadyBeltForm] = useState(false);
+  const [newReadyBeltStock, setNewReadyBeltStock] = useState({
+    category: 'BROWN BELT',
+    beltStock: '',
+    size: '',
+    openingPisc: '',
+    recvPisc: '',
+    issuesPisc: '',
+    soNo: '',
+    receiverName: ''
+  });
+  const [editingReadyBeltStock, setEditingReadyBeltStock] = useState<ReadyBeltStock | null>(null);
+
+  const loadReadyBeltStocksData = async () => {
+    try {
+      const res = await fetch('/api/ready-belt-stocks');
+      if (res.ok) {
+        const data = await res.json();
+        setReadyBeltStocks(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch ready belt stocks:", err);
+    }
+  };
 
   const loadMaterialStocksData = async () => {
     try {
@@ -358,12 +415,14 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
         body: JSON.stringify({
           name: newMaterialStock.name.trim(),
           quantity: parseFloat(newMaterialStock.quantity) || 0,
-          unit: newMaterialStock.unit.trim() || 'pcs'
+          unit: newMaterialStock.unit.trim() || 'pcs',
+          lots: formLots
         })
       });
       if (res.ok) {
         toast.success("Material stock added successfully!");
         setNewMaterialStock({ name: '', quantity: '', unit: 'pcs', reorderLevel: '' });
+        setFormLots([]);
         setShowAddMaterialForm(false);
         loadMaterialStocksData();
       } else {
@@ -384,12 +443,14 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
         body: JSON.stringify({
           name: editingMaterialStock.name.trim(),
           quantity: editingMaterialStock.quantity,
-          unit: editingMaterialStock.unit
+          unit: editingMaterialStock.unit,
+          lots: formLots
         })
       });
       if (res.ok) {
         toast.success("Material stock updated successfully!");
         setEditingMaterialStock(null);
+        setFormLots([]);
         loadMaterialStocksData();
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -415,6 +476,97 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       }
     } catch (err) {
       toast.error("Failed to delete material stock");
+    }
+  };
+
+  const handleAddReadyBeltStock = async () => {
+    if (!newReadyBeltStock.beltStock.trim() || !newReadyBeltStock.size.trim()) {
+      toast.error("Belt Stock Name and Size are required.");
+      return;
+    }
+    try {
+      const res = await fetch('/api/ready-belt-stocks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: newReadyBeltStock.category,
+          beltStock: newReadyBeltStock.beltStock.trim(),
+          size: newReadyBeltStock.size.trim(),
+          openingPisc: parseInt(newReadyBeltStock.openingPisc, 10) || 0,
+          recvPisc: parseInt(newReadyBeltStock.recvPisc, 10) || 0,
+          issuesPisc: parseInt(newReadyBeltStock.issuesPisc, 10) || 0,
+          soNo: newReadyBeltStock.soNo.trim(),
+          receiverName: newReadyBeltStock.receiverName.trim()
+        })
+      });
+      if (res.ok) {
+        toast.success("Ready Belt Stock added successfully!");
+        setNewReadyBeltStock({
+          category: 'BROWN BELT',
+          beltStock: '',
+          size: '',
+          openingPisc: '',
+          recvPisc: '',
+          issuesPisc: '',
+          soNo: '',
+          receiverName: ''
+        });
+        setShowAddReadyBeltForm(false);
+        loadReadyBeltStocksData();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(errData.error || "Failed to add ready belt stock");
+      }
+    } catch (err) {
+      toast.error("Failed to add ready belt stock");
+    }
+  };
+
+  const handleUpdateReadyBeltStock = async () => {
+    if (!editingReadyBeltStock || !editingReadyBeltStock.beltStock.trim() || !editingReadyBeltStock.size.trim()) return;
+    try {
+      const res = await fetch(`/api/ready-belt-stocks/${editingReadyBeltStock.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: editingReadyBeltStock.category,
+          beltStock: editingReadyBeltStock.beltStock.trim(),
+          size: editingReadyBeltStock.size.trim(),
+          openingPisc: editingReadyBeltStock.openingPisc,
+          recvPisc: editingReadyBeltStock.recvPisc,
+          issuesPisc: editingReadyBeltStock.issuesPisc,
+          soNo: editingReadyBeltStock.soNo.trim(),
+          receiverName: editingReadyBeltStock.receiverName.trim()
+        })
+      });
+      if (res.ok) {
+        toast.success("Ready Belt Stock updated successfully!");
+        setEditingReadyBeltStock(null);
+        loadReadyBeltStocksData();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(errData.error || "Failed to update ready belt stock");
+      }
+    } catch (err) {
+      toast.error("Failed to update ready belt stock");
+    }
+  };
+
+  const handleDeleteReadyBeltStock = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
+    try {
+      const res = await fetch(`/api/ready-belt-stocks/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        toast.success("Ready Belt Stock deleted successfully!");
+        loadReadyBeltStocksData();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(errData.error || "Failed to delete ready belt stock");
+      }
+    } catch (err) {
+      toast.error("Failed to delete ready belt stock");
     }
   };
 
@@ -560,13 +712,14 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
           requestedQuantity: qty,
           unit: mat.unit,
           requestedBy: requesterName,
-          notes: requestForm.notes.trim()
+          notes: requestForm.notes.trim(),
+          lotNumber: requestForm.lotNumber || undefined
         })
       });
       if (res.ok) {
         toast.success('Material request sent successfully!');
         setShowRequestModal(false);
-        setRequestForm({ materialId: '', quantity: '', notes: '' });
+        setRequestForm({ materialId: '', quantity: '', notes: '', lotNumber: '' });
         await loadMaterialRequestsData();
       } else {
         toast.error('Failed to send request');
@@ -583,7 +736,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     setApprovingRequest(req);
     setApprovalForm({
       approvedQuantity: req.requestedQuantity.toString(),
-      approvalNotes: ''
+      approvalNotes: '',
+      lotNumber: req.lotNumber || ''
     });
     setShowApprovalModal(true);
   };
@@ -604,7 +758,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
         body: JSON.stringify({
           approvedQuantity: qty,
           approvalNotes: approvalForm.approvalNotes.trim(),
-          approvedBy: approvedByName
+          approvedBy: approvedByName,
+          lotNumber: approvalForm.lotNumber || undefined
         })
       });
       if (res.ok) {
@@ -697,6 +852,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     loadMaterialRequestsData();
     loadMaterialTypeReorders();
     loadMaterialTypesData();
+    loadReadyBeltStocksData();
   }, []);
 
   const bomComponentNames = useMemo(() => {
@@ -802,9 +958,12 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     soNumber: ''
   });
 
+  const [selectedLotNumber, setSelectedLotNumber] = useState('');
+
   useEffect(() => {
     setCuttingSelectedRollId('');
     setRollSearchQuery('');
+    setSelectedLotNumber('');
   }, [selectedOrder.materialType]);
 
   useEffect(() => {
@@ -1488,7 +1647,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
               quantity: cutArea,
               unit: matchingStock?.unit || 'sqm',
               issuedTo: 'REUSE STOCK',
-              notes: `Auto-logged on inventory cut from parent Roll ${item.rollId}`
+              notes: `Auto-logged on inventory cut from parent Roll ${item.rollId}`,
+              lotNumber: selectedLotNumber || undefined
             })
           });
           await loadMaterialStocksData();
@@ -1651,7 +1811,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                 quantity: cutArea,
                 unit: matchingStock?.unit || 'sqm',
                 issuedTo: 'REUSE STOCK',
-                notes: `Auto-logged on inventory cut from parent Roll ${p.rollId}`
+                notes: `Auto-logged on inventory cut from parent Roll ${p.rollId}`,
+                lotNumber: selectedLotNumber || undefined
               })
             });
             await loadMaterialStocksData();
@@ -1835,7 +1996,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
               quantity: cutArea,
               unit: matchingStock?.unit || 'sqm',
               issuedTo: 'REUSE STOCK',
-              notes: `Auto-logged on inventory cut from parent Roll ${rollId}`
+              notes: `Auto-logged on inventory cut from parent Roll ${rollId}`,
+              lotNumber: selectedLotNumber || undefined
             })
           });
           await loadMaterialStocksData();
@@ -2680,6 +2842,30 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
       (stock.unit || '').toLowerCase().includes(query)
     );
   }, [materialStocks, materialSearchQuery]);
+
+  const filteredReadyBeltStocksList = useMemo(() => {
+    if (!readyBeltSearchQuery) return readyBeltStocks;
+    const query = readyBeltSearchQuery.toLowerCase().trim();
+    return readyBeltStocks.filter(item =>
+      (item.category || '').toLowerCase().includes(query) ||
+      (item.beltStock || '').toLowerCase().includes(query) ||
+      (item.size || '').toLowerCase().includes(query) ||
+      (item.soNo || '').toLowerCase().includes(query) ||
+      (item.receiverName || '').toLowerCase().includes(query)
+    );
+  }, [readyBeltStocks, readyBeltSearchQuery]);
+
+  const readyBeltGroups = useMemo(() => {
+    const groups: Record<string, ReadyBeltStock[]> = {};
+    filteredReadyBeltStocksList.forEach(item => {
+      const cat = item.category || 'OTHER';
+      if (!groups[cat]) {
+        groups[cat] = [];
+      }
+      groups[cat].push(item);
+    });
+    return groups;
+  }, [filteredReadyBeltStocksList]);
 
   const filteredRemnantRollsList = useMemo(() => {
     const activeRemnants = rolls.filter(r => r.status !== 'refused' && isRollReuse(r));
@@ -3642,6 +3828,29 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             </select>
                           </div>
 
+                          {(() => {
+                            const matchingStockForLot = materialStocks.find(s => s.name === selectedOrder.materialType);
+                            const availableLots = matchingStockForLot?.lots || [];
+                            if (availableLots.length === 0) return null;
+                            return (
+                              <div className="space-y-1 animate-in fade-in duration-200">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Select Lot (Optional)</label>
+                                <select
+                                  value={selectedLotNumber}
+                                  onChange={(e) => setSelectedLotNumber(e.target.value)}
+                                  className="w-full px-2.5 py-1 border border-slate-200 rounded-lg focus:border-zinc-950 focus:outline-none font-bold text-xs bg-white cursor-pointer"
+                                >
+                                  <option value="">-- All Lots (Sequential) --</option>
+                                  {availableLots.map(lot => (
+                                    <option key={lot.lotNumber} value={lot.lotNumber}>
+                                      {lot.lotNumber} ({lot.pieces?.length || 0} pcs)
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            );
+                          })()}
+
                           {/* PCS / Quantity field */}
                           <div className="space-y-1">
                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
@@ -4142,8 +4351,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
           {activeTab === 'stock' && (
             <div className="space-y-5">
 
-              {/* ── TOP: Five summary selector tiles ── */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {/* ── TOP: Six summary selector tiles ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
 
                 {/* Tile 1 – Material Stocks */}
                 <button
@@ -4217,6 +4426,31 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                       }`}>master rolls</p>
                   </div>
                   <ChevronRight size={16} className={`shrink-0 transition-transform duration-200 ${activeInventoryCard === 'fresh' ? 'text-white rotate-90' : 'text-slate-300 group-hover:text-indigo-400'
+                    }`} />
+                </button>
+
+                {/* Tile 3.5 – Ready Belt Stock */}
+                <button
+                  type="button"
+                  onClick={() => setActiveInventoryCard(activeInventoryCard === 'ready_belt' ? null : 'ready_belt')}
+                  className={`group w-full text-left p-4 rounded-2xl border-2 transition-all duration-200 cursor-pointer flex items-center gap-4 shadow-sm hover:shadow-md ${activeInventoryCard === 'ready_belt'
+                      ? 'bg-cyan-600 border-cyan-600 text-white shadow-lg'
+                      : 'bg-white border-zinc-200 text-slate-800 hover:border-cyan-400'
+                    }`}
+                >
+                  <div className={`p-2.5 rounded-xl shrink-0 ${activeInventoryCard === 'ready_belt' ? 'bg-white/15' : 'bg-cyan-50'
+                    }`}>
+                    <Layers size={20} className={activeInventoryCard === 'ready_belt' ? 'text-white' : 'text-cyan-600'} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-[9px] font-black uppercase tracking-widest ${activeInventoryCard === 'ready_belt' ? 'text-cyan-100' : 'text-slate-400'
+                      }`}>Ready Belt Stock</p>
+                    <p className={`text-xl font-black leading-none mt-0.5 ${activeInventoryCard === 'ready_belt' ? 'text-white' : 'text-zinc-950'
+                      }`}>{readyBeltStocks.length}</p>
+                    <p className={`text-[9px] font-bold mt-1 ${activeInventoryCard === 'ready_belt' ? 'text-cyan-100' : 'text-slate-400'
+                      }`}>belts tracked</p>
+                  </div>
+                  <ChevronRight size={16} className={`shrink-0 transition-transform duration-200 ${activeInventoryCard === 'ready_belt' ? 'text-white rotate-90' : 'text-slate-300 group-hover:text-cyan-400'
                     }`} />
                 </button>
 
@@ -4379,13 +4613,16 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             </div>
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Quantity</label>
+                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                              Quantity {formLots.length > 0 && <span className="text-emerald-600 font-bold">(Auto-calculated)</span>}
+                            </label>
                             <input
                               type="number"
                               placeholder="0"
                               value={newMaterialStock.quantity}
+                              disabled={formLots.length > 0}
                               onChange={(e) => setNewMaterialStock({ ...newMaterialStock, quantity: e.target.value })}
-                              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
+                              className={`w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950 ${formLots.length > 0 ? 'opacity-70 bg-zinc-50 border-zinc-300 cursor-not-allowed' : ''}`}
                             />
                           </div>
                           <div className="space-y-1">
@@ -4399,6 +4636,120 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             />
                           </div>
                         </div>
+
+                        {/* Lots & Weights Section */}
+                        <div className="border-t border-slate-200/60 pt-4 mt-2">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                              <Layers size={14} className="text-zinc-600" /> Lots & Piece Weights (Optional)
+                            </h4>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFormLots([...formLots, { lotNumber: `Lot ${formLots.length + 1}`, pieces: [] }]);
+                              }}
+                              className="px-2.5 py-1 bg-zinc-950 text-white hover:bg-zinc-800 rounded text-[9px] font-black uppercase flex items-center gap-1 cursor-pointer transition active:scale-95 shadow-sm"
+                            >
+                              <Plus size={11} /> Add Lot
+                            </button>
+                          </div>
+
+                          {formLots.length === 0 ? (
+                            <p className="text-[10px] text-slate-400 italic">No lots added. Quantity will be entered manually.</p>
+                          ) : (
+                            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                              {formLots.map((lot, lIdx) => (
+                                <div key={lIdx} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+                                  <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Lot No</span>
+                                      <input
+                                        type="text"
+                                        value={lot.lotNumber}
+                                        onChange={(e) => {
+                                          const updated = [...formLots];
+                                          updated[lIdx].lotNumber = e.target.value;
+                                          setFormLots(updated);
+                                        }}
+                                        className="px-2 py-0.5 border border-slate-200 rounded font-bold text-xs bg-slate-50 w-36"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updated = [...formLots];
+                                          const nextNo = lot.pieces.length + 1;
+                                          updated[lIdx].pieces.push({ pieceNo: nextNo, weight: 0 });
+                                          setFormLots(updated);
+                                        }}
+                                        className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[9.5px] font-black uppercase cursor-pointer transition active:scale-95"
+                                      >
+                                        + Add Piece
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updated = formLots.filter((_, i) => i !== lIdx);
+                                          setFormLots(updated);
+                                        }}
+                                        className="p-1 hover:bg-red-50 text-red-500 rounded cursor-pointer transition"
+                                        title="Delete Lot"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {lot.pieces.length === 0 ? (
+                                    <p className="text-[10px] text-slate-400 italic pl-1">No pieces in this lot yet.</p>
+                                  ) : (
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pl-1">
+                                      {lot.pieces.map((piece, pIdx) => (
+                                        <div key={pIdx} className="flex items-center border border-slate-100 rounded-xl p-2 bg-slate-50/50 justify-between gap-1">
+                                          <div className="flex flex-col">
+                                            <span className="text-[7.5px] font-black text-slate-400 uppercase">Piece #{piece.pieceNo}</span>
+                                            <div className="flex items-center gap-1 mt-0.5">
+                                              <input
+                                                type="number"
+                                                step="0.001"
+                                                placeholder="Weight"
+                                                value={piece.weight || ''}
+                                                onChange={(e) => {
+                                                  const updated = [...formLots];
+                                                  updated[lIdx].pieces[pIdx].weight = parseFloat(e.target.value) || 0;
+                                                  setFormLots(updated);
+                                                }}
+                                                className="w-16 px-1.5 py-0.5 border border-slate-200 rounded font-mono font-bold text-[10px] text-center bg-white"
+                                              />
+                                              <span className="text-[8px] font-bold text-slate-400 font-mono">kg</span>
+                                            </div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const updated = [...formLots];
+                                              updated[lIdx].pieces = lot.pieces.filter((_, i) => i !== pIdx);
+                                              updated[lIdx].pieces.forEach((p, idx) => {
+                                                p.pieceNo = idx + 1;
+                                              });
+                                              setFormLots(updated);
+                                            }}
+                                            className="p-1 hover:bg-red-50 text-red-400 hover:text-red-600 rounded cursor-pointer transition"
+                                            title="Remove Piece"
+                                          >
+                                            <X size={12} />
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
                         <button
                           onClick={handleAddMaterialStock}
                           className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-black text-xs uppercase tracking-wider transition cursor-pointer"
@@ -4434,70 +4785,126 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                         <tbody className="divide-y divide-zinc-150">
                           {filteredMaterialStocksList.map((item) => {
                             const isEditing = editingMaterialStock?.id === item.id;
+                            const isExpanded = expandedStockIds.includes(item.id) || isEditing;
                             return (
-                              <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                                {isEditing ? (
-                                  <>
-                                    <td className="px-4 py-3">
-                                      <input
-                                        type="text"
-                                        value={editingMaterialStock.name}
-                                        onChange={(e) => setEditingMaterialStock({ ...editingMaterialStock, name: e.target.value })}
-                                        className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-xs font-bold bg-white"
-                                      />
-                                    </td>
-                                    <td className="px-4 py-3" colSpan={2}>
-                                      <div className="flex gap-2">
-                                        <input
-                                          type="number"
-                                          value={editingMaterialStock.quantity}
-                                          onChange={(e) => setEditingMaterialStock({ ...editingMaterialStock, quantity: parseFloat(e.target.value) || 0 })}
-                                          className="w-24 px-3 py-2 border border-zinc-300 rounded-lg text-xs font-bold text-center bg-white"
-                                        />
+                              <React.Fragment key={item.id}>
+                                <tr className="hover:bg-slate-50/50 transition-colors">
+                                  {isEditing ? (
+                                    <>
+                                      <td className="px-4 py-3">
                                         <input
                                           type="text"
-                                          value={editingMaterialStock.unit}
-                                          onChange={(e) => setEditingMaterialStock({ ...editingMaterialStock, unit: e.target.value })}
-                                          className="w-24 px-3 py-2 border border-zinc-300 rounded-lg text-xs font-bold text-center bg-white"
+                                          value={editingMaterialStock.name}
+                                          onChange={(e) => setEditingMaterialStock({ ...editingMaterialStock, name: e.target.value })}
+                                          className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-xs font-bold bg-white"
                                         />
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-3 text-right">
-                                      <div className="flex gap-1.5 justify-end">
-                                        <button
-                                          onClick={handleUpdateMaterialStock}
-                                          className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-1 cursor-pointer"
-                                          title="Save"
-                                        >
-                                          <Check size={13} /> Save
-                                        </button>
-                                        <button
-                                          onClick={() => setEditingMaterialStock(null)}
-                                          className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-[10px] font-black uppercase cursor-pointer"
-                                          title="Cancel"
-                                        >
-                                          Cancel
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </>
-                                ) : (
-                                  <>
-                                    <td className="px-4 py-3 font-black text-sm text-slate-800">{item.name}</td>
-                                    <td className="px-4 py-3">
-                                      <span className="text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-lg">
-                                        {item.quantity} {item.unit}
-                                      </span>
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      <div className="flex items-center gap-1.5">
-                                        <input
-                                          type="number"
-                                          placeholder="+ Qty"
-                                          id={`refill-qty-${item.id}`}
-                                          className="w-16 px-2.5 py-1.5 border border-zinc-200 rounded-lg text-xs font-bold bg-white text-center focus:outline-none focus:ring-2 focus:ring-zinc-950"
-                                          onKeyDown={async (e) => {
-                                            if (e.key === 'Enter') {
+                                      </td>
+                                      <td className="px-4 py-3" colSpan={2}>
+                                        <div className="flex gap-2">
+                                          <input
+                                            type="number"
+                                            value={editingMaterialStock.quantity}
+                                            disabled={formLots.length > 0}
+                                            onChange={(e) => setEditingMaterialStock({ ...editingMaterialStock, quantity: parseFloat(e.target.value) || 0 })}
+                                            className={`w-24 px-3 py-2 border border-zinc-300 rounded-lg text-xs font-bold text-center bg-white ${formLots.length > 0 ? 'opacity-70 bg-zinc-50 border-zinc-200 cursor-not-allowed' : ''}`}
+                                          />
+                                          <input
+                                            type="text"
+                                            value={editingMaterialStock.unit}
+                                            onChange={(e) => setEditingMaterialStock({ ...editingMaterialStock, unit: e.target.value })}
+                                            className="w-24 px-3 py-2 border border-zinc-300 rounded-lg text-xs font-bold text-center bg-white"
+                                          />
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3 text-right">
+                                        <div className="flex gap-1.5 justify-end">
+                                          <button
+                                            onClick={handleUpdateMaterialStock}
+                                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-1 cursor-pointer"
+                                            title="Save"
+                                          >
+                                            <Check size={13} /> Save
+                                          </button>
+                                          <button
+                                            onClick={() => setEditingMaterialStock(null)}
+                                            className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-[10px] font-black uppercase cursor-pointer"
+                                            title="Cancel"
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <td className="px-4 py-3 font-black text-sm text-slate-800">
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            onClick={() => {
+                                              const exp = expandedStockIds.includes(item.id);
+                                              if (exp) {
+                                                setExpandedStockIds(expandedStockIds.filter(id => id !== item.id));
+                                              } else {
+                                                setExpandedStockIds([...expandedStockIds, item.id]);
+                                              }
+                                            }}
+                                            className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-800 transition cursor-pointer"
+                                            title={expandedStockIds.includes(item.id) ? "Collapse Details" : "Expand Details"}
+                                          >
+                                            <ChevronRight
+                                              size={15}
+                                              className={`transition-transform duration-200 ${expandedStockIds.includes(item.id) ? 'rotate-90' : ''}`}
+                                            />
+                                          </button>
+                                          <span>{item.name}</span>
+                                          {item.lots && item.lots.length > 0 && (
+                                            <span className="text-[8px] font-black text-indigo-600 bg-indigo-50 border border-indigo-150 px-1.5 py-0.5 rounded-md uppercase tracking-wider">
+                                              {item.lots.length} Lots
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <span className="text-[11px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-lg">
+                                          {item.quantity} {item.unit}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <div className="flex items-center gap-1.5">
+                                          <input
+                                            type="number"
+                                            placeholder="+ Qty"
+                                            id={`refill-qty-${item.id}`}
+                                            className="w-16 px-2.5 py-1.5 border border-zinc-200 rounded-lg text-xs font-bold bg-white text-center focus:outline-none focus:ring-2 focus:ring-zinc-950"
+                                            onKeyDown={async (e) => {
+                                              if (e.key === 'Enter') {
+                                                const inputEl = document.getElementById(`refill-qty-${item.id}`) as HTMLInputElement;
+                                                const val = parseFloat(inputEl?.value || '');
+                                                if (val > 0) {
+                                                  if (window.confirm(`Are you sure you want to refill ${item.name} by ${val} ${item.unit}?`)) {
+                                                    try {
+                                                      const res = await fetch(`/api/material-stocks/${item.id}/refill`, {
+                                                        method: 'PATCH',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({ addQuantity: val })
+                                                      });
+                                                      if (res.ok) {
+                                                        toast.success(`Refilled ${val} ${item.unit} to ${item.name}!`);
+                                                        inputEl.value = '';
+                                                        loadMaterialStocksData();
+                                                      } else {
+                                                        toast.error("Failed to refill stock");
+                                                      }
+                                                    } catch (err) {
+                                                      toast.error("Failed to refill stock");
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }}
+                                          />
+                                          <button
+                                            onClick={async () => {
                                               const inputEl = document.getElementById(`refill-qty-${item.id}`) as HTMLInputElement;
                                               const val = parseFloat(inputEl?.value || '');
                                               if (val > 0) {
@@ -4519,64 +4926,210 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                                     toast.error("Failed to refill stock");
                                                   }
                                                 }
+                                              } else {
+                                                toast.error("Enter a valid quantity to refill");
                                               }
-                                            }
-                                          }}
-                                        />
-                                        <button
-                                          onClick={async () => {
-                                            const inputEl = document.getElementById(`refill-qty-${item.id}`) as HTMLInputElement;
-                                            const val = parseFloat(inputEl?.value || '');
-                                            if (val > 0) {
-                                              if (window.confirm(`Are you sure you want to refill ${item.name} by ${val} ${item.unit}?`)) {
-                                                try {
-                                                  const res = await fetch(`/api/material-stocks/${item.id}/refill`, {
-                                                    method: 'PATCH',
-                                                    headers: { 'Content-Type': 'application/json' },
-                                                    body: JSON.stringify({ addQuantity: val })
-                                                  });
-                                                  if (res.ok) {
-                                                    toast.success(`Refilled ${val} ${item.unit} to ${item.name}!`);
-                                                    inputEl.value = '';
-                                                    loadMaterialStocksData();
-                                                  } else {
-                                                    toast.error("Failed to refill stock");
-                                                  }
-                                                } catch (err) {
-                                                  toast.error("Failed to refill stock");
-                                                }
-                                              }
-                                            } else {
-                                              toast.error("Enter a valid quantity to refill");
-                                            }
-                                          }}
-                                          className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-[10px] font-bold uppercase transition"
-                                        >
-                                          Refill
-                                        </button>
-                                      </div>
+                                            }}
+                                            className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-[10px] font-bold uppercase transition"
+                                          >
+                                            Refill
+                                          </button>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3 text-right">
+                                        <div className="flex gap-2 justify-end items-center">
+                                          <button
+                                            onClick={() => setEditingMaterialStock(item)}
+                                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                                            title="Edit"
+                                          >
+                                            <Edit2 size={14} />
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteMaterialStock(item.id, item.name)}
+                                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                                            title="Delete"
+                                          >
+                                            <Trash2 size={14} />
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </>
+                                  )}
+                                </tr>
+                                {isExpanded && (
+                                  <tr className="bg-slate-50/40">
+                                    <td colSpan={4} className="px-6 py-4 border-b border-zinc-200">
+                                      {isEditing ? (
+                                        <div className="space-y-3 bg-blue-50/20 p-4 rounded-2xl border border-blue-150">
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[11px] font-black text-blue-800 uppercase tracking-widest flex items-center gap-1.5">
+                                              <Layers size={14} /> Edit Lots & Weights (Quantity will auto-update)
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setFormLots([...formLots, { lotNumber: `Lot ${formLots.length + 1}`, pieces: [] }]);
+                                              }}
+                                              className="px-2.5 py-1 bg-zinc-950 text-white hover:bg-zinc-800 rounded text-[9px] font-black uppercase flex items-center gap-1 cursor-pointer transition active:scale-95 shadow-sm"
+                                            >
+                                              <Plus size={11} /> Add Lot
+                                            </button>
+                                          </div>
+                                          {formLots.length === 0 ? (
+                                            <p className="text-[10px] text-slate-400 italic">No lots added. Quantity can be entered manually above.</p>
+                                          ) : (
+                                            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                                              {formLots.map((lot, lIdx) => (
+                                                <div key={lIdx} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+                                                  <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Lot No</span>
+                                                      <input
+                                                        type="text"
+                                                        value={lot.lotNumber}
+                                                        onChange={(e) => {
+                                                          const updated = [...formLots];
+                                                          updated[lIdx].lotNumber = e.target.value;
+                                                          setFormLots(updated);
+                                                        }}
+                                                        className="px-2 py-0.5 border border-slate-200 rounded font-bold text-xs bg-slate-50 w-36"
+                                                      />
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                          const updated = [...formLots];
+                                                          const nextNo = lot.pieces.length + 1;
+                                                          updated[lIdx].pieces.push({ pieceNo: nextNo, weight: 0 });
+                                                          setFormLots(updated);
+                                                        }}
+                                                        className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[9.5px] font-black uppercase cursor-pointer transition active:scale-95"
+                                                      >
+                                                        + Add Piece
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                          const updated = formLots.filter((_, i) => i !== lIdx);
+                                                          setFormLots(updated);
+                                                        }}
+                                                        className="p-1 hover:bg-red-50 text-red-500 rounded cursor-pointer transition"
+                                                        title="Delete Lot"
+                                                      >
+                                                        <Trash2 size={13} />
+                                                      </button>
+                                                    </div>
+                                                  </div>
+
+                                                  {lot.pieces.length === 0 ? (
+                                                    <p className="text-[10px] text-slate-400 italic pl-1">No pieces in this lot yet.</p>
+                                                  ) : (
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pl-1">
+                                                      {lot.pieces.map((piece, pIdx) => (
+                                                        <div key={pIdx} className="flex items-center border border-slate-100 rounded-xl p-2 bg-slate-50/50 justify-between gap-1">
+                                                          <div className="flex flex-col">
+                                                            <span className="text-[7.5px] font-black text-slate-400 uppercase">Piece #{piece.pieceNo}</span>
+                                                            <div className="flex items-center gap-1 mt-0.5">
+                                                              <input
+                                                                type="number"
+                                                                step="0.001"
+                                                                placeholder="Weight"
+                                                                value={piece.weight || ''}
+                                                                onChange={(e) => {
+                                                                  const updated = [...formLots];
+                                                                  updated[lIdx].pieces[pIdx].weight = parseFloat(e.target.value) || 0;
+                                                                  setFormLots(updated);
+                                                                }}
+                                                                className="w-16 px-1.5 py-0.5 border border-slate-200 rounded font-mono font-bold text-[10px] text-center bg-white"
+                                                              />
+                                                              <span className="text-[8px] font-bold text-slate-400 font-mono">kg</span>
+                                                            </div>
+                                                          </div>
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                              const updated = [...formLots];
+                                                              updated[lIdx].pieces = lot.pieces.filter((_, i) => i !== pIdx);
+                                                              updated[lIdx].pieces.forEach((p, idx) => {
+                                                                p.pieceNo = idx + 1;
+                                                              });
+                                                              setFormLots(updated);
+                                                            }}
+                                                            className="p-1 hover:bg-red-50 text-red-400 hover:text-red-600 rounded cursor-pointer transition"
+                                                            title="Remove Piece"
+                                                          >
+                                                            <X size={12} />
+                                                          </button>
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-150 space-y-3">
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                                              <Layers size={12} /> Lots & Pieces Details ({item.lots?.length || 0} Lots)
+                                            </span>
+                                            <button
+                                              onClick={() => {
+                                                setExpandedStockIds(expandedStockIds.filter(id => id !== item.id));
+                                              }}
+                                              className="text-[9px] font-black text-slate-400 hover:text-slate-600 uppercase cursor-pointer"
+                                            >
+                                              Close Details
+                                            </button>
+                                          </div>
+
+                                          {(!item.lots || item.lots.length === 0) ? (
+                                            <p className="text-[10.5px] text-slate-400 font-semibold italic">No detailed lots tracked for this material. Click edit to add lots.</p>
+                                          ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                              {item.lots.map((lot: any, lotIdx: number) => {
+                                                const totalWeight = lot.pieces?.reduce((sum: number, p: any) => sum + (p.weight || 0), 0) || 0;
+                                                return (
+                                                  <div key={lotIdx} className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 space-y-2">
+                                                    <div className="flex justify-between items-center border-b border-slate-100 pb-1.5">
+                                                      <span className="font-black text-xs text-slate-800 uppercase tracking-tight">{lot.lotNumber}</span>
+                                                      <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md uppercase">
+                                                        {lot.pieces?.length || 0} Pieces {totalWeight > 0 && `(Total: ${totalWeight.toFixed(3)} kg)`}
+                                                      </span>
+                                                    </div>
+                                                    <div className="overflow-x-auto">
+                                                      <table className="w-full text-left text-[10px] border-collapse">
+                                                        <thead>
+                                                          <tr className="text-slate-400 font-bold uppercase tracking-widest border-b border-slate-100">
+                                                            <th className="py-1">No.</th>
+                                                            <th className="py-1 text-right">Weight (kg)</th>
+                                                          </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-50 font-mono font-bold text-slate-600">
+                                                          {lot.pieces?.map((piece: any, pIdx: number) => (
+                                                            <tr key={pIdx} className="hover:bg-slate-50/50">
+                                                              <td className="py-1">{piece.pieceNo}</td>
+                                                              <td className="py-1 text-right">{piece.weight > 0 ? piece.weight.toFixed(3) : '-'}</td>
+                                                            </tr>
+                                                          ))}
+                                                        </tbody>
+                                                      </table>
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
                                     </td>
-                                    <td className="px-4 py-3 text-right">
-                                      <div className="flex gap-2 justify-end items-center">
-                                        <button
-                                          onClick={() => setEditingMaterialStock(item)}
-                                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
-                                          title="Edit"
-                                        >
-                                          <Edit2 size={14} />
-                                        </button>
-                                        <button
-                                          onClick={() => handleDeleteMaterialStock(item.id, item.name)}
-                                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
-                                          title="Delete"
-                                        >
-                                          <Trash2 size={14} />
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </>
+                                  </tr>
                                 )}
-                              </tr>
+                              </React.Fragment>
                             );
                           })}
 
@@ -4589,6 +5142,326 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                           )}
                         </tbody>
                       </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* CARD 1.5: Ready Belt Stock */}
+                {activeInventoryCard === 'ready_belt' && (
+                  <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-5 animate-in fade-in duration-300 flex flex-col w-full">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-cyan-50 shrink-0">
+                          <Layers size={16} className="text-cyan-600" />
+                        </div>
+                        Ready Belt Stock
+                        <span className="text-[10px] font-black text-cyan-600 bg-cyan-50 border border-cyan-155 px-2.5 py-0.5 rounded-full ml-1.5">
+                          {filteredReadyBeltStocksList.length} items
+                        </span>
+                      </h3>
+                      <button
+                        onClick={() => {
+                          setEditingReadyBeltStock(null);
+                          setShowAddReadyBeltForm(!showAddReadyBeltForm);
+                        }}
+                        className="px-3 py-1.5 bg-zinc-950 text-white rounded-lg font-black text-[10px] hover:bg-zinc-800 transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus size={12} /> {showAddReadyBeltForm ? 'CANCEL' : 'ADD NEW'}
+                      </button>
+                    </div>
+
+                    {showAddReadyBeltForm && (
+                      <div className="mb-4 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 animate-in fade-in slide-in-from-top-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Category</label>
+                            <select
+                              value={newReadyBeltStock.category}
+                              onChange={(e) => setNewReadyBeltStock({ ...newReadyBeltStock, category: e.target.value })}
+                              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
+                            >
+                              <option value="BROWN BELT">BROWN BELT</option>
+                              <option value="BLACK BELT">BLACK BELT</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Belt Stock Name</label>
+                            <select
+                              value={['SIALI BELT', 'WITHOUT SILAI', 'CROSS JOINT', 'SILAI BELT'].includes(newReadyBeltStock.beltStock) ? newReadyBeltStock.beltStock : 'custom'}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === 'custom') {
+                                  setNewReadyBeltStock({ ...newReadyBeltStock, beltStock: '' });
+                                } else {
+                                  setNewReadyBeltStock({ ...newReadyBeltStock, beltStock: val });
+                                }
+                              }}
+                              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
+                            >
+                              <option value="custom">-- Custom Name --</option>
+                              <option value="SIALI BELT">SIALI BELT</option>
+                              <option value="WITHOUT SILAI">WITHOUT SILAI</option>
+                              <option value="CROSS JOINT">CROSS JOINT</option>
+                              <option value="SILAI BELT">SILAI BELT</option>
+                            </select>
+                            {(!['SIALI BELT', 'WITHOUT SILAI', 'CROSS JOINT', 'SILAI BELT'].includes(newReadyBeltStock.beltStock) || newReadyBeltStock.beltStock === '') && (
+                              <input
+                                type="text"
+                                placeholder="Type Custom Belt name..."
+                                value={newReadyBeltStock.beltStock}
+                                onChange={(e) => setNewReadyBeltStock({ ...newReadyBeltStock, beltStock: e.target.value })}
+                                className="w-full mt-1.5 px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
+                              />
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Size</label>
+                            <input
+                              type="text"
+                              placeholder='e.g. 97" X 63" or 2.20M X 63"'
+                              value={newReadyBeltStock.size}
+                              onChange={(e) => setNewReadyBeltStock({ ...newReadyBeltStock, size: e.target.value })}
+                              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Opening Pieces</label>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={newReadyBeltStock.openingPisc}
+                              onChange={(e) => setNewReadyBeltStock({ ...newReadyBeltStock, openingPisc: e.target.value })}
+                              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-1">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Received Pieces</label>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={newReadyBeltStock.recvPisc}
+                              onChange={(e) => setNewReadyBeltStock({ ...newReadyBeltStock, recvPisc: e.target.value })}
+                              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Issued Pieces</label>
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={newReadyBeltStock.issuesPisc}
+                              onChange={(e) => setNewReadyBeltStock({ ...newReadyBeltStock, issuesPisc: e.target.value })}
+                              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Sales Order No (So-No)</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. 11673"
+                              value={newReadyBeltStock.soNo}
+                              onChange={(e) => setNewReadyBeltStock({ ...newReadyBeltStock, soNo: e.target.value })}
+                              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Receiver Name</label>
+                            <input
+                              type="text"
+                              placeholder="Receiver name..."
+                              value={newReadyBeltStock.receiverName}
+                              onChange={(e) => setNewReadyBeltStock({ ...newReadyBeltStock, receiverName: e.target.value })}
+                              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={handleAddReadyBeltStock}
+                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-black text-xs uppercase tracking-wider transition cursor-pointer"
+                        >
+                          SAVE READY BELT STOCK
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Searcher */}
+                    <div className="relative mb-4">
+                      <Search className="absolute left-3.5 top-3 h-4 w-4 text-zinc-400" />
+                      <input
+                        type="text"
+                        placeholder="Search Ready Belt Stocks by name, category, size, SO or receiver..."
+                        value={readyBeltSearchQuery}
+                        onChange={(e) => setReadyBeltSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-950 focus:outline-none focus:ring-2 focus:ring-zinc-950 placeholder-zinc-400 shadow-sm text-left"
+                      />
+                    </div>
+
+                    {/* Grouped Table */}
+                    <div className="space-y-6">
+                      {Object.keys(readyBeltGroups).map((catName) => (
+                        <div key={catName} className="space-y-2">
+                          {/* Group Title - Cyan styled header */}
+                          <div className="bg-cyan-50/50 border-l-4 border-cyan-500 px-4 py-2 rounded-r-xl flex justify-between items-center">
+                            <span className="text-xs font-black text-cyan-900 tracking-wider uppercase font-Outfit">{catName}</span>
+                            <span className="text-[10px] font-black text-cyan-600 bg-cyan-100/50 border border-cyan-200 px-2 py-0.5 rounded-lg">
+                              {readyBeltGroups[catName].length} items
+                            </span>
+                          </div>
+
+                          <div className="overflow-x-auto border border-zinc-200 rounded-2xl shadow-sm bg-white">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead className="bg-slate-50 border-b border-zinc-200">
+                                <tr>
+                                  <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest w-12">Sr.No</th>
+                                  <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">Belt Stock</th>
+                                  <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">Size</th>
+                                  <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Opening Pcs</th>
+                                  <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Recv Pcs</th>
+                                  <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Issues Pcs</th>
+                                  <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Closing Pcs</th>
+                                  <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">So-No</th>
+                                  <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">Receiver Name</th>
+                                  <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right w-28">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-zinc-150">
+                                {readyBeltGroups[catName].map((item, idx) => {
+                                  const isEditing = editingReadyBeltStock?.id === item.id;
+                                  return (
+                                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                                      {isEditing ? (
+                                        <>
+                                          <td className="px-4 py-3 font-bold text-slate-400">{idx + 1}</td>
+                                          <td className="px-4 py-3">
+                                            <input
+                                              type="text"
+                                              value={editingReadyBeltStock.beltStock}
+                                              onChange={(e) => setEditingReadyBeltStock({ ...editingReadyBeltStock, beltStock: e.target.value })}
+                                              className="w-full px-2 py-1 border border-zinc-300 rounded text-xs font-bold"
+                                            />
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            <input
+                                              type="text"
+                                              value={editingReadyBeltStock.size}
+                                              onChange={(e) => setEditingReadyBeltStock({ ...editingReadyBeltStock, size: e.target.value })}
+                                              className="w-full px-2 py-1 border border-zinc-300 rounded text-xs font-bold"
+                                            />
+                                          </td>
+                                          <td className="px-4 py-3 text-center">
+                                            <input
+                                              type="number"
+                                              value={editingReadyBeltStock.openingPisc}
+                                              onChange={(e) => setEditingReadyBeltStock({ ...editingReadyBeltStock, openingPisc: parseInt(e.target.value, 10) || 0 })}
+                                              className="w-16 px-1 py-0.5 border border-zinc-300 rounded text-xs font-bold text-center"
+                                            />
+                                          </td>
+                                          <td className="px-4 py-3 text-center">
+                                            <input
+                                              type="number"
+                                              value={editingReadyBeltStock.recvPisc}
+                                              onChange={(e) => setEditingReadyBeltStock({ ...editingReadyBeltStock, recvPisc: parseInt(e.target.value, 10) || 0 })}
+                                              className="w-16 px-1 py-0.5 border border-zinc-300 rounded text-xs font-bold text-center"
+                                            />
+                                          </td>
+                                          <td className="px-4 py-3 text-center">
+                                            <input
+                                              type="number"
+                                              value={editingReadyBeltStock.issuesPisc}
+                                              onChange={(e) => setEditingReadyBeltStock({ ...editingReadyBeltStock, issuesPisc: parseInt(e.target.value, 10) || 0 })}
+                                              className="w-16 px-1 py-0.5 border border-zinc-300 rounded text-xs font-bold text-center"
+                                            />
+                                          </td>
+                                          <td className="px-4 py-3 text-center font-bold text-slate-800">
+                                            {editingReadyBeltStock.openingPisc + editingReadyBeltStock.recvPisc - editingReadyBeltStock.issuesPisc}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            <input
+                                              type="text"
+                                              value={editingReadyBeltStock.soNo}
+                                              onChange={(e) => setEditingReadyBeltStock({ ...editingReadyBeltStock, soNo: e.target.value })}
+                                              className="w-full px-2 py-1 border border-zinc-300 rounded text-xs font-bold"
+                                            />
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            <input
+                                              type="text"
+                                              value={editingReadyBeltStock.receiverName}
+                                              onChange={(e) => setEditingReadyBeltStock({ ...editingReadyBeltStock, receiverName: e.target.value })}
+                                              className="w-full px-2 py-1 border border-zinc-300 rounded text-xs font-bold"
+                                            />
+                                          </td>
+                                          <td className="px-4 py-3 text-right">
+                                            <div className="flex gap-1 justify-end">
+                                              <button
+                                                onClick={handleUpdateReadyBeltStock}
+                                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-black uppercase flex items-center gap-0.5 cursor-pointer"
+                                                title="Save"
+                                              >
+                                                <Check size={11} /> Save
+                                              </button>
+                                              <button
+                                                onClick={() => setEditingReadyBeltStock(null)}
+                                                className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[10px] font-black uppercase cursor-pointer"
+                                                title="Cancel"
+                                              >
+                                                Cancel
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <td className="px-4 py-3 font-bold text-slate-400">{idx + 1}</td>
+                                          <td className="px-4 py-3 font-black text-sm text-slate-800">{item.beltStock}</td>
+                                          <td className="px-4 py-3 font-mono font-bold text-slate-650">{item.size}</td>
+                                          <td className="px-4 py-3 text-center font-bold text-slate-600">{item.openingPisc}</td>
+                                          <td className="px-4 py-3 text-center font-bold text-slate-600">{item.recvPisc}</td>
+                                          <td className="px-4 py-3 text-center font-bold text-slate-600">{item.issuesPisc}</td>
+                                          <td className="px-4 py-3 text-center font-black text-cyan-600 bg-cyan-50/50">{item.closingPisc}</td>
+                                          <td className="px-4 py-3 font-mono text-zinc-600 font-bold">{item.soNo || '-'}</td>
+                                          <td className="px-4 py-3 text-slate-600 font-bold">{item.receiverName || '-'}</td>
+                                          <td className="px-4 py-3 text-right">
+                                            <div className="flex gap-1 justify-end">
+                                              <button
+                                                onClick={() => {
+                                                  setEditingReadyBeltStock({ ...item });
+                                                  setShowAddReadyBeltForm(false);
+                                                }}
+                                                className="p-1 hover:bg-indigo-50 text-indigo-500 rounded transition border border-transparent hover:border-indigo-150 cursor-pointer"
+                                                title="Edit Item"
+                                              >
+                                                <Edit2 size={13} />
+                                              </button>
+                                              <button
+                                                onClick={() => handleDeleteReadyBeltStock(item.id, item.beltStock)}
+                                                className="p-1 hover:bg-rose-50 text-rose-500 rounded transition border border-transparent hover:border-rose-150 cursor-pointer"
+                                                title="Delete Item"
+                                              >
+                                                <Trash2 size={13} />
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </>
+                                      )}
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ))}
+
+                      {Object.keys(readyBeltGroups).length === 0 && (
+                        <div className="py-16 text-center text-zinc-400 font-semibold text-xs italic border-2 border-dashed border-zinc-200 rounded-3xl">
+                          No ready belt stock found.
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -6309,6 +7182,31 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                 </select>
               </div>
 
+              {(() => {
+                const selectedStock = materialStocks.find(s => s.id === requestForm.materialId);
+                const availableLots = selectedStock?.lots || [];
+                if (availableLots.length === 0) return null;
+                return (
+                  <div className="space-y-1.5 animate-in fade-in duration-200">
+                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                      Select Lot (Optional)
+                    </label>
+                    <select
+                      value={requestForm.lotNumber}
+                      onChange={(e) => setRequestForm({ ...requestForm, lotNumber: e.target.value })}
+                      className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer"
+                    >
+                      <option value="">-- Choose Lot --</option>
+                      {availableLots.map(lot => (
+                        <option key={lot.lotNumber} value={lot.lotNumber}>
+                          {lot.lotNumber} ({lot.pieces?.length || 0} pcs)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
+
               <div className="space-y-1.5">
                 <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
                   Requested Quantity <span className="text-rose-500">*</span>
@@ -6419,6 +7317,31 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                   className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 />
               </div>
+
+              {(() => {
+                const selectedStock = materialStocks.find(s => s.id === approvingRequest.materialId || s.name === approvingRequest.materialName);
+                const availableLots = selectedStock?.lots || [];
+                if (availableLots.length === 0) return null;
+                return (
+                  <div className="space-y-1.5 animate-in fade-in duration-200">
+                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                      Select Lot
+                    </label>
+                    <select
+                      value={approvalForm.lotNumber}
+                      onChange={(e) => setApprovalForm({ ...approvalForm, lotNumber: e.target.value })}
+                      className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent cursor-pointer"
+                    >
+                      <option value="">-- All Lots (Sequential) --</option>
+                      {availableLots.map(lot => (
+                        <option key={lot.lotNumber} value={lot.lotNumber}>
+                          {lot.lotNumber} ({lot.pieces?.length || 0} pcs)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
 
               <div className="space-y-1.5">
                 <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">

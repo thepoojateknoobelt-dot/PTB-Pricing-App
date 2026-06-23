@@ -56,12 +56,23 @@ export interface StockStats {
   activeRolls: number;
 }
 
+export interface MaterialPiece {
+  pieceNo: number;
+  weight: number;
+}
+
+export interface MaterialLot {
+  lotNumber: string;
+  pieces: MaterialPiece[];
+}
+
 export interface MaterialStock {
   id: string;
   name: string;
   quantity: number;
   unit: string;
   reorderLevel: number;
+  lots?: MaterialLot[];
 }
 
 export interface MaterialIssue {
@@ -72,6 +83,7 @@ export interface MaterialIssue {
   unit: string;
   issuedTo: string;
   notes: string;
+  lotNumber?: string;
   issuedAt: string;
 }
 
@@ -87,6 +99,20 @@ export interface MaterialRequest {
   approvedQuantity?: number | null;
   approvedBy?: string;
   approvalNotes?: string;
+  lotNumber?: string;
   requestedAt: string;
   approvedAt?: string | null;
+}
+
+export interface ReadyBeltStock {
+  id: string;
+  category: string;
+  beltStock: string;
+  size: string;
+  openingPisc: number;
+  recvPisc: number;
+  issuesPisc: number;
+  closingPisc: number;
+  soNo: string;
+  receiverName: string;
 }
