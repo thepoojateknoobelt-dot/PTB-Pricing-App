@@ -5,7 +5,7 @@ import {
   RotateCcw, Wand2, BarChart3, Loader2, Warehouse, User,
   ArrowLeft, X, Menu, Search, Printer, Download, Edit2, Check,
   ClipboardList, Send, Clock, ArrowDownCircle, ExternalLink,
-  Sliders
+  Sliders, Eye
 } from 'lucide-react';
 import {
   saveRoll, updateRoll, deleteRoll, saveCut, deleteCut, fetchRolls, OperationType
@@ -5861,6 +5861,13 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                 </td>
                                 <td className="px-4 py-3 text-right">
                                   <div className="flex gap-1.5 justify-end">
+                                    <button
+                                      onClick={() => setRollDetailPanelId(roll.id)}
+                                      className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                                      title="POS Check – View Roll Layout"
+                                    >
+                                      <Eye size={15} />
+                                    </button>
                                     {roll.status !== 'refused' && (
                                       <button
                                         onClick={() => handleRefuseRoll(roll.id)}
@@ -5895,6 +5902,83 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     </div>
                   </div>
                 )}
+
+                {/* POS CHECK MODAL – Roll Visualizer Preview */}
+                {rollDetailPanelId && (() => {
+                  const previewRoll = rolls.find(r => r.id === rollDetailPanelId);
+                  if (!previewRoll) return null;
+                  const pct = previewRoll.totalSqm > 0 ? (previewRoll.remainingSqm / previewRoll.totalSqm) * 100 : 0;
+                  const barColor = pct > 50 ? 'bg-indigo-500' : pct > 20 ? 'bg-amber-500' : 'bg-rose-500';
+                  const textColor = pct > 50 ? 'text-indigo-600' : pct > 20 ? 'text-amber-600' : 'text-rose-600';
+                  return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
+                      <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-5xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh]">
+                        {/* Modal Header */}
+                        <div className="px-6 py-4 bg-gradient-to-r from-indigo-50 to-slate-50 border-b border-slate-100 flex items-center justify-between shrink-0">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-indigo-100 rounded-xl">
+                              <Eye size={18} className="text-indigo-600" />
+                            </div>
+                            <div>
+                              <h3 className="text-base font-black text-slate-800 uppercase tracking-wider">
+                                POS Check — {getShortRollId(previewRoll.id)}
+                              </h3>
+                              <p className="text-[11px] text-slate-500 font-bold mt-0.5">
+                                {previewRoll.materialType} &nbsp;·&nbsp; {fromMeters(previewRoll.fullLength).toFixed(1)}{currentUnit} × {fromMeters(previewRoll.fullWidth).toFixed(1)}{currentUnit}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            {/* Stock mini-bar */}
+                            <div className="hidden sm:flex flex-col items-end gap-1">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-xs font-black ${textColor}`}>{pct.toFixed(0)}% Remaining</span>
+                                <span className="text-[10px] text-slate-400 font-bold">{previewRoll.remainingSqm.toFixed(1)} m²</span>
+                              </div>
+                              <div className="w-40 h-2 bg-slate-200 rounded-full overflow-hidden">
+                                <div className={`h-full ${barColor} rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => setRollDetailPanelId(null)}
+                              className="p-2 hover:bg-slate-100 text-slate-400 hover:text-slate-700 rounded-xl transition cursor-pointer"
+                            >
+                              <X size={20} />
+                            </button>
+                          </div>
+                        </div>
+                        {/* Roll Visualizer */}
+                        <div className="overflow-auto p-4 flex-1">
+                          <RollVisualizer
+                            roll={previewRoll}
+                            unit={currentUnit}
+                            onSelectCut={() => {}}
+                            onMaximize={() => {}}
+                          />
+                        </div>
+                        {/* Footer stats */}
+                        <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 flex flex-wrap gap-4 shrink-0">
+                          <div className="text-center">
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Cuts</p>
+                            <p className="text-sm font-black text-slate-800">{previewRoll.cuts?.length ?? 0}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Area</p>
+                            <p className="text-sm font-black text-slate-800">{previewRoll.totalSqm.toFixed(2)} m²</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Remaining</p>
+                            <p className={`text-sm font-black ${textColor}`}>{previewRoll.remainingSqm.toFixed(2)} m²</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Used</p>
+                            <p className="text-sm font-black text-slate-800">{(previewRoll.totalSqm - previewRoll.remainingSqm).toFixed(2)} m²</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* CARD 4: Reorder Level Monitor */}
                 {activeInventoryCard === 'reorder' && (() => {
