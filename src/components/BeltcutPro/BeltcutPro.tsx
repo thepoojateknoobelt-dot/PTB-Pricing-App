@@ -20,6 +20,7 @@ import {
 import { findGlobalBestPlacement, isSpaceAvailable } from './services/optimizationEngine';
 import RollVisualizer from './components/RollVisualizer';
 import StatsCard from './components/StatsCard';
+import { SearchableSelect } from './components/SearchableSelect';
 import { getShortRollId } from './utils';
 
 const CONVERSIONS: Record<Unit, number> = {
@@ -3985,23 +3986,17 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
 
                           <div className="space-y-1">
                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Belt Material Type</label>
-                            <select
+                            <SearchableSelect
+                              options={materialTypes.map(type => ({ value: type, label: type }))}
                               value={selectedOrder.materialType}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === '__ADD_NEW__') {
-                                  setPreviousMaterialTypeVal(selectedOrder.materialType);
-                                  setMaterialTypeAddSource('selectedOrder');
-                                  setShowAddMaterialModal(true);
-                                } else {
-                                  setSelectedOrder({ ...selectedOrder, materialType: val });
-                                }
+                              onChange={(val) => setSelectedOrder({ ...selectedOrder, materialType: val })}
+                              onAddNew={() => {
+                                setPreviousMaterialTypeVal(selectedOrder.materialType);
+                                setMaterialTypeAddSource('selectedOrder');
+                                setShowAddMaterialModal(true);
                               }}
-                              className="w-full px-2.5 py-1 border border-slate-200 rounded-lg focus:border-zinc-950 focus:outline-none font-bold text-xs bg-white cursor-pointer"
-                            >
-                              {materialTypes.map(type => <option key={type} value={type}>{type}</option>)}
-                              <option value="__ADD_NEW__" className="text-indigo-600 font-bold bg-indigo-50 font-black">+ Add Custom Material Type...</option>
-                            </select>
+                              disabled={cutPurpose === 'order' && !!selectedOrderNumber && !isOrderDimensionsUnlocked}
+                            />
                           </div>
 
                           {(() => {
@@ -4011,18 +4006,18 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             return (
                               <div className="space-y-1 animate-in fade-in duration-200">
                                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Select Lot (Optional)</label>
-                                <select
+                                <SearchableSelect
+                                  options={[
+                                    { value: '', label: '-- All Lots (Sequential) --' },
+                                    ...availableLots.map(lot => ({
+                                      value: lot.lotNumber,
+                                      label: `${lot.lotNumber} (${lot.pieces?.length || 0} pcs)`
+                                    }))
+                                  ]}
                                   value={selectedLotNumber}
-                                  onChange={(e) => setSelectedLotNumber(e.target.value)}
-                                  className="w-full px-2.5 py-1 border border-slate-200 rounded-lg focus:border-zinc-950 focus:outline-none font-bold text-xs bg-white cursor-pointer"
-                                >
-                                  <option value="">-- All Lots (Sequential) --</option>
-                                  {availableLots.map(lot => (
-                                    <option key={lot.lotNumber} value={lot.lotNumber}>
-                                      {lot.lotNumber} ({lot.pieces?.length || 0} pcs)
-                                    </option>
-                                  ))}
-                                </select>
+                                  onChange={(val) => setSelectedLotNumber(val)}
+                                  placeholder="-- All Lots (Sequential) --"
+                                />
                               </div>
                             );
                           })()}
@@ -4221,10 +4216,13 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                   <label className="text-[8.5px] font-black text-slate-500 uppercase tracking-widest">
                                     Target Roll
                                   </label>
-                                  <select
+                                  <SearchableSelect
+                                    options={visibleRolls.map(r => ({
+                                      value: r.id,
+                                      label: `Roll ${r.id} (${fromMeters(r.fullLength).toFixed(1)}${currentUnit} × ${fromMeters(r.fullWidth).toFixed(1)}${currentUnit})`
+                                    }))}
                                     value={manualPlacement?.rollId || (visibleRolls[0]?.id || '')}
-                                    onChange={(e) => {
-                                      const rId = e.target.value;
+                                    onChange={(rId) => {
                                       const roll = rolls.find(r => r.id === rId);
                                       if (roll) {
                                         setManualPlacement({
@@ -4233,14 +4231,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                         });
                                       }
                                     }}
-                                    className="w-full px-2 py-1 border border-slate-200 rounded-lg font-bold text-xs bg-white cursor-pointer"
-                                  >
-                                    {visibleRolls.map(r => (
-                                      <option key={r.id} value={r.id}>
-                                        Roll {r.id} ({fromMeters(r.fullLength).toFixed(1)}{currentUnit} × {fromMeters(r.fullWidth).toFixed(1)}{currentUnit})
-                                      </option>
-                                    ))}
-                                  </select>
+                                  />
                                 </div>
 
                                 {/* X and Y Coordinates Input */}
@@ -4736,10 +4727,13 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                           <div className="space-y-1">
                             <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Material Name</label>
                             <div className="flex flex-col gap-1.5">
-                              <select
+                              <SearchableSelect
+                                options={[
+                                  { value: 'custom', label: '-- Type Custom Name --' },
+                                  ...bomComponentNames.map(name => ({ value: name, label: name }))
+                                ]}
                                 value={bomComponentNames.includes(newMaterialStock.name) ? newMaterialStock.name : 'custom'}
-                                onChange={(e) => {
-                                  const val = e.target.value;
+                                onChange={(val) => {
                                   if (val === 'custom') {
                                     setNewMaterialStock({ ...newMaterialStock, name: '' });
                                   } else {
@@ -4769,13 +4763,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                     setNewMaterialStock({ ...newMaterialStock, name: val, unit: defaultUnit });
                                   }
                                 }}
-                                className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
-                              >
-                                <option value="custom">-- Type Custom Name --</option>
-                                {bomComponentNames.map(name => (
-                                  <option key={name} value={name}>{name}</option>
-                                ))}
-                              </select>
+                              />
                               {(!bomComponentNames.includes(newMaterialStock.name) || newMaterialStock.name === '') && (
                                 <input
                                   type="text"
@@ -5348,37 +5336,36 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     {showAddReadyBeltForm && (
                       <div className="mb-4 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 animate-in fade-in slide-in-from-top-2">
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                          <div className="space-y-1">
+                            <div className="space-y-1">
                             <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Category</label>
-                            <select
+                            <SearchableSelect
+                              options={[
+                                { value: 'BROWN BELT', label: 'BROWN BELT' },
+                                { value: 'BLACK BELT', label: 'BLACK BELT' }
+                              ]}
                               value={newReadyBeltStock.category}
-                              onChange={(e) => setNewReadyBeltStock({ ...newReadyBeltStock, category: e.target.value })}
-                              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
-                            >
-                              <option value="BROWN BELT">BROWN BELT</option>
-                              <option value="BLACK BELT">BLACK BELT</option>
-                            </select>
+                              onChange={(val) => setNewReadyBeltStock({ ...newReadyBeltStock, category: val })}
+                            />
                           </div>
                           <div className="space-y-1">
                             <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Belt Stock Name</label>
-                            <select
+                            <SearchableSelect
+                              options={[
+                                { value: 'custom', label: '-- Custom Name --' },
+                                { value: 'SIALI BELT', label: 'SIALI BELT' },
+                                { value: 'WITHOUT SILAI', label: 'WITHOUT SILAI' },
+                                { value: 'CROSS JOINT', label: 'CROSS JOINT' },
+                                { value: 'SILAI BELT', label: 'SILAI BELT' }
+                              ]}
                               value={['SIALI BELT', 'WITHOUT SILAI', 'CROSS JOINT', 'SILAI BELT'].includes(newReadyBeltStock.beltStock) ? newReadyBeltStock.beltStock : 'custom'}
-                              onChange={(e) => {
-                                const val = e.target.value;
+                              onChange={(val) => {
                                 if (val === 'custom') {
                                   setNewReadyBeltStock({ ...newReadyBeltStock, beltStock: '' });
                                 } else {
                                   setNewReadyBeltStock({ ...newReadyBeltStock, beltStock: val });
                                 }
                               }}
-                              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
-                            >
-                              <option value="custom">-- Custom Name --</option>
-                              <option value="SIALI BELT">SIALI BELT</option>
-                              <option value="WITHOUT SILAI">WITHOUT SILAI</option>
-                              <option value="CROSS JOINT">CROSS JOINT</option>
-                              <option value="SILAI BELT">SILAI BELT</option>
-                            </select>
+                            />
                             {(!['SIALI BELT', 'WITHOUT SILAI', 'CROSS JOINT', 'SILAI BELT'].includes(newReadyBeltStock.beltStock) || newReadyBeltStock.beltStock === '') && (
                               <input
                                 type="text"
@@ -5776,23 +5763,16 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                           </div>
                           <div className="space-y-1">
                             <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider">Material Type</label>
-                            <select
+                            <SearchableSelect
+                              options={materialTypes.map(type => ({ value: type, label: type }))}
                               value={newRoll.materialType}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === '__ADD_NEW__') {
-                                  setPreviousMaterialTypeVal(newRoll.materialType);
-                                  setMaterialTypeAddSource('newRoll');
-                                  setShowAddMaterialModal(true);
-                                } else {
-                                  setNewRoll({ ...newRoll, materialType: val });
-                                }
+                              onChange={(val) => setNewRoll({ ...newRoll, materialType: val })}
+                              onAddNew={() => {
+                                setPreviousMaterialTypeVal(newRoll.materialType);
+                                setMaterialTypeAddSource('newRoll');
+                                setShowAddMaterialModal(true);
                               }}
-                              className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            >
-                              {materialTypes.map(type => <option key={type} value={type}>{type}</option>)}
-                              <option value="__ADD_NEW__" className="text-indigo-600 font-bold bg-indigo-50 font-black">+ Add Custom Material Type...</option>
-                            </select>
+                            />
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             <div className="space-y-1">
@@ -7324,18 +7304,12 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                 <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
                   Select Material <span className="text-rose-500">*</span>
                 </label>
-                <select
+                <SearchableSelect
+                  options={materialStocks.map(stock => ({ value: stock.id, label: stock.name }))}
                   value={requestForm.materialId}
-                  onChange={(e) => setRequestForm({ ...requestForm, materialId: e.target.value })}
-                  className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer"
-                >
-                  <option value="" disabled>-- Choose Material --</option>
-                  {materialStocks.map(stock => (
-                    <option key={stock.id} value={stock.id}>
-                      {stock.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setRequestForm({ ...requestForm, materialId: val })}
+                  placeholder="-- Choose Material --"
+                />
               </div>
 
               {(() => {
@@ -7347,18 +7321,18 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
                       Select Lot (Optional)
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={[
+                        { value: '', label: '-- Choose Lot --' },
+                        ...availableLots.map(lot => ({
+                          value: lot.lotNumber,
+                          label: `${lot.lotNumber} (${lot.pieces?.length || 0} pcs)`
+                        }))
+                      ]}
                       value={requestForm.lotNumber}
-                      onChange={(e) => setRequestForm({ ...requestForm, lotNumber: e.target.value })}
-                      className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer"
-                    >
-                      <option value="">-- Choose Lot --</option>
-                      {availableLots.map(lot => (
-                        <option key={lot.lotNumber} value={lot.lotNumber}>
-                          {lot.lotNumber} ({lot.pieces?.length || 0} pcs)
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(val) => setRequestForm({ ...requestForm, lotNumber: val })}
+                      placeholder="-- Choose Lot --"
+                    />
                   </div>
                 );
               })()}
@@ -7482,18 +7456,18 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
                       Select Lot
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={[
+                        { value: '', label: '-- All Lots (Sequential) --' },
+                        ...availableLots.map(lot => ({
+                          value: lot.lotNumber,
+                          label: `${lot.lotNumber} (${lot.pieces?.length || 0} pcs)`
+                        }))
+                      ]}
                       value={approvalForm.lotNumber}
-                      onChange={(e) => setApprovalForm({ ...approvalForm, lotNumber: e.target.value })}
-                      className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-bold bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent cursor-pointer"
-                    >
-                      <option value="">-- All Lots (Sequential) --</option>
-                      {availableLots.map(lot => (
-                        <option key={lot.lotNumber} value={lot.lotNumber}>
-                          {lot.lotNumber} ({lot.pieces?.length || 0} pcs)
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(val) => setApprovalForm({ ...approvalForm, lotNumber: val })}
+                      placeholder="-- All Lots (Sequential) --"
+                    />
                   </div>
                 );
               })()}
