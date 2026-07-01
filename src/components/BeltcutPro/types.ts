@@ -115,4 +115,5 @@ export interface ReadyBeltStock {
   closingPisc: number;
   soNo: string;
   receiverName: string;
+  detailsLog?: any[];
 }

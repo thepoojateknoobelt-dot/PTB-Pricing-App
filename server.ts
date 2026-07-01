@@ -389,6 +389,23 @@ async function initializeDatabase() {
         }
         console.log('Seeded ready_belt_stocks data successfully.');
       }
+
+      // Ensure details_log column exists and migrate existing rows
+      try {
+        await pool.query(`ALTER TABLE ready_belt_stocks ADD COLUMN IF NOT EXISTS details_log JSONB`);
+        const migrationRes = await pool.query(`
+          UPDATE ready_belt_stocks 
+          SET 
+            opening_pisc = opening_pisc + recv_pisc,
+            details_log = '[]'::jsonb
+          WHERE details_log IS NULL
+        `);
+        if (migrationRes.rowCount > 0) {
+          console.log(`Migrated ${migrationRes.rowCount} ready_belt_stocks rows to new schema (opening = opening + recv).`);
+        }
+      } catch (alterErr) {
+        console.warn('Failed to add details_log column or migrate ready_belt_stocks table:', alterErr);
+      }
     } catch (rbCheckErr) {
       console.warn('Failed to create ready_belt_stocks table:', rbCheckErr);
     }
@@ -1942,7 +1959,7 @@ app.delete('/api/material-stocks/:id', async (req: any, res) => {
 });
 
 // Ready Belt Stocks Routes
-app.get('/api/ready-belt-stocks', async (req, res) => {
+app.get('/api/ready-belt-stocks', authenticate, async (req: any, res) => {
   try {
     const result = await pool.query('SELECT * FROM ready_belt_stocks ORDER BY category ASC, id ASC');
     res.json(result.rows.map(row => ({
@@ -1955,7 +1972,8 @@ app.get('/api/ready-belt-stocks', async (req, res) => {
       issuesPisc: parseInt(row.issues_pisc, 10) || 0,
       closingPisc: parseInt(row.closing_pisc, 10) || 0,
       soNo: row.so_no || '',
-      receiverName: row.receiver_name || ''
+      receiverName: row.receiver_name || '',
+      detailsLog: row.details_log || []
     })));
   } catch (err) {
     console.error('Failed to get ready belt stocks', err);
@@ -1963,7 +1981,7 @@ app.get('/api/ready-belt-stocks', async (req, res) => {
   }
 });
 
-app.post('/api/ready-belt-stocks', async (req, res) => {
+app.post('/api/ready-belt-stocks', authenticate, async (req: any, res) => {
   try {
     const { category, beltStock, size, openingPisc, recvPisc, issuesPisc, soNo, receiverName } = req.body;
     if (!category || !category.trim()) return res.status(400).json({ error: 'Category is required' });
@@ -1973,14 +1991,30 @@ app.post('/api/ready-belt-stocks', async (req, res) => {
     const open = parseInt(openingPisc, 10) || 0;
     const recv = parseInt(recvPisc, 10) || 0;
     const issue = parseInt(issuesPisc, 10) || 0;
-    const closing = open + recv - issue;
+
+    const actualOpening = open + recv - issue;
+    const closing = actualOpening;
     const id = 'ready-' + Date.now();
+
+    const timestampStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const initialLog = {
+      dateTime: timestampStr,
+      username: req.user?.username || 'unknown',
+      name: req.user?.name || 'Unknown User',
+      action: `Created stock with Opening: ${open}${recv > 0 ? `, Recv: ${recv}` : ''}${issue > 0 ? `, Issues: ${issue}` : ''}`,
+      recvQty: recv,
+      issuesQty: issue,
+      soNo: (soNo || '').trim() || '-',
+      receiverName: (receiverName || '').trim() || '-',
+      openingQty: open
+    };
+    const detailsLog = JSON.stringify([initialLog]);
 
     await pool.query(
       `INSERT INTO ready_belt_stocks 
-       (id, category, belt_stock, size, opening_pisc, recv_pisc, issues_pisc, closing_pisc, so_no, receiver_name) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [id, category.trim(), beltStock.trim(), size.trim(), open, recv, issue, closing, (soNo || '').trim(), (receiverName || '').trim()]
+       (id, category, belt_stock, size, opening_pisc, recv_pisc, issues_pisc, closing_pisc, so_no, receiver_name, details_log) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [id, category.trim(), beltStock.trim(), size.trim(), actualOpening, recv, issue, closing, (soNo || '').trim(), (receiverName || '').trim(), detailsLog]
     );
 
     res.json({
@@ -1988,12 +2022,13 @@ app.post('/api/ready-belt-stocks', async (req, res) => {
       category: category.trim(),
       beltStock: beltStock.trim(),
       size: size.trim(),
-      openingPisc: open,
+      openingPisc: actualOpening,
       recvPisc: recv,
       issuesPisc: issue,
       closingPisc: closing,
       soNo: (soNo || '').trim(),
-      receiverName: (receiverName || '').trim()
+      receiverName: (receiverName || '').trim(),
+      detailsLog: [initialLog]
     });
   } catch (err) {
     console.error('Failed to add ready belt stock', err);
@@ -2001,23 +2036,110 @@ app.post('/api/ready-belt-stocks', async (req, res) => {
   }
 });
 
-app.put('/api/ready-belt-stocks/:id', async (req, res) => {
+app.put('/api/ready-belt-stocks/:id', authenticate, async (req: any, res) => {
   try {
     const { category, beltStock, size, openingPisc, recvPisc, issuesPisc, soNo, receiverName } = req.body;
     if (!category || !category.trim()) return res.status(400).json({ error: 'Category is required' });
     if (!beltStock || !beltStock.trim()) return res.status(400).json({ error: 'Belt Stock name is required' });
     if (!size || !size.trim()) return res.status(400).json({ error: 'Size is required' });
 
-    const open = parseInt(openingPisc, 10) || 0;
-    const recv = parseInt(recvPisc, 10) || 0;
-    const issue = parseInt(issuesPisc, 10) || 0;
-    const closing = open + recv - issue;
+    // Fetch existing record
+    const currentRes = await pool.query('SELECT * FROM ready_belt_stocks WHERE id = $1', [req.params.id]);
+    if (currentRes.rowCount === 0) return res.status(404).json({ error: 'Ready belt stock item not found' });
+    const current = currentRes.rows[0];
+
+    const oldOpening = parseInt(current.opening_pisc, 10) || 0;
+    const oldRecv = parseInt(current.recv_pisc, 10) || 0;
+    const oldIssues = parseInt(current.issues_pisc, 10) || 0;
+    let oldDetailsLog = current.details_log || [];
+    if (typeof oldDetailsLog === 'string') {
+      try {
+        oldDetailsLog = JSON.parse(oldDetailsLog);
+      } catch (e) {
+        oldDetailsLog = [];
+      }
+    }
+
+    const newOpening = parseInt(openingPisc, 10) || 0;
+    const newRecv = parseInt(recvPisc, 10) || 0;
+    const newIssues = parseInt(issuesPisc, 10) || 0;
+
+    const diffRecv = newRecv - oldRecv;
+    const diffIssues = newIssues - oldIssues;
+
+    const isAdmin = req.user?.role === 'admin';
+    let updatedOpening = oldOpening;
+    if (isAdmin) {
+      updatedOpening = newOpening; // Admin can change opening directly
+    }
+    // Any new received quantity is added to opening stock
+    if (diffRecv !== 0) {
+      updatedOpening += diffRecv;
+    }
+    // Any issued quantity is subtracted from opening stock
+    if (diffIssues !== 0) {
+      updatedOpening -= diffIssues;
+    }
+
+    const updatedIssues = newIssues;
+    const closing = updatedOpening;
+
+    // Log changes
+    const changes: string[] = [];
+    if (isAdmin && newOpening !== oldOpening) {
+      changes.push(`Admin changed Opening stock from ${oldOpening} to ${newOpening}`);
+    }
+    if (diffRecv > 0) {
+      changes.push(`Received +${diffRecv} Pcs`);
+    } else if (diffRecv < 0) {
+      changes.push(`Received correction ${diffRecv} Pcs`);
+    }
+    if (diffIssues > 0) {
+      changes.push(`Issued +${diffIssues} Pcs`);
+    } else if (diffIssues < 0) {
+      changes.push(`Issued correction ${diffIssues} Pcs`);
+    }
+
+    if (current.category !== category.trim()) changes.push(`Category changed`);
+    if (current.belt_stock !== beltStock.trim()) changes.push(`Stock name changed`);
+    if (current.size !== size.trim()) changes.push(`Size changed`);
+    if ((current.so_no || '') !== (soNo || '').trim()) changes.push(`SO No updated to ${(soNo || '').trim()}`);
+    if ((current.receiver_name || '') !== (receiverName || '').trim()) changes.push(`Receiver Name updated to ${(receiverName || '').trim()}`);
+
+    let updatedDetailsLog = oldDetailsLog;
+    if (changes.length > 0) {
+      const timestampStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const newLog = {
+        dateTime: timestampStr,
+        username: req.user?.username || 'unknown',
+        name: req.user?.name || 'Unknown',
+        action: changes.join(', '),
+        recvQty: diffRecv !== 0 ? diffRecv : undefined,
+        issuesQty: diffIssues !== 0 ? diffIssues : undefined,
+        soNo: (soNo || '').trim() || '-',
+        receiverName: (receiverName || '').trim() || '-',
+        openingQty: oldOpening
+      };
+      updatedDetailsLog = [newLog, ...oldDetailsLog];
+    }
 
     await pool.query(
       `UPDATE ready_belt_stocks 
-       SET category = $1, belt_stock = $2, size = $3, opening_pisc = $4, recv_pisc = $5, issues_pisc = $6, closing_pisc = $7, so_no = $8, receiver_name = $9 
-       WHERE id = $10`,
-      [category.trim(), beltStock.trim(), size.trim(), open, recv, issue, closing, (soNo || '').trim(), (receiverName || '').trim(), req.params.id]
+       SET category = $1, belt_stock = $2, size = $3, opening_pisc = $4, recv_pisc = $5, issues_pisc = $6, closing_pisc = $7, so_no = $8, receiver_name = $9, details_log = $10 
+       WHERE id = $11`,
+      [
+        category.trim(),
+        beltStock.trim(),
+        size.trim(),
+        updatedOpening,
+        newRecv,
+        updatedIssues,
+        closing,
+        (soNo || '').trim(),
+        (receiverName || '').trim(),
+        JSON.stringify(updatedDetailsLog),
+        req.params.id
+      ]
     );
 
     res.json({
@@ -2025,12 +2147,13 @@ app.put('/api/ready-belt-stocks/:id', async (req, res) => {
       category: category.trim(),
       beltStock: beltStock.trim(),
       size: size.trim(),
-      openingPisc: open,
-      recvPisc: recv,
-      issuesPisc: issue,
+      openingPisc: updatedOpening,
+      recvPisc: newRecv,
+      issuesPisc: updatedIssues,
       closingPisc: closing,
       soNo: (soNo || '').trim(),
-      receiverName: (receiverName || '').trim()
+      receiverName: (receiverName || '').trim(),
+      detailsLog: updatedDetailsLog
     });
   } catch (err) {
     console.error('Failed to update ready belt stock', err);
@@ -2038,7 +2161,7 @@ app.put('/api/ready-belt-stocks/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/ready-belt-stocks/:id', async (req: any, res) => {
+app.delete('/api/ready-belt-stocks/:id', authenticate, async (req: any, res) => {
   try {
     await pool.query('DELETE FROM ready_belt_stocks WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -2523,15 +2646,15 @@ app.get('/api/rolls', async (req, res) => {
 });
 
 app.post('/api/rolls', async (req, res) => {
-  const { id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived, isReuse, parentRollId, status } = req.body;
+  const { id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived, isReuse, parentRollId, status, reorderLevel } = req.body;
   const computedIsReuse = isReuse || (id && id.startsWith('REUSE-')) || false;
   try {
     await pool.query(
-      `INSERT INTO rolls (id, material_type, full_width, full_length, total_sqm, remaining_sqm, is_archived, is_reuse, parent_roll_id, status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived || false, computedIsReuse, parentRollId || null, status || 'active']
+      `INSERT INTO rolls (id, material_type, full_width, full_length, total_sqm, remaining_sqm, is_archived, is_reuse, parent_roll_id, status, reorder_level) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived || false, computedIsReuse, parentRollId || null, status || 'active', parseFloat(reorderLevel) || 0]
     );
-    res.json({ id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived: isArchived || false, isReuse: computedIsReuse, parentRollId: parentRollId || null, status: status || 'active', cuts: [] });
+    res.json({ id, materialType, fullWidth, fullLength, totalSqm, remainingSqm, isArchived: isArchived || false, isReuse: computedIsReuse, parentRollId: parentRollId || null, status: status || 'active', reorderLevel: parseFloat(reorderLevel) || 0, cuts: [] });
   } catch (err) {
     console.error('Failed to create roll', err);
     res.status(500).json({ error: 'Failed to create roll' });
