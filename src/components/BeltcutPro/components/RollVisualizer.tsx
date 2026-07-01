@@ -393,6 +393,21 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
               )}
             </g>
 
+            {/* X-axis (LENGTH) axis label */}
+            <g transform={`translate(${RULER_SIZE}, 0)`}>
+              <text
+                x={viewWidth / 2}
+                y={12}
+                textAnchor="middle"
+                fontSize="8"
+                fontWeight="900"
+                fill="#6366f1"
+                letterSpacing="2"
+              >
+                ← LENGTH →
+              </text>
+            </g>
+
             <g transform={`translate(0, ${RULER_SIZE})`}>
               <rect width={RULER_SIZE} height={viewHeight} fill="#f8fafc" stroke="#e2e8f0" />
               {minorTicksY.map(t => {
@@ -432,6 +447,20 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                   </text>
                 </g>
               )}
+              {/* Rotated WIDTH axis label */}
+              <text
+                x={0}
+                y={viewHeight / 2}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize="8"
+                fontWeight="900"
+                fill="#6366f1"
+                letterSpacing="2"
+                transform={`rotate(-90, 10, ${viewHeight / 2})`}
+              >
+                ↑ WIDTH ↑
+              </text>
             </g>
 
             <g transform={`translate(${RULER_SIZE}, ${RULER_SIZE})`}>
