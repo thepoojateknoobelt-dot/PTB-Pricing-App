@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Roll, Cut, Unit } from '../types';
 import { isSpaceAvailable } from '../services/optimizationEngine';
-import { Box, ChevronDown, ChevronUp, Maximize2, Ruler } from 'lucide-react';
+import { Box, ChevronDown, ChevronUp, Maximize2 } from 'lucide-react';
 import { getShortRollId } from '../utils';
 
 interface RollVisualizerProps {
@@ -50,14 +50,6 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   const svgRef = useRef<SVGSVGElement>(null);
   const [mousePos, setMousePos] = useState<{ x: number, y: number } | null>(null);
   const [isValidPos, setIsValidPos] = useState(false);
-
-  // ── Measure Tool state ─────────────────────────────────────────
-  const [measureActive, setMeasureActive] = useState(false);
-  const [measurePhase, setMeasurePhase] = useState<'idle' | 'firstPlaced' | 'secondPlaced'>('idle');
-  const [ptA, setPtA] = useState<{ x: number; y: number } | null>(null);
-  const [ptB, setPtB] = useState<{ x: number; y: number } | null>(null);
-  const [dimOffset, setDimOffset] = useState(0);
-  const [liveMouse, setLiveMouse] = useState<{ x: number; y: number } | null>(null);
 
   const SCALE = 35; // 1m = 35px
   const viewWidth = roll.fullLength * SCALE;
@@ -157,37 +149,7 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
     return { x, y };
   };
 
-  // Reads raw SVG position without snapping (used by measure tool)
-  const getRawSVGCoords = (e: React.MouseEvent): { x: number; y: number } | null => {
-    if (!svgRef.current) return null;
-    const svg = svgRef.current;
-    const rect = svg.getBoundingClientRect();
-    const unscaledX = (e.clientX - rect.left) / zoom;
-    const unscaledY = (e.clientY - rect.top) / zoom;
-    return {
-      x: (unscaledX - RULER_SIZE) / SCALE,
-      y: (unscaledY - RULER_SIZE) / SCALE,
-    };
-  };
-
   const handleMouseMove = (e: React.MouseEvent) => {
-    // Measure tool tracking
-    if (measureActive) {
-      const coords = getRawSVGCoords(e);
-      if (coords) {
-        setLiveMouse(coords);
-        if (measurePhase === 'secondPlaced' && ptA && ptB) {
-          const dx = ptB.x - ptA.x, dy = ptB.y - ptA.y;
-          const len = Math.sqrt(dx * dx + dy * dy);
-          if (len > 0) {
-            const pxN = -dy / len, pyN = dx / len;
-            const mx = coords.x - (ptA.x + ptB.x) / 2;
-            const my = coords.y - (ptA.y + ptB.y) / 2;
-            setDimOffset(mx * pxN + my * pyN);
-          }
-        }
-      }
-    }
     if (!manualMode || !manualDimensions) return;
     const coords = getSVGCoords(e);
     if (!coords) return;
@@ -202,7 +164,6 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   };
 
   const handleMouseLeave = () => {
-    setLiveMouse(null);
     setMousePos(null);
     setIsValidPos(false);
     if (onManualPlacementChange) {
@@ -211,24 +172,6 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
   };
 
   const handleClick = (e: React.MouseEvent) => {
-    // Measure tool click handler (3-click workflow)
-    if (measureActive) {
-      const coords = getRawSVGCoords(e);
-      if (!coords) return;
-      if (measurePhase === 'idle') {
-        setPtA(coords);
-        setPtB(null);
-        setDimOffset(0);
-        setMeasurePhase('firstPlaced');
-      } else if (measurePhase === 'firstPlaced') {
-        setPtB(coords);
-        setMeasurePhase('secondPlaced');
-      } else if (measurePhase === 'secondPlaced') {
-        // Confirm dimension line — annotation stays visible until next measurement
-        setMeasurePhase('idle');
-      }
-      return;
-    }
     if (!manualMode || !mousePos) return;
     if (manualDimensions && isSpaceAvailable(roll, mousePos.x, mousePos.y, manualDimensions.width, manualDimensions.length)) {
       if (onManualPlacementConfirm) {
@@ -346,43 +289,11 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
             </span>
           )}
           {isExpanded && (
-            <>
-              <div className="flex bg-slate-100 border border-slate-200 rounded-2xl p-1.5">
-                <button onClick={() => setZoom(prev => Math.max(0.2, prev - 0.2))} className="w-8 h-8 flex items-center justify-center text-xs hover:bg-white rounded-xl font-black transition-all">-</button>
-                <div className="px-5 text-[10px] font-mono font-black flex items-center text-slate-600">{(zoom * 100).toFixed(0)}%</div>
-                <button onClick={() => setZoom(prev => Math.min(2, prev + 0.2))} className="w-8 h-8 flex items-center justify-center text-xs hover:bg-white rounded-xl font-black transition-all">+</button>
-              </div>
-              {/* Measure Tool Button */}
-              <button
-                onClick={() => {
-                  const next = !measureActive;
-                  setMeasureActive(next);
-                  setMeasurePhase('idle');
-                  setPtA(null);
-                  setPtB(null);
-                  setDimOffset(0);
-                  setLiveMouse(null);
-                }}
-                className={`h-8 px-3 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-1.5 ${
-                  measureActive
-                    ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
-                    : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-300'
-                }`}
-                title="Measure Tool: ① Click start point → ② Click end point → ③ Move to offset → Click to confirm"
-              >
-                <Ruler size={12} />
-                Measure
-              </button>
-              {measureActive && (
-                <span className="text-[9px] font-black text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 uppercase tracking-wider whitespace-nowrap animate-pulse">
-                  {measurePhase === 'idle'
-                    ? (ptA && ptB ? '✓ Placed · Click to remeasure' : '① Click start point')
-                    : measurePhase === 'firstPlaced'
-                    ? '② Click end point'
-                    : '③ Move to set dimension · Click to confirm'}
-                </span>
-              )}
-            </>
+            <div className="flex bg-slate-100 border border-slate-200 rounded-2xl p-1.5">
+              <button onClick={() => setZoom(prev => Math.max(0.2, prev - 0.2))} className="w-8 h-8 flex items-center justify-center text-xs hover:bg-white rounded-xl font-black transition-all">-</button>
+              <div className="px-5 text-[10px] font-mono font-black flex items-center text-slate-600">{(zoom * 100).toFixed(0)}%</div>
+              <button onClick={() => setZoom(prev => Math.min(2, prev + 0.2))} className="w-8 h-8 flex items-center justify-center text-xs hover:bg-white rounded-xl font-black transition-all">+</button>
+            </div>
           )}
           {onToggleExpand && (
             <button
@@ -414,10 +325,10 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
       {isExpanded && (
         <div 
           ref={containerRef}
-          className={`w-full ${height} ${noBorder ? 'border border-slate-200 rounded-2xl shadow-none' : 'border-4 border-white shadow-inner rounded-3xl'} overflow-auto relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : measureActive ? 'bg-amber-50/20 cursor-crosshair' : 'bg-slate-50'}`}
+          className={`w-full ${height} ${noBorder ? 'border border-slate-200 rounded-2xl shadow-none' : 'border-4 border-white shadow-inner rounded-3xl'} overflow-auto relative transition-all duration-700 ${manualMode ? 'bg-blue-50/30 border-blue-300 cursor-crosshair' : 'bg-slate-50'}`}
         onMouseMove={handleMouseMove}
         onClick={handleClick}
-        onMouseLeave={handleMouseLeave}
+        onMouseLeave={() => { setMousePos(null); setIsValidPos(false); }}
       >
         <div style={{ width: (viewWidth + RULER_SIZE + 45) * zoom, height: (viewHeight + RULER_SIZE + 40) * zoom, position: 'relative' }}>
           <svg 
@@ -437,13 +348,6 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
               <pattern id="suggested-pattern-invalid" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
                 <line x1="0" y1="0" x2="0" y2="14" stroke="#ef4444" strokeWidth="3.5" opacity="0.35" />
               </pattern>
-              {/* Measure tool arrowheads */}
-              <marker id="dim-arrow-end" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                <path d="M0,0 L0,6 L8,3 z" fill="#f59e0b" />
-              </marker>
-              <marker id="dim-arrow-start" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto-start-reverse">
-                <path d="M0,0 L0,6 L8,3 z" fill="#f59e0b" />
-              </marker>
             </defs>
             <g transform={`translate(${RULER_SIZE}, 0)`}>
               <rect width={viewWidth} height={RULER_SIZE} fill="#f8fafc" stroke="#e2e8f0" />
@@ -678,93 +582,6 @@ const RollVisualizer: React.FC<RollVisualizerProps> = ({
                   </g>
                 );
               })}
-
-              {/* ── Measure Tool Rendering ───────────────────────────────── */}
-              {measureActive && (() => {
-                const els: React.ReactNode[] = [];
-
-                // Rubber-band line: ptA → liveMouse while choosing ptB
-                if (measurePhase === 'firstPlaced' && ptA && liveMouse) {
-                  const dist = Math.sqrt((liveMouse.x - ptA.x) ** 2 + (liveMouse.y - ptA.y) ** 2);
-                  const distLabel = (dist * conv).toFixed(2) + unit;
-                  els.push(
-                    <g key="live-line" style={{ pointerEvents: 'none' }}>
-                      <line
-                        x1={ptA.x * SCALE} y1={ptA.y * SCALE}
-                        x2={liveMouse.x * SCALE} y2={liveMouse.y * SCALE}
-                        stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="6,3"
-                      />
-                      <rect x={liveMouse.x * SCALE - 22} y={liveMouse.y * SCALE - 17} width={44} height={13} rx={3} fill="rgba(245,158,11,0.92)" />
-                      <text x={liveMouse.x * SCALE} y={liveMouse.y * SCALE - 8} textAnchor="middle" fontSize="8" fontWeight="900" fill="white">
-                        {distLabel}
-                      </text>
-                    </g>
-                  );
-                }
-
-                // Full dimension annotation when both points are set
-                if (ptA && ptB) {
-                  const ax = ptA.x * SCALE, ay = ptA.y * SCALE;
-                  const bx = ptB.x * SCALE, by = ptB.y * SCALE;
-                  const ddx = bx - ax, ddy = by - ay;
-                  const segLen = Math.sqrt(ddx * ddx + ddy * ddy);
-                  if (segLen > 1) {
-                    const pxN = -ddy / segLen, pyN = ddx / segLen;
-                    const offsetPx = dimOffset * SCALE;
-                    const a2x = ax + pxN * offsetPx, a2y = ay + pyN * offsetPx;
-                    const b2x = bx + pxN * offsetPx, b2y = by + pyN * offsetPx;
-                    const midX = (a2x + b2x) / 2, midY = (a2y + b2y) / 2;
-                    const angleRad = Math.atan2(b2y - a2y, b2x - a2x);
-                    const angleDeg = angleRad * 180 / Math.PI;
-                    const dist = Math.sqrt((ptB.x - ptA.x) ** 2 + (ptB.y - ptA.y) ** 2);
-                    const distLabel = (dist * conv).toFixed(2) + unit;
-                    const ext = 8;
-                    els.push(
-                      <g key="dim-annotation" style={{ pointerEvents: 'none' }}>
-                        {/* Extension lines */}
-                        <line x1={ax} y1={ay} x2={a2x + pxN * ext} y2={a2y + pyN * ext} stroke="#f59e0b" strokeWidth="0.9" strokeDasharray="3,2" opacity="0.75" />
-                        <line x1={bx} y1={by} x2={b2x + pxN * ext} y2={b2y + pyN * ext} stroke="#f59e0b" strokeWidth="0.9" strokeDasharray="3,2" opacity="0.75" />
-                        {/* Dimension line with arrows */}
-                        <line x1={a2x} y1={a2y} x2={b2x} y2={b2y} stroke="#f59e0b" strokeWidth="1.5"
-                          markerStart="url(#dim-arrow-start)" markerEnd="url(#dim-arrow-end)" />
-                        {/* Dimension text background + label */}
-                        <rect
-                          x={midX - 26} y={midY - 7} width={52} height={13} rx={3}
-                          fill="rgba(245,158,11,0.95)"
-                          transform={`rotate(${angleDeg}, ${midX}, ${midY})`}
-                        />
-                        <text
-                          x={midX} y={midY} textAnchor="middle" dominantBaseline="middle"
-                          fontSize="8.5" fontWeight="900" fill="white"
-                          transform={`rotate(${angleDeg}, ${midX}, ${midY})`}
-                        >
-                          {distLabel}
-                        </text>
-                      </g>
-                    );
-                  }
-                }
-
-                // Anchor dots for ptA and ptB
-                if (ptA) {
-                  els.push(
-                    <g key="dot-a" style={{ pointerEvents: 'none' }}>
-                      <circle cx={ptA.x * SCALE} cy={ptA.y * SCALE} r={5} fill="#f59e0b" stroke="white" strokeWidth="2" />
-                      <circle cx={ptA.x * SCALE} cy={ptA.y * SCALE} r={1.8} fill="white" />
-                    </g>
-                  );
-                }
-                if (ptB) {
-                  els.push(
-                    <g key="dot-b" style={{ pointerEvents: 'none' }}>
-                      <circle cx={ptB.x * SCALE} cy={ptB.y * SCALE} r={5} fill="#f59e0b" stroke="white" strokeWidth="2" />
-                      <circle cx={ptB.x * SCALE} cy={ptB.y * SCALE} r={1.8} fill="white" />
-                    </g>
-                  );
-                }
-
-                return els.length > 0 ? <>{els}</> : null;
-              })()}
 
               {/* Manual mode live guidelines */}
               {manualMode && mousePos && (
