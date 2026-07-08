@@ -287,6 +287,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   const [savingMaterialTypeReorder, setSavingMaterialTypeReorder] = useState<string | null>(null);
 
   // Search states for individual Inventory Tables
+  const [overviewSearchQuery, setOverviewSearchQuery] = useState('');
   const [materialSearchQuery, setMaterialSearchQuery] = useState('');
   const [remnantSearchQuery, setRemnantSearchQuery] = useState('');
   const [freshRollSearchQuery, setFreshRollSearchQuery] = useState('');
@@ -2994,6 +2995,18 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     });
   }, [clientCutsList, tableSearchQuery]);
 
+  const filteredOverviewRolls = useMemo(() => {
+    const activeRolls = rolls.filter(r => r.status !== 'refused');
+    if (!overviewSearchQuery.trim()) return activeRolls;
+    const query = overviewSearchQuery.toLowerCase().trim();
+    return activeRolls.filter(roll => {
+      const matchRollId = roll.id.toLowerCase().includes(query);
+      const matchMaterial = roll.materialType.toLowerCase().includes(query);
+      const matchClient = roll.cuts.some(cut => cut.customerName?.toLowerCase().includes(query));
+      return matchRollId || matchMaterial || matchClient;
+    });
+  }, [rolls, overviewSearchQuery]);
+
   const filteredStockRolls = useMemo(() => {
     const activeRolls = rolls.filter(r => r.status !== 'refused');
     if (!tableSearchQuery) return activeRolls;
@@ -3403,16 +3416,43 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                 <StatsCard label="Refused" value={stats.refusedRolls} icon={<AlertTriangle size={20} />} color="bg-rose-600" />
                 <StatsCard label="Est. Waste" value={formatDisplayValue(stats.totalWastage)} unit={areaUnit} icon={<AlertTriangle size={20} />} color="bg-amber-600" />
               </div>
-              <div className="grid grid-cols-1 gap-4 mt-4">
-                {rolls.filter(r => r.status !== 'refused').map(roll => (
-                  <RollVisualizer
-                    key={roll.id}
-                    roll={roll}
-                    unit={currentUnit}
-                    onSelectCut={(cut) => handleDeleteCut(roll.id, cut)}
-                    onMaximize={() => setFullscreenRollId(roll.id)}
-                  />
-                ))}
+
+              {/* Master Search Bar */}
+              <div className="relative max-w-md">
+                <Search className="absolute left-3.5 top-3 h-4 w-4 text-zinc-400" />
+                <input
+                  type="text"
+                  placeholder="Search by Product, Client Name, or Roll ID..."
+                  value={overviewSearchQuery}
+                  onChange={(e) => setOverviewSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-10 py-2 border border-zinc-200 rounded-xl text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950 focus:border-transparent shadow-sm"
+                />
+                {overviewSearchQuery && (
+                  <button
+                    onClick={() => setOverviewSearchQuery('')}
+                    className="absolute right-3 top-3 text-zinc-400 hover:text-zinc-600"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                {filteredOverviewRolls.length === 0 ? (
+                  <div className="bg-white p-8 rounded-2xl border border-zinc-200 text-center text-zinc-400 italic text-xs">
+                    No matching active rolls found.
+                  </div>
+                ) : (
+                  filteredOverviewRolls.map(roll => (
+                    <RollVisualizer
+                      key={roll.id}
+                      roll={roll}
+                      unit={currentUnit}
+                      onSelectCut={(cut) => handleDeleteCut(roll.id, cut)}
+                      onMaximize={() => setFullscreenRollId(roll.id)}
+                    />
+                  ))
+                )}
               </div>
             </div>
           )}
