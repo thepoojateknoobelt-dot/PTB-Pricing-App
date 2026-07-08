@@ -169,6 +169,33 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
     { label: '18%', value: '18' },
   ];
 
+  const saveConfig = async (updatedBeltTypes?: Config['beltTypes']) => {
+    setIsSaving(true);
+    try {
+      const configToSave = {
+        ...localConfig,
+        beltTypes: (updatedBeltTypes || localConfig.beltTypes || []).filter((t: any) => t.name?.trim()),
+      };
+      
+      const res = await fetch('/api/settings/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(configToSave),
+      });
+      if (!res.ok) throw new Error('Failed to update configuration');
+
+      setLocalConfig(configToSave);
+      toast.success('Configuration saved permanently');
+      onRefresh?.();
+    } catch (err) {
+      toast.error('Failed to save configuration');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSave = () => saveConfig();
+
   const handleSaveCategoryModal = () => {
     if (!categoryModal.name.trim()) {
       toast.error('Category Name is required');
@@ -188,7 +215,6 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
       setSelectedCatIdx(updated.length - 1);
       setSelectedStyleIdx(null);
       setSelectedBOMIdx(null);
-      toast.success('Category added. Click "Commit Changes" to save permanently.');
     } else {
       const idx = categoryModal.catIdx!;
       const isDuplicate = updated.some((t, i) => i !== idx && t.name.toLowerCase() === name.toLowerCase());
@@ -197,37 +223,10 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
         return;
       }
       updated[idx] = { ...updated[idx], name, gst };
-      toast.success('Category updated. Click "Commit Changes" to save permanently.');
     }
 
-    setLocalConfig({ ...localConfig, beltTypes: updated });
     setCategoryModal({ ...categoryModal, isOpen: false });
-  };
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      // Clean up empty entries before saving
-      const cleanedConfig = {
-        ...localConfig,
-        beltTypes: (localConfig.beltTypes || []).filter((t: any) => t.name?.trim()),
-      };
-      
-      const res = await fetch('/api/settings/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleanedConfig),
-      });
-      if (!res.ok) throw new Error('Failed to update configuration');
-
-      setLocalConfig(cleanedConfig); // Update local state with cleaned data
-      toast.success('Configuration updated successfully');
-      onRefresh?.();
-    } catch (err) {
-      toast.error('Failed to update configuration');
-    } finally {
-      setIsSaving(false);
-    }
+    saveConfig(updated);
   };
 
 
@@ -300,7 +299,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
   const removeItem = (type: 'beltTypes', index: number) => {
     const updated = [...(localConfig[type] as any[])];
     updated.splice(index, 1);
-    setLocalConfig({ ...localConfig, [type]: updated });
+    saveConfig(updated);
   };
 
   const convertRateToNewUnit = (rate: number, oldUnit: string, newUnit: string) => {
