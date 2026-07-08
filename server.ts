@@ -1029,10 +1029,24 @@ const calculateCosting = (data: any, config: any, clientProfitRanges: any[] = []
   subtotal += packingCost;
   breakdown['packing'] = { consumption: 1, rate: manualPackingCost || rates.packing, cost: packingCost };
 
-  const purchaseGstAmount = Math.round(subtotal * (constants.purchaseGst / 100));
+  const selectedCategory = config?.beltTypes?.find?.((t: any) => t.name === data.beltType) || null;
+  
+  // Single GST rate: category-level gst overrides global constants
+  const categoryGst = selectedCategory?.gst !== undefined && selectedCategory.gst !== null
+    ? Number(selectedCategory.gst)
+    : null;
+
+  const applicablePurchaseGst = categoryGst !== null ? categoryGst : constants.purchaseGst;
+  const applicableSaleGst     = categoryGst !== null ? categoryGst : constants.saleGst;
+
+  const applicableFixCost = selectedCategory?.fixCost !== undefined && selectedCategory.fixCost !== null
+    ? Number(selectedCategory.fixCost)
+    : constants.fixCost;
+
+  const purchaseGstAmount = Math.round(subtotal * (applicablePurchaseGst / 100));
   const totalWithPurchaseGst = Math.round(subtotal + purchaseGstAmount);
   
-  const fixCostAmount = Math.round(totalWithPurchaseGst * (constants.fixCost / 100));
+  const fixCostAmount = Math.round(totalWithPurchaseGst * (applicableFixCost / 100));
   const totalWithFixCost = Math.round(totalWithPurchaseGst + fixCostAmount);
   
   // Resolve profit margin based on length ranges
@@ -1050,7 +1064,7 @@ const calculateCosting = (data: any, config: any, clientProfitRanges: any[] = []
   const profitAmount = Math.round(totalWithFixCost * (profitMargin / 100));
   const totalWithProfit = Math.round(totalWithFixCost + profitAmount);
 
-  const saleGstAmount = Math.round(totalWithProfit * (constants.saleGst / 100));
+  const saleGstAmount = Math.round(totalWithProfit * (applicableSaleGst / 100));
   const finalTotal = Math.round(totalWithProfit + saleGstAmount);
 
   return {
@@ -1058,13 +1072,17 @@ const calculateCosting = (data: any, config: any, clientProfitRanges: any[] = []
     summary: {
       subtotal,
       purchaseGst: purchaseGstAmount,
+      purchaseGstPercent: applicablePurchaseGst,
       totalWithPurchaseGst,
       fixCost: fixCostAmount,
+      fixCostPercentage: applicableFixCost,
       totalWithFixCost,
       profit: profitAmount,
       profitMarginUsed: profitMargin,
       totalWithProfit,
       saleGst: saleGstAmount,
+      saleGstPercent: applicableSaleGst,
+      gstPercent: categoryGst,
       finalTotal
     }
   };
@@ -2878,9 +2896,25 @@ app.post('/api/quotations/:id/smart-cut', authenticate, async (req: any, res) =>
 // Quotations Routes
 app.get('/api/quotations', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM quotations');
+    const { clientId, clientName } = req.query as { clientId?: string; clientName?: string };
+
+    let query = 'SELECT * FROM quotations';
+    const params: any[] = [];
+
+    if (clientId) {
+      query += ' WHERE client_id = $1';
+      params.push(clientId);
+    } else if (clientName) {
+      query += ' WHERE LOWER(client_name) = LOWER($1)';
+      params.push(clientName);
+    }
+
+    query += ' ORDER BY created_at DESC';
+
+    const result = await pool.query(query, params);
     const quotations = result.rows.map(row => ({
       id: row.id,
+      orderNumber: row.order_number,
       clientId: row.client_id,
       clientName: row.client_name,
       beltType: row.belt_type,
