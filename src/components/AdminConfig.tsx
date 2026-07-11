@@ -5,7 +5,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { UserPlus, Trash2, Upload, Download, Search, Edit2, Save, X, IndianRupee, Percent, ListPlus, Settings2, Lock, Unlock, Plus, Link2, Building2 } from 'lucide-react';
+import { UserPlus, Trash2, Upload, Download, Search, Edit2, Save, X, IndianRupee, Percent, ListPlus, Settings2, Lock, Unlock, Plus, Link2, Building2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { useAuth } from '../contexts/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
@@ -587,137 +587,168 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
           <CardContent className="p-0">
             <div className="flex h-[500px] divide-x divide-zinc-100 bg-white">
               
-              {/* 1. CATEGORY COLUMN */}
-              <div className="flex-1 flex flex-col min-w-[200px]">
+              {/* 1. CATEGORIES & STYLES COLUMN */}
+              <div className="flex-1 flex flex-col min-w-[240px]">
                 <div className="p-3 bg-zinc-50/80 border-b flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">1. CATEGORY</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">1. CATEGORIES & STYLES</span>
                   <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-110 transition-transform" onClick={() => {
                     setCategoryModal({ isOpen: true, mode: 'add', name: '', gst: '' });
                   }}>
                     <ListPlus className="h-3 w-3" />
                   </Button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                  {(Array.isArray(localConfig?.beltTypes) ? localConfig.beltTypes : [])?.map?.((cat, idx) => (
-                    <div 
-                      key={cat.id} 
-                      onClick={() => { setSelectedCatIdx(idx); setSelectedStyleIdx(null); setSelectedBOMIdx(null); }}
-                      className={cn(
-                        "group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-200 border-2",
-                        selectedCatIdx === idx 
-                          ? "bg-blue-50 border-blue-200 shadow-sm" 
-                          : "border-transparent hover:bg-zinc-50 hover:border-zinc-100"
-                      )}
-                    >
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <span className={cn("text-sm font-bold truncate", selectedCatIdx === idx ? "text-blue-700" : "text-zinc-700")}>
-                          {cat.name.toUpperCase()}
-                        </span>
-                        {cat.gst !== undefined && cat.gst !== null && (
-                          <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 rounded px-1 w-fit mt-0.5">GST {cat.gst}%</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Edit2 
-                          className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 cursor-pointer" 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setCategoryModal({
-                              isOpen: true,
-                              mode: 'edit',
-                              catIdx: idx,
-                              name: cat.name || '',
-                              gst: cat.gst !== undefined && cat.gst !== null ? cat.gst.toString() : ''
-                            });
-                          }}
-                        />
-                        <Trash2 
-                          className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-red-500 cursor-pointer" 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (window.confirm(`Are you sure you want to delete Category "${cat.name}"? All associated styles and BOMs will be deleted.`)) {
-                              removeItem('beltTypes', idx);
+                <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+                  {(Array.isArray(localConfig?.beltTypes) ? localConfig.beltTypes : [])?.map?.((cat, idx) => {
+                    const isExpanded = selectedCatIdx === idx;
+                    return (
+                      <div key={cat.id} className="border border-zinc-150 rounded-xl overflow-hidden bg-zinc-50/10">
+                        {/* Category Header */}
+                        <div 
+                          onClick={() => { 
+                            if (isExpanded) {
                               setSelectedCatIdx(null);
                               setSelectedStyleIdx(null);
                               setSelectedBOMIdx(null);
+                            } else {
+                              setSelectedCatIdx(idx);
+                              setSelectedStyleIdx(null);
+                              setSelectedBOMIdx(null);
                             }
-                          }} 
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* 2. STYLE COLUMN */}
-              <div className="flex-1 flex flex-col min-w-[200px] bg-zinc-50/30">
-                <div className="p-3 bg-zinc-50/80 border-b flex items-center justify-between">
-                   <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">2. STYLE</span>
-                   <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-6 w-6 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-110 transition-transform disabled:opacity-30" 
-                    disabled={selectedCatIdx === null}
-                    onClick={() => {
-                      const name = prompt('New Style Name:');
-                      if (name && selectedCatIdx !== null) {
-                        const updated = [...localConfig.beltTypes];
-                        updated[selectedCatIdx].styles = [...(updated[selectedCatIdx].styles || []), { id: Date.now().toString(), name: name.trim(), bom: [] }];
-                        setLocalConfig({ ...localConfig, beltTypes: updated });
-                      }
-                    }}
-                  >
-                    <ListPlus className="h-3 w-3" />
-                  </Button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                  {selectedCatIdx !== null && localConfig.beltTypes[selectedCatIdx] ? (
-                    (Array.isArray(localConfig?.beltTypes?.[selectedCatIdx]?.styles) ? localConfig.beltTypes[selectedCatIdx].styles : [])?.map?.((style, idx) => (
-                      <div 
-                        key={style.id} 
-                        onClick={() => { setSelectedStyleIdx(idx); setSelectedBOMIdx(null); }}
-                        className={cn(
-                          "group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-200 border-2",
-                          selectedStyleIdx === idx 
-                            ? "bg-blue-50 border-blue-200 shadow-sm" 
-                            : "border-transparent hover:bg-zinc-50 hover:border-zinc-100"
-                        )}
-                      >
-                        <span className={cn("text-sm font-bold truncate max-w-[120px]", selectedStyleIdx === idx ? "text-blue-700" : "text-zinc-700")}>
-                          {style.name.toUpperCase()}
-                        </span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Edit2 
-                            className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 cursor-pointer" 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const newName = prompt('Edit Style Name:', style.name);
-                              if (newName && newName.trim()) {
-                                const updated = [...localConfig.beltTypes];
-                                updated[selectedCatIdx!].styles[idx].name = newName.trim();
-                                setLocalConfig({ ...localConfig, beltTypes: updated });
-                              }
-                            }}
-                          />
-                          <Trash2 
-                            className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-red-500 cursor-pointer" 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (window.confirm(`Are you sure you want to delete Style "${style.name}"?`)) {
-                                removeStyle(selectedCatIdx!, idx);
-                                setSelectedStyleIdx(null);
-                                setSelectedBOMIdx(null);
-                              }
-                            }} 
-                          />
+                          }}
+                          className={cn(
+                            "group flex items-center justify-between p-3 cursor-pointer transition-all duration-200",
+                            isExpanded 
+                              ? "bg-blue-50 border-b border-blue-100 text-blue-700 font-bold" 
+                              : "hover:bg-zinc-50 text-zinc-700"
+                          )}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            {isExpanded ? (
+                              <ChevronDown className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                            ) : (
+                              <ChevronRight className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+                            )}
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span className={cn("text-xs font-bold uppercase truncate", isExpanded ? "text-blue-700" : "text-zinc-750")}>
+                                {cat.name}
+                              </span>
+                              {cat.gst !== undefined && cat.gst !== null && (
+                                <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 rounded px-1.5 w-fit mt-0.5">GST {cat.gst}%</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Edit2 
+                              className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 cursor-pointer" 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCategoryModal({
+                                  isOpen: true,
+                                  mode: 'edit',
+                                  catIdx: idx,
+                                  name: cat.name || '',
+                                  gst: cat.gst !== undefined && cat.gst !== null ? cat.gst.toString() : ''
+                                });
+                              }}
+                            />
+                            <Trash2 
+                              className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-red-500 cursor-pointer" 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.confirm(`Are you sure you want to delete Category "${cat.name}"? All associated styles and BOMs will be deleted.`)) {
+                                  removeItem('beltTypes', idx);
+                                  setSelectedCatIdx(null);
+                                  setSelectedStyleIdx(null);
+                                  setSelectedBOMIdx(null);
+                                }
+                              }} 
+                            />
+                          </div>
                         </div>
+
+                        {/* Collapsible Styles List under Category */}
+                        {isExpanded && (
+                          <div className="bg-white p-2 border-t border-zinc-100 space-y-1 animate-in slide-in-from-top-1 duration-200">
+                            <div className="flex items-center justify-between px-1.5 py-1 mb-1 bg-zinc-50/50 rounded-md">
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase">STYLES</span>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-5 px-1.5 text-[9px] font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-100 rounded-md flex items-center gap-1 transition-all"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const name = prompt('New Style Name:');
+                                  if (name && selectedCatIdx !== null) {
+                                    const updated = [...localConfig.beltTypes];
+                                    updated[selectedCatIdx].styles = [...(updated[selectedCatIdx].styles || []), { id: Date.now().toString(), name: name.trim(), bom: [] }];
+                                    setLocalConfig({ ...localConfig, beltTypes: updated });
+                                  }
+                                }}
+                              >
+                                <Plus className="h-2.5 w-2.5" />
+                                Add Style
+                              </Button>
+                            </div>
+                            
+                            {(!cat.styles || cat.styles.length === 0) ? (
+                              <div className="text-[10px] text-zinc-400 italic text-center py-2 bg-zinc-50/20 rounded-md border border-dashed border-zinc-100">
+                                No styles found.
+                              </div>
+                            ) : (
+                              cat.styles.map((style, styleIdx) => {
+                                const isStyleSelected = selectedStyleIdx === styleIdx;
+                                return (
+                                  <div 
+                                    key={style.id} 
+                                    onClick={(e) => { 
+                                      e.stopPropagation();
+                                      setSelectedStyleIdx(styleIdx); 
+                                      setSelectedBOMIdx(null); 
+                                    }}
+                                    className={cn(
+                                      "group flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all duration-150 border",
+                                      isStyleSelected 
+                                        ? "bg-blue-50/50 border-blue-200 shadow-xs" 
+                                        : "border-transparent hover:bg-zinc-50/80"
+                                    )}
+                                  >
+                                    <span className={cn("text-xs font-medium truncate flex-1", isStyleSelected ? "text-blue-700 font-bold" : "text-zinc-650")}>
+                                      {style.name.toUpperCase()}
+                                    </span>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <Edit2 
+                                        className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 cursor-pointer" 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const newName = prompt('Edit Style Name:', style.name);
+                                          if (newName && newName.trim()) {
+                                            const updated = [...localConfig.beltTypes];
+                                            updated[selectedCatIdx!].styles[styleIdx].name = newName.trim();
+                                            setLocalConfig({ ...localConfig, beltTypes: updated });
+                                          }
+                                        }}
+                                      />
+                                      <Trash2 
+                                        className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-red-500 cursor-pointer" 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (window.confirm(`Are you sure you want to delete Style "${style.name}"?`)) {
+                                            removeStyle(selectedCatIdx!, styleIdx);
+                                            setSelectedStyleIdx(null);
+                                            setSelectedBOMIdx(null);
+                                          }
+                                        }} 
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ))
-                  ) : (
-                    <div className="h-full flex items-center justify-center p-8 text-center">
-                      <p className="text-xs text-zinc-400 italic">Select a category first</p>
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
               </div>
 
