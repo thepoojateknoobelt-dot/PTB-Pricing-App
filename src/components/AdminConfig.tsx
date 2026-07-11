@@ -972,125 +972,276 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                   </div>
                                   
                                   <div className="flex-1 overflow-y-auto pr-3 custom-scrollbar space-y-3 pb-4">
-                                    {(Array.isArray(item.options) ? item.options : [])?.map?.((opt: any, optIdx: number) => (
-                                      <div key={optIdx} className="group flex flex-col gap-2.5 p-3 rounded-xl bg-white border border-zinc-200 hover:border-blue-200 hover:shadow-md transition-all animate-in slide-in-from-right-1 duration-200 relative">
-                                        <div className="space-y-1">
-                                          <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Sub-category Name</Label>
-                                          <Input 
-                                            placeholder="e.g. White Border / Red Border"
-                                            className="h-8 text-xs font-medium border-zinc-200 bg-zinc-50/50 focus:bg-white focus:border-blue-400 transition-all w-full"
-                                            value={opt.name}
-                                            onChange={(e) => {
-                                              const updated = [...localConfig.beltTypes];
-                                              updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].name = e.target.value;
-                                              setLocalConfig({ ...localConfig, beltTypes: updated });
-                                            }}
-                                          />
-                                        </div>
+                                     {(Array.isArray(item.options) ? item.options : [])?.map?.((opt: any, optIdx: number) => (
+                                       <div key={optIdx} className="group flex flex-col gap-2.5 p-3 rounded-xl bg-white border border-zinc-200 hover:border-blue-200 hover:shadow-md transition-all animate-in slide-in-from-right-1 duration-200 relative">
+                                         <div className="space-y-1">
+                                           <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Sub-category Name</Label>
+                                           <Input 
+                                             placeholder="e.g. White Border / Red Border"
+                                             className="h-8 text-xs font-medium border-zinc-200 bg-zinc-50/50 focus:bg-white focus:border-blue-400 transition-all w-full"
+                                             value={opt.name}
+                                             onChange={(e) => {
+                                               const updated = [...localConfig.beltTypes];
+                                               updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].name = e.target.value;
+                                               setLocalConfig({ ...localConfig, beltTypes: updated });
+                                             }}
+                                           />
+                                         </div>
 
-                                        <div className="space-y-1">
-                                          <div className="flex items-center justify-between">
-                                            <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Mathematical Formula (Optional)</Label>
-                                            <span className="text-[8px] text-zinc-400 italic">Defaults to: ={item.formula}</span>
-                                          </div>
-                                          <div className="relative">
-                                            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-[10px]">=</div>
-                                            <Input 
-                                              placeholder={item.formula}
-                                              className="h-8 pl-6 text-xs font-mono border-zinc-200 bg-zinc-50/50 focus:bg-white focus:border-blue-400 transition-all w-full"
-                                              value={opt.formula || ''}
-                                              onChange={(e) => {
-                                                const val = e.target.value.toUpperCase();
-                                                if (val && !/^[0-9LWP\.\+\-\*\/\(\)\s]*$/.test(val)) return;
-                                                const updated = [...localConfig.beltTypes];
-                                                updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formula = val;
-                                                setLocalConfig({ ...localConfig, beltTypes: updated });
-                                              }}
-                                            />
-                                          </div>
-                                        </div>
+                                         <div className="space-y-1">
+                                           <div className="flex items-center justify-between">
+                                             <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Mathematical Formula (Optional)</Label>
+                                             <span className="text-[8px] text-zinc-400 italic">Defaults to: ={item.formula}</span>
+                                           </div>
+                                           <div className="relative">
+                                             <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-[10px]">=</div>
+                                             <Input 
+                                               placeholder={item.formula}
+                                               className="h-8 pl-6 text-xs font-mono border-zinc-200 bg-zinc-50/50 focus:bg-white focus:border-blue-400 transition-all w-full"
+                                               value={opt.formula || ''}
+                                               onChange={(e) => {
+                                                 const val = e.target.value.toUpperCase();
+                                                 if (val && !/^[0-9LWP\.\+\-\*\/\(\)\s]*$/.test(val)) return;
+                                                 const updated = [...localConfig.beltTypes];
+                                                 updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formula = val;
+                                                 setLocalConfig({ ...localConfig, beltTypes: updated });
+                                               }}
+                                             />
+                                           </div>
+                                         </div>
 
-                                        <div className="flex items-end gap-2">
-                                          <div className="flex-1 space-y-1">
-                                            <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Rate</Label>
-                                            <div className="relative">
-                                              <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-bold">₹</div>
-                                              <Input 
-                                                type="number"
-                                                className="h-8 pl-5 pr-1 text-xs border-zinc-200 bg-zinc-50/50 font-bold text-zinc-700 focus:bg-white focus:border-blue-400 transition-all"
-                                                value={opt.rate}
-                                                onChange={(e) => {
-                                                  const updated = [...localConfig.beltTypes];
-                                                  updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].rate = parseFloat(e.target.value) || 0;
-                                                  setLocalConfig({ ...localConfig, beltTypes: updated });
-                                                }}
-                                              />
-                                            </div>
-                                          </div>
-                                          <div className="w-[85px] space-y-1">
-                                            <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Unit</Label>
-                                            <Select 
-                                              value={opt.unit || item.unit || ''}
-                                              onValueChange={(val) => {
-                                                const updated = [...localConfig.beltTypes];
-                                                const oldUnit = opt.unit || item.unit || '';
-                                                const currentRate = opt.rate || 0;
-                                                const option = updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx];
-                                                option.unit = val;
-                                                option.rate = convertRateToNewUnit(currentRate, oldUnit, val);
-                                                setLocalConfig({ ...localConfig, beltTypes: updated });
-                                              }}
-                                            >
-                                              <SelectTrigger className="bg-zinc-50 border-zinc-200 h-8 text-[9px] font-black uppercase px-2 hover:bg-white transition-all">
-                                                <SelectValue placeholder="Unit" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                {getFilteredUnits(opt.formula || item.formula).map(u => (
-                                                  <SelectItem key={u.id || u.value} value={u.value} className="text-[10px]">
-                                                    {u.label || u.value}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                          <div className="w-[110px] space-y-1">
-                                            <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Link Stock</Label>
-                                            <Select 
-                                              value={opt.linkedStockId || 'none'}
-                                              onValueChange={(val) => {
-                                                const updated = [...localConfig.beltTypes];
-                                                updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].linkedStockId = val === 'none' ? undefined : val;
-                                                setLocalConfig({ ...localConfig, beltTypes: updated });
-                                              }}
-                                            >
-                                              <SelectTrigger className="bg-zinc-50 border-zinc-200 h-8 text-[9px] font-black uppercase px-2 hover:bg-white transition-all">
-                                                <SelectValue placeholder="Not Linked" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                <SelectItem value="none" className="text-[10px]">Not Linked</SelectItem>
-                                                {materialStocks.map(stock => (
-                                                  <SelectItem key={stock.id} value={stock.id} className="text-[10px]">
-                                                    {stock.name}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                          <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            className="h-8 w-8 text-zinc-300 hover:text-rose-500 hover:bg-rose-50 transition-colors shrink-0"
-                                            onClick={() => {
-                                              const updated = [...localConfig.beltTypes];
-                                              updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options.splice(optIdx, 1);
-                                              setLocalConfig({ ...localConfig, beltTypes: updated });
-                                            }}
-                                          >
-                                            <Trash2 className="h-4 w-4" />
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    ))}
+                                         <div className="flex items-end gap-2">
+                                           <div className="flex-1 space-y-1">
+                                             <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">
+                                               Rate {opt.isFormation ? <span className="text-violet-400 font-normal normal-case">(auto from formation)</span> : ''}
+                                             </Label>
+                                             <div className="relative">
+                                               <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-bold">₹</div>
+                                               <Input 
+                                                 type="number"
+                                                 className={cn(
+                                                   "h-8 pl-5 pr-1 text-xs border-zinc-200 font-bold text-zinc-700 focus:bg-white focus:border-blue-400 transition-all",
+                                                   opt.isFormation ? "bg-violet-50/50 text-violet-800" : "bg-zinc-50/50"
+                                                 )}
+                                                 value={opt.rate}
+                                                 onChange={(e) => {
+                                                   const updated = [...localConfig.beltTypes];
+                                                   updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].rate = parseFloat(e.target.value) || 0;
+                                                   setLocalConfig({ ...localConfig, beltTypes: updated });
+                                                 }}
+                                               />
+                                             </div>
+                                           </div>
+                                           <div className="w-[85px] space-y-1">
+                                             <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Unit</Label>
+                                             <Select 
+                                               value={opt.unit || item.unit || ''}
+                                               onValueChange={(val) => {
+                                                 const updated = [...localConfig.beltTypes];
+                                                 const oldUnit = opt.unit || item.unit || '';
+                                                 const currentRate = opt.rate || 0;
+                                                 const option = updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx];
+                                                 option.unit = val;
+                                                 option.rate = convertRateToNewUnit(currentRate, oldUnit, val);
+                                                 setLocalConfig({ ...localConfig, beltTypes: updated });
+                                               }}
+                                             >
+                                               <SelectTrigger className="bg-zinc-50 border-zinc-200 h-8 text-[9px] font-black uppercase px-2 hover:bg-white transition-all">
+                                                 <SelectValue placeholder="Unit" />
+                                               </SelectTrigger>
+                                               <SelectContent>
+                                                 {getFilteredUnits(opt.formula || item.formula).map(u => (
+                                                   <SelectItem key={u.id || u.value} value={u.value} className="text-[10px]">
+                                                     {u.label || u.value}
+                                                   </SelectItem>
+                                                 ))}
+                                               </SelectContent>
+                                             </Select>
+                                           </div>
+                                           <div className="w-[110px] space-y-1">
+                                             <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Link Stock</Label>
+                                             <Select 
+                                               value={opt.linkedStockId || 'none'}
+                                               onValueChange={(val) => {
+                                                 const updated = [...localConfig.beltTypes];
+                                                 updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].linkedStockId = val === 'none' ? undefined : val;
+                                                 setLocalConfig({ ...localConfig, beltTypes: updated });
+                                               }}
+                                             >
+                                               <SelectTrigger className="bg-zinc-50 border-zinc-200 h-8 text-[9px] font-black uppercase px-2 hover:bg-white transition-all">
+                                                 <SelectValue placeholder="Not Linked" />
+                                               </SelectTrigger>
+                                               <SelectContent>
+                                                 <SelectItem value="none" className="text-[10px]">Not Linked</SelectItem>
+                                                 {materialStocks.map(stock => (
+                                                   <SelectItem key={stock.id} value={stock.id} className="text-[10px]">
+                                                     {stock.name}
+                                                   </SelectItem>
+                                                 ))}
+                                               </SelectContent>
+                                             </Select>
+                                           </div>
+                                           <Button 
+                                             variant="ghost" 
+                                             size="icon" 
+                                             className="h-8 w-8 text-zinc-300 hover:text-rose-500 hover:bg-rose-50 transition-colors shrink-0"
+                                             onClick={() => {
+                                               const updated = [...localConfig.beltTypes];
+                                               updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options.splice(optIdx, 1);
+                                               setLocalConfig({ ...localConfig, beltTypes: updated });
+                                             }}
+                                           >
+                                             <Trash2 className="h-4 w-4" />
+                                           </Button>
+                                         </div>
+
+                                         {/* ── FORMATION TOGGLE & BUILDER ── */}
+                                         <div className="border-t border-zinc-100 pt-2.5 mt-0.5">
+                                           <div className="flex items-center gap-2 mb-2">
+                                             <button
+                                               type="button"
+                                               onClick={() => {
+                                                 const updated = [...localConfig.beltTypes];
+                                                 const option = updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx];
+                                                 option.isFormation = !option.isFormation;
+                                                 if (!option.isFormation) {
+                                                   option.formationItems = undefined;
+                                                 } else if (!option.formationItems || option.formationItems.length === 0) {
+                                                   option.formationItems = [{ name: '', rate: 0, formula: item.formula || 'L * W', unit: opt.unit || item.unit || 'mtr' }];
+                                                 }
+                                                 setLocalConfig({ ...localConfig, beltTypes: updated });
+                                               }}
+                                               className={cn(
+                                                 "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 transition-colors duration-200",
+                                                 opt.isFormation ? "bg-violet-500 border-violet-500" : "bg-zinc-200 border-zinc-200"
+                                               )}
+                                             >
+                                               <span className={cn(
+                                                 "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-sm ring-0 transition-transform duration-200",
+                                                 opt.isFormation ? "translate-x-3" : "translate-x-0"
+                                               )} />
+                                             </button>
+                                             <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-500 cursor-pointer select-none">
+                                               Make this a Formation
+                                             </Label>
+                                             {opt.isFormation && (
+                                               <span className="text-[8px] font-black bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                                 Bundle
+                                               </span>
+                                             )}
+                                           </div>
+
+                                           {opt.isFormation && (
+                                             <div className="bg-violet-50/50 border border-violet-100 rounded-lg p-2.5 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                               <div className="flex items-center justify-between">
+                                                 <span className="text-[9px] font-black uppercase tracking-widest text-violet-500">Formation Items (Hidden from salesman)</span>
+                                                 <button
+                                                   type="button"
+                                                   onClick={() => {
+                                                     const updated = [...localConfig.beltTypes];
+                                                     const option = updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx];
+                                                     option.formationItems = [...(option.formationItems || []), { name: '', rate: 0, formula: item.formula || 'L * W', unit: opt.unit || item.unit || 'mtr' }];
+                                                     setLocalConfig({ ...localConfig, beltTypes: updated });
+                                                   }}
+                                                   className="flex items-center gap-1 text-[9px] font-black text-violet-600 hover:text-violet-700 bg-violet-100 hover:bg-violet-200 px-2 py-1 rounded-md transition-colors"
+                                                 >
+                                                   <Plus className="h-2.5 w-2.5" />
+                                                   Add Item
+                                                 </button>
+                                               </div>
+
+                                               <div className="space-y-1.5">
+                                                 {(opt.formationItems || []).map((fi: any, fiIdx: number) => (
+                                                   <div key={fiIdx} className="flex items-center gap-1.5 bg-white rounded-lg px-2 py-1.5 border border-violet-100">
+                                                     <Input
+                                                       placeholder="Item name"
+                                                       className="h-7 text-[10px] font-medium border-zinc-200 bg-zinc-50/50 flex-1 min-w-0"
+                                                       value={fi.name}
+                                                       onChange={(e) => {
+                                                         const updated = [...localConfig.beltTypes];
+                                                         updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formationItems[fiIdx].name = e.target.value;
+                                                         setLocalConfig({ ...localConfig, beltTypes: updated });
+                                                       }}
+                                                     />
+                                                     <div className="relative w-[60px] shrink-0">
+                                                       <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-400">₹</span>
+                                                       <Input
+                                                         type="number"
+                                                         placeholder="Rate"
+                                                         className="h-7 pl-4 text-[10px] font-bold border-zinc-200 bg-zinc-50/50"
+                                                         value={fi.rate}
+                                                         onChange={(e) => {
+                                                           const updated = [...localConfig.beltTypes];
+                                                           updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formationItems[fiIdx].rate = parseFloat(e.target.value) || 0;
+                                                           setLocalConfig({ ...localConfig, beltTypes: updated });
+                                                         }}
+                                                       />
+                                                     </div>
+                                                     <div className="relative w-[70px] shrink-0">
+                                                       <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-400 font-mono">=</span>
+                                                       <Input
+                                                         placeholder={item.formula}
+                                                         className="h-7 pl-4 text-[10px] font-mono border-zinc-200 bg-zinc-50/50 uppercase"
+                                                         value={fi.formula}
+                                                         onChange={(e) => {
+                                                           const val = e.target.value.toUpperCase();
+                                                           if (val && !/^[0-9LWP\.\+\-\*\/\(\)\s]*$/.test(val)) return;
+                                                           const updated = [...localConfig.beltTypes];
+                                                           updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formationItems[fiIdx].formula = val;
+                                                           setLocalConfig({ ...localConfig, beltTypes: updated });
+                                                         }}
+                                                       />
+                                                     </div>
+                                                     <Select
+                                                       value={fi.unit || opt.unit || item.unit || 'mtr'}
+                                                       onValueChange={(val) => {
+                                                         const updated = [...localConfig.beltTypes];
+                                                         updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formationItems[fiIdx].unit = val;
+                                                         setLocalConfig({ ...localConfig, beltTypes: updated });
+                                                       }}
+                                                     >
+                                                       <SelectTrigger className="h-7 w-[55px] shrink-0 text-[9px] font-black uppercase border-zinc-200 bg-zinc-50/50 px-1.5">
+                                                         <SelectValue />
+                                                       </SelectTrigger>
+                                                       <SelectContent>
+                                                         {(Array.isArray(localConfig?.units) ? localConfig.units : []).map(u => (
+                                                           <SelectItem key={u.value} value={u.value} className="text-[10px]">{u.label || u.value}</SelectItem>
+                                                         ))}
+                                                       </SelectContent>
+                                                     </Select>
+                                                     <button
+                                                       type="button"
+                                                       onClick={() => {
+                                                         const updated = [...localConfig.beltTypes];
+                                                         updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formationItems.splice(fiIdx, 1);
+                                                         setLocalConfig({ ...localConfig, beltTypes: updated });
+                                                       }}
+                                                       className="text-zinc-300 hover:text-rose-500 transition-colors shrink-0"
+                                                     >
+                                                       <Trash2 className="h-3 w-3" />
+                                                     </button>
+                                                   </div>
+                                                 ))}
+                                               </div>
+
+                                               {/* Auto-calculated rate preview */}
+                                               {(opt.formationItems || []).length > 0 && (() => {
+                                                 const preview = (opt.formationItems || []).reduce((sum: number, fi: any) => sum + (fi.rate || 0), 0);
+                                                 return (
+                                                   <div className="flex items-center justify-between pt-1.5 border-t border-violet-100">
+                                                     <span className="text-[9px] text-violet-500 font-bold">Effective Combined Rate:</span>
+                                                     <span className="text-[10px] font-black text-violet-700 font-mono">
+                                                       ₹{preview.toFixed(2)} <span className="text-[8px] font-normal">/ {opt.unit || item.unit}</span>
+                                                     </span>
+                                                   </div>
+                                                 );
+                                               })()}
+                                             </div>
+                                           )}
+                                         </div>
+                                         {/* ── END FORMATION ── */}
+                                       </div>
+                                     ))}
                                     {(!item.options || item.options.length === 0) && (
                                       <div className="flex flex-col items-center justify-center py-6 px-4 bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-100">
                                         <p className="text-[10px] text-zinc-400 font-medium text-center">No sub-categories defined. The system will use the default base rate for this component.</p>

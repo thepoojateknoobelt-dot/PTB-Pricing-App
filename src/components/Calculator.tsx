@@ -247,9 +247,28 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
           if (selectedOptIndices.length > 0 && Array.isArray(item.options) && item.options.length > 0) {
             // Each selected option becomes a separate BOM line item
             return selectedOptIndices
-              .map((optIdx: number) => {
-                const opt = item.options[optIdx];
-                if (!opt) return null;
+              .flatMap((optIdx: number) => {
+                const opt = item.options![optIdx];
+                if (!opt) return [];
+
+                // ── FORMATION EXPANSION ──
+                // If this sub-category is a Formation, expand its internal items
+                if (opt.isFormation && Array.isArray(opt.formationItems) && opt.formationItems.length > 0) {
+                  return opt.formationItems.map((fi: any, fiIdx: number) => ({
+                    ...item,
+                    rate: fi.rate || 0,
+                    unit: fi.unit || opt.unit || item.unit,
+                    // Internal name: stored as "FormationName > ItemName" for admin tracking
+                    name: fi.name ? `${opt.name} › ${fi.name}` : opt.name,
+                    formula: fi.formula || opt.formula || item.formula,
+                    id: `${item.id}_opt${optIdx}_fi${fiIdx}`,
+                    // Mark as formation child so we can group in display
+                    _formationName: opt.name,
+                    _isFormationItem: true,
+                  }));
+                }
+                // ── END FORMATION ──
+
                 let rate = opt.rate;
                 let unit = opt.unit || item.unit;
                 let name = opt.name ? opt.name.trim() : item.name;
@@ -258,7 +277,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                 if (customRates[item.id] !== undefined && selectedOptIndices[0] === optIdx) {
                   rate = customRates[item.id];
                 }
-                return { ...item, rate, unit, name, formula, id: `${item.id}_opt${optIdx}` };
+                return [{ ...item, rate, unit, name, formula, id: `${item.id}_opt${optIdx}` }];
               })
               .filter(Boolean);
           }
@@ -874,6 +893,13 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                                        const isOptSelected = selectedOptIndices.includes(i);
                                        const optRemarkKey = `${item.id}_${i}`;
                                        const optRemark = formData.selectedBOMOptions?._optRemarks?.[optRemarkKey] || '';
+                                       const isFormationOpt = !!opt.isFormation;
+                                       // For formations: compute total rate from formation items
+                                       const formationTotal = isFormationOpt && Array.isArray(opt.formationItems)
+                                         ? opt.formationItems.reduce((s: number, fi: any) => s + (fi.rate || 0), 0)
+                                         : null;
+                                       const displayRate = isFormationOpt ? formationTotal : opt.rate;
+
                                        return (
                                          <div key={i} className="space-y-1">
                                            <div className="flex items-center space-x-2">
@@ -907,14 +933,26 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                                                   isOptSelected ? "font-bold text-zinc-900" : "font-medium text-zinc-650 hover:text-zinc-900"
                                                 )}
                                               >
-                                                <span className="truncate">{opt.name || `Option ${i + 1}`}</span>
+                                                <span className="flex items-center gap-1.5 truncate">
+                                                  <span className="truncate">{opt.name || `Option ${i + 1}`}</span>
+                                                  {isFormationOpt && (
+                                                    <span className="text-[8px] font-black bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">
+                                                      Bundle
+                                                    </span>
+                                                  )}
+                                                </span>
                                                 <span className={cn(
                                                   "text-[9px] font-black px-1.5 py-0.5 rounded-md border shrink-0 tabular-nums transition-colors",
                                                   isOptSelected
-                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                    ? isFormationOpt
+                                                      ? "bg-violet-50 text-violet-700 border-violet-200"
+                                                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
                                                     : "bg-zinc-100 text-zinc-400 border-zinc-200"
                                                 )}>
-                                                  ₹{opt.rate}/{opt.unit || item.unit}
+                                                  {isFormationOpt && displayRate !== null
+                                                    ? `₹${(displayRate as number).toFixed(0)}/${opt.unit || item.unit}`
+                                                    : `₹${opt.rate}/${opt.unit || item.unit}`
+                                                  }
                                                 </span>
                                               </Label>
                                            </div>
@@ -942,6 +980,20 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                                                   }}
                                                   className="w-full text-[10px] px-2 py-1 border border-dashed border-indigo-200 rounded-lg bg-indigo-50/30 focus:outline-none focus:border-indigo-400 focus:bg-indigo-50/60 placeholder:text-zinc-400 text-zinc-600 transition-all"
                                                 />
+                                              </div>
+                                            )}
+                                            {/* Admin-only: show formation items breakdown as tooltip-style hint */}
+                                            {isFormationOpt && isOptSelected && user?.role === 'admin' && Array.isArray(opt.formationItems) && opt.formationItems.length > 0 && (
+                                              <div className="pl-5.5 mt-1">
+                                                <div className="bg-violet-50 border border-violet-100 rounded-lg px-2 py-1.5 space-y-0.5">
+                                                  <p className="text-[8px] font-black uppercase text-violet-400 tracking-widest mb-1">Formation Breakdown (Admin Only)</p>
+                                                  {opt.formationItems.map((fi: any, fiIdx: number) => (
+                                                    <div key={fiIdx} className="flex items-center justify-between">
+                                                      <span className="text-[9px] text-violet-700 font-medium">{fi.name || `Item ${fiIdx + 1}`}</span>
+                                                      <span className="text-[9px] font-bold text-violet-600 font-mono">₹{fi.rate}/{fi.unit} · {fi.formula}</span>
+                                                    </div>
+                                                  ))}
+                                                </div>
                                               </div>
                                             )}
                                          </div>

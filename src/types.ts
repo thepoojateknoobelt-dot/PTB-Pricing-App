@@ -37,6 +37,13 @@ export interface TapeType {
   rate: number;
 }
 
+export interface FormationItem {
+  name: string;
+  rate: number;
+  formula: string;
+  unit: string;
+}
+
 export interface BOMItem {
   id: string;
   name: string;
@@ -44,7 +51,16 @@ export interface BOMItem {
   unit: string;
   formula: string;
   isLocked?: boolean;
-  options?: { name: string, rate: number, unit?: string; linkedStockId?: string; formula?: string }[];
+  options?: {
+    name: string;
+    rate: number;
+    unit?: string;
+    linkedStockId?: string;
+    formula?: string;
+    // Formation fields
+    isFormation?: boolean;
+    formationItems?: FormationItem[];
+  }[];
   linkedStockId?: string;
 }
 
