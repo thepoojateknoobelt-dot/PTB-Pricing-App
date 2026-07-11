@@ -102,6 +102,19 @@ async function initializeDatabase() {
       )
     `);
 
+    // Create Rate History table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rate_history (
+        id SERIAL PRIMARY KEY,
+        item_id VARCHAR(255) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        old_rate NUMERIC NOT NULL,
+        new_rate NUMERIC NOT NULL,
+        changed_by VARCHAR(255) NOT NULL,
+        changed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Create Quotations table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS quotations (
@@ -1824,7 +1837,7 @@ app.post('/api/settings/config', authenticate, async (req: any, res) => {
                   [logId, 'style', oldStyle.name, oldCat.name, JSON.stringify({ style: oldStyle, parentCategoryId: oldCat.id })]
                 );
               } else {
-                // Check for BOM Component Deletions
+                // Check for BOM Component Deletions & Rate Changes
                 const newStyle = newCat.styles.find((s: any) => s.id === oldStyle.id);
                 if (newStyle && Array.isArray(oldStyle.bom) && Array.isArray(newStyle.bom)) {
                   for (const oldBOM of oldStyle.bom) {
@@ -1836,6 +1849,38 @@ app.post('/api/settings/config', authenticate, async (req: any, res) => {
                          VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
                         [logId, 'bom', oldBOM.name, `${oldCat.name} › ${oldStyle.name}`, JSON.stringify({ bomItem: oldBOM, parentCategoryId: oldCat.id, parentStyleId: oldStyle.id })]
                       );
+                    } else {
+                      // BOM component is still present -> check for rate changes!
+                      const newBOM = newStyle.bom.find((b: any) => b.id === oldBOM.id);
+                      if (newBOM) {
+                        const changerName = req.user.name || req.user.username || 'Admin';
+                        const oldHasOptions = Array.isArray(oldBOM.options) && oldBOM.options.length > 0;
+                        const newHasOptions = Array.isArray(newBOM.options) && newBOM.options.length > 0;
+                        
+                        // Main rate change (when no options exist)
+                        if (!oldHasOptions && !newHasOptions && oldBOM.rate !== newBOM.rate) {
+                          await pool.query(
+                            `INSERT INTO rate_history (item_id, name, old_rate, new_rate, changed_by) 
+                             VALUES ($1, $2, $3, $4, $5)`,
+                            [oldBOM.id, oldBOM.name, oldBOM.rate, newBOM.rate, changerName]
+                          );
+                        }
+                        
+                        // Option rate change (when options exist)
+                        if (oldHasOptions && newHasOptions) {
+                          for (const oldOpt of oldBOM.options) {
+                            const newOpt = newBOM.options.find((o: any) => o.name === oldOpt.name);
+                            if (newOpt && oldOpt.rate !== newOpt.rate) {
+                              const itemId = `${oldBOM.id}::${oldOpt.name}`;
+                              await pool.query(
+                                `INSERT INTO rate_history (item_id, name, old_rate, new_rate, changed_by) 
+                                 VALUES ($1, $2, $3, $4, $5)`,
+                                [itemId, oldOpt.name, oldOpt.rate, newOpt.rate, changerName]
+                              );
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -1859,6 +1904,26 @@ app.post('/api/settings/config', authenticate, async (req: any, res) => {
 });
 
 // Config Recovery History (Data Directory / Recycle Bin) Routes
+app.get('/api/settings/config/rate-history', authenticate, async (req: any, res) => {
+  const { itemId } = req.query;
+  if (!itemId) return res.status(400).json({ error: 'itemId is required' });
+  try {
+    const result = await pool.query(
+      'SELECT old_rate, new_rate, changed_by, changed_at FROM rate_history WHERE item_id = $1 ORDER BY changed_at DESC LIMIT 5',
+      [itemId]
+    );
+    res.json(result.rows.map(r => ({
+      oldRate: parseFloat(r.old_rate),
+      newRate: parseFloat(r.new_rate),
+      changedBy: r.changed_by,
+      changedAt: r.changed_at
+    })));
+  } catch (err) {
+    console.error('Failed to fetch rate history', err);
+    res.status(500).json({ error: 'Failed to retrieve rate history' });
+  }
+});
+
 app.get('/api/settings/config/deleted', authenticate, async (req: any, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
   try {

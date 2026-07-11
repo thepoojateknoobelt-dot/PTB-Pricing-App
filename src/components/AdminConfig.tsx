@@ -5,7 +5,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { UserPlus, Trash2, Upload, Download, Search, Edit2, Save, X, IndianRupee, Percent, ListPlus, Settings2, Lock, Unlock, Plus, Link2, Building2, ChevronDown, ChevronLeft } from 'lucide-react';
+import { UserPlus, Trash2, Upload, Download, Search, Edit2, Save, X, IndianRupee, Percent, ListPlus, Settings2, Lock, Unlock, Plus, Link2, Building2, ChevronDown, ChevronLeft, Info, Clock, Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { useAuth } from '../contexts/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
@@ -160,6 +160,29 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
     name: '',
     gst: ''
   });
+
+  const [rateHistoryItem, setRateHistoryItem] = useState<{ itemId: string; name: string } | null>(null);
+  const [rateHistoryList, setRateHistoryList] = useState<{ oldRate: number; newRate: number; changedBy: string; changedAt: string }[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const openRateHistory = async (itemId: string, name: string) => {
+    setRateHistoryItem({ itemId, name });
+    setLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/settings/config/rate-history?itemId=${encodeURIComponent(itemId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRateHistoryList(data);
+      } else {
+        toast.error('Failed to load rate history');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to load rate history');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   const GST_OPTIONS = [
     { label: 'No Override (Use Global)', value: '' },
@@ -922,8 +945,13 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                       </div>
 
                                       <div className="space-y-1.5">
-                                        <Label className="text-[10px] font-bold uppercase text-zinc-500">
-                                          Unit Rate (₹)
+                                        <Label className="text-[10px] font-bold uppercase text-zinc-500 flex items-center gap-1">
+                                          <span>Unit Rate (₹)</span>
+                                          <Info 
+                                            className="h-3.5 w-3.5 text-zinc-400 hover:text-blue-600 hover:scale-110 transition-all cursor-pointer"
+                                            onClick={() => openRateHistory(item.id, item.name)}
+                                            title="Click to view price change history"
+                                          />
                                         </Label>
                                         <div className="flex gap-2">
                                           <div className="relative flex-1">
@@ -1100,8 +1128,15 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
 
                                          <div className="flex items-end gap-2">
                                            <div className="flex-1 space-y-1">
-                                             <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">
-                                               Rate {opt.isFormation ? <span className="text-violet-400 font-normal normal-case">(auto from formation)</span> : ''}
+                                             <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1 flex items-center gap-1.5">
+                                               <span>Rate {opt.isFormation ? <span className="text-violet-400 font-normal normal-case">(auto from formation)</span> : ''}</span>
+                                               {opt.name && !opt.isFormation && (
+                                                 <Info 
+                                                   className="h-3.5 w-3.5 text-zinc-400 hover:text-blue-600 hover:scale-110 transition-all cursor-pointer" 
+                                                   onClick={() => openRateHistory(`${item.id}::${opt.name}`, opt.name)}
+                                                   title="Click to view price change history"
+                                                 />
+                                               )}
                                              </Label>
                                              <div className="relative">
                                                <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-bold">₹</div>
@@ -1533,6 +1568,57 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
             </Button>
             <Button className="w-full sm:w-auto text-xs bg-zinc-900 text-white hover:bg-zinc-800" onClick={handleSaveCategoryModal}>
               {categoryModal.mode === 'add' ? 'Add Category' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rate History Dialog */}
+      <Dialog open={!!rateHistoryItem} onOpenChange={(open) => !open && setRateHistoryItem(null)}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-indigo-500" />
+              Rate History
+            </DialogTitle>
+            <DialogDescription>
+              Last 5 price changes recorded for <strong>{rateHistoryItem?.name?.toUpperCase()}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            {loadingHistory ? (
+              <div className="flex flex-col justify-center items-center py-8 gap-2">
+                <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+                <span className="text-xs text-zinc-400">Loading history...</span>
+              </div>
+            ) : rateHistoryList.length === 0 ? (
+              <div className="text-center py-8 text-zinc-400 italic text-xs">
+                No previous rate changes recorded for this item.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {rateHistoryList.map((entry, idx) => (
+                  <div key={idx} className="flex items-start justify-between p-3 rounded-xl bg-zinc-50 border border-zinc-150 hover:border-zinc-200 transition-colors">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-400 text-xs font-bold line-through">₹{entry.oldRate}</span>
+                        <span className="text-zinc-400 text-xs font-bold">→</span>
+                        <span className="text-emerald-600 text-sm font-black">₹{entry.newRate}</span>
+                      </div>
+                      <p className="text-[10px] text-zinc-500 font-medium">Changed by: <span className="font-bold text-zinc-700">{entry.changedBy}</span></p>
+                    </div>
+                    <span className="text-[9px] text-zinc-400 font-mono mt-0.5">
+                      {new Date(entry.changedAt).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setRateHistoryItem(null)} className="w-full bg-zinc-900 text-white hover:bg-zinc-800" size="sm">
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
