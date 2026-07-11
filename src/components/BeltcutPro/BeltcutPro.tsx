@@ -4832,11 +4832,17 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Unit</label>
                             <input
                               type="text"
-                              placeholder="pcs, bottles, m"
+                              list="add-unit-suggestions"
+                              placeholder="PCS, MTR, KG..."
                               value={newMaterialStock.unit}
                               onChange={(e) => setNewMaterialStock({ ...newMaterialStock, unit: e.target.value })}
                               className="w-full px-3 py-2 border border-zinc-200 rounded-lg text-xs font-bold bg-white focus:outline-none focus:ring-2 focus:ring-zinc-950"
                             />
+                            <datalist id="add-unit-suggestions">
+                              <option value="PCS" />
+                              <option value="MTR" />
+                              <option value="KG" />
+                            </datalist>
                           </div>
                         </div>
 
@@ -4925,7 +4931,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                                 }}
                                                 className="w-16 px-1.5 py-0.5 border border-slate-200 rounded font-mono font-bold text-[10px] text-center bg-white"
                                               />
-                                              <span className="text-[8px] font-bold text-slate-400 font-mono">kg</span>
+                                              <span className="text-[8px] font-bold text-slate-400 font-mono">{newMaterialStock.unit || 'kg'}</span>
                                             </div>
                                           </div>
                                           <button
@@ -5011,12 +5017,21 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                             onChange={(e) => setEditingMaterialStock({ ...editingMaterialStock, quantity: parseFloat(e.target.value) || 0 })}
                                             className={`w-24 px-3 py-2 border border-zinc-300 rounded-lg text-xs font-bold text-center bg-white ${formLots.length > 0 ? 'opacity-70 bg-zinc-50 border-zinc-200 cursor-not-allowed' : ''}`}
                                           />
-                                          <input
-                                            type="text"
-                                            value={editingMaterialStock.unit}
-                                            onChange={(e) => setEditingMaterialStock({ ...editingMaterialStock, unit: e.target.value })}
-                                            className="w-24 px-3 py-2 border border-zinc-300 rounded-lg text-xs font-bold text-center bg-white"
-                                          />
+                                          <div className="flex flex-col gap-1">
+                                            <input
+                                              type="text"
+                                              list={`edit-unit-suggestions-${editingMaterialStock.id}`}
+                                              placeholder="Unit..."
+                                              value={editingMaterialStock.unit}
+                                              onChange={(e) => setEditingMaterialStock({ ...editingMaterialStock, unit: e.target.value })}
+                                              className="w-24 px-2 py-2 border border-zinc-300 rounded-lg text-xs font-bold text-center bg-white"
+                                            />
+                                            <datalist id={`edit-unit-suggestions-${editingMaterialStock.id}`}>
+                                              <option value="PCS" />
+                                              <option value="MTR" />
+                                              <option value="KG" />
+                                            </datalist>
+                                          </div>
                                         </div>
                                       </td>
                                       <td className="px-4 py-3 text-right">
@@ -5247,7 +5262,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                                                 }}
                                                                 className="w-16 px-1.5 py-0.5 border border-slate-200 rounded font-mono font-bold text-[10px] text-center bg-white"
                                                               />
-                                                              <span className="text-[8px] font-bold text-slate-400 font-mono">kg</span>
+                                                              <span className="text-[8px] font-bold text-slate-400 font-mono">{editingMaterialStock?.unit || 'kg'}</span>
                                                             </div>
                                                           </div>
                                                           <button
@@ -5301,7 +5316,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                                     <div className="flex justify-between items-center border-b border-slate-100 pb-1.5">
                                                       <span className="font-black text-xs text-slate-800 uppercase tracking-tight">{lot.lotNumber}</span>
                                                       <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md uppercase">
-                                                        {lot.pieces?.length || 0} Pieces {totalWeight > 0 && `(Total: ${totalWeight.toFixed(3)} kg)`}
+                                                        {lot.pieces?.length || 0} Pieces {totalWeight > 0 && `(Total: ${totalWeight.toFixed(3)} ${item.unit || 'kg'})`}
                                                       </span>
                                                     </div>
                                                     <div className="overflow-x-auto">
@@ -5309,7 +5324,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                                         <thead>
                                                           <tr className="text-slate-400 font-bold uppercase tracking-widest border-b border-slate-100">
                                                             <th className="py-1">No.</th>
-                                                            <th className="py-1 text-right">Weight (kg)</th>
+                                                            <th className="py-1 text-right">{item.unit === 'kg' ? 'Weight' : 'Qty'} ({item.unit || 'kg'})</th>
                                                           </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-slate-50 font-mono font-bold text-slate-600">

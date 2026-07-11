@@ -1179,15 +1179,7 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
                 Convert to Order
               </Button>
             )}
-            {selectedQuotation?.status === 'order' && (
-              <Button
-                className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white gap-2 font-bold shadow-lg shadow-indigo-200 transition-all duration-200"
-                onClick={() => { setSelectedQuotation(null); handleSmartCut(selectedQuotation!); }}
-              >
-                <Scissors className="h-4 w-4" />
-                Execute & Smart Cut
-              </Button>
-            )}
+
             {user?.role === 'admin' && selectedQuotation && (
               <Button 
                 variant="destructive" 
