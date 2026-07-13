@@ -732,19 +732,19 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-zinc-900 rounded-lg text-white">
+          <div className="p-1.5 bg-blue-50 text-[#1e40af] rounded-lg">
             <UserPlus className="h-4 w-4" />
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">Client Registry</h1>
-          <span className="ml-1 text-xs font-bold text-zinc-400 bg-zinc-100 rounded-full px-2 py-0.5">{clients.length}</span>
+          <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#1e3a8a]">Client Registry</h1>
+          <span className="ml-1 text-xs font-bold text-blue-500 bg-blue-50 border border-blue-100 rounded-full px-2 py-0.5">{clients.length}</span>
         </div>
         <div className="flex gap-2">
-          <label className={cn(buttonVariants({ variant: 'outline' }), 'gap-1.5 cursor-pointer h-8 text-xs px-3 flex items-center shadow-sm')}>
+          <label className={cn(buttonVariants({ variant: 'outline' }), 'gap-1.5 cursor-pointer h-8 text-xs px-3 flex items-center shadow-sm border-blue-100 text-[#1e3a8a] hover:bg-blue-50/50 rounded-[6px]')}>
             <Upload className="h-3.5 w-3.5" />
             Bulk Upload
             <input type="file" accept=".csv" className="hidden" onChange={handleBulkUpload} />
           </label>
-          <Button variant="outline" className="gap-1.5 h-8 text-xs px-3 shadow-sm" onClick={() => {
+          <Button variant="outline" className="gap-1.5 h-8 text-xs px-3 shadow-sm border-blue-100 text-[#1e3a8a] hover:bg-blue-50/50 rounded-[6px]" onClick={() => {
             const csv = 'Name,Company,City,Mobile,DefaultProfit';
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
@@ -752,19 +752,19 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
           }}>
             <Download className="h-3.5 w-3.5" /> Template
           </Button>
-          <Button className="gap-1.5 h-8 text-xs px-3 shadow-sm" onClick={() => setShowAddModal(true)}>
+          <Button className="gap-1.5 h-8 text-xs px-3 shadow-sm bg-[#1e40af] hover:bg-[#1d4ed8] text-white cursor-pointer rounded-[6px]" onClick={() => setShowAddModal(true)}>
             <UserPlus className="h-3.5 w-3.5" /> Add New Client
           </Button>
         </div>
       </div>
 
       {/* Full-width Client List */}
-      <Card className="border-zinc-200 shadow-sm">
+      <Card className="border-blue-100/60 shadow-[0_4px_12px_rgba(30,58,138,0.04)] rounded-[14px] bg-white">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3">
-            <CardTitle className="text-sm font-black text-zinc-800">
+            <CardTitle className="text-sm font-black text-[#1e3a8a]">
               All Clients
-              <span className="ml-2 text-zinc-400 font-bold">{filteredClients.length}</span>
+              <span className="ml-2 text-blue-400 font-bold">{filteredClients.length}</span>
             </CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />

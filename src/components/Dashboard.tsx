@@ -219,16 +219,19 @@ export const Dashboard = () => {
         {/* Header */}
         <header className="px-4 py-4 sm:px-8 sm:py-5 flex flex-col sm:flex-row gap-4 items-center justify-between border-b border-white/40 backdrop-blur-md bg-white/40 z-10 relative text-center sm:text-left">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-zinc-900 rounded-xl shadow-xl flex items-center justify-center transform hover:rotate-6 transition-transform">
-              <Factory className="h-6 w-6 text-white" />
+            <div className="flex items-center justify-center transform hover:rotate-6 transition-transform">
+              <svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
+                <polygon points="30,8 70,8 92,30 92,70 70,92 30,92 8,70 8,30" stroke="#1e40af" strokeWidth="8" fill="none"/>
+                <text x="50" y="60" fill="#1e40af" fontSize="26" fontWeight="900" textAnchor="middle" fontFamily="sans-serif" letterSpacing="-1">PTB</text>
+              </svg>
             </div>
             <div className="flex flex-col">
-              <span className="text-zinc-900 font-black tracking-tight text-lg leading-none uppercase">Pooja Tekno Belt</span>
-              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mt-1">Master Portal</span>
+              <span className="text-[#1e3a8a] font-black tracking-tight text-lg leading-none uppercase">POOJA TEKNOBELT</span>
+              <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mt-1">Master Portal</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-zinc-700 font-bold uppercase tracking-wider bg-white/80 px-3.5 py-2 rounded-xl border border-white shadow-[0_4px_12px_rgba(0,0,0,0.03)] backdrop-blur-sm">
+            <span className="text-xs text-[#1e3a8a] font-bold uppercase tracking-wider bg-white/80 px-3.5 py-2 rounded-xl border border-blue-100 shadow-[0_4px_12px_rgba(30,58,138,0.03)] backdrop-blur-sm">
               Logged in as: {user?.name || user?.username}
             </span>
           </div>

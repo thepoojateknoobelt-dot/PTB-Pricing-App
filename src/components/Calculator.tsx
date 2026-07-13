@@ -58,14 +58,64 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
     manualPackingCost: '',
     manualProfitMargin: '',
     selectedBOMOptions: {} as Record<string, any>,
-    hasHoles: false,
+  });
+
+  // Smart Hole Data state — auto-populated when selected BOM item has requiresHoleData = true
+  const [holePopupOpen, setHolePopupOpen] = useState(false);
+  const [holeData, setHoleData] = useState({
+    holeLength: '',
+    holeWidth: '',
     holeSize: '',
     holeDistHorizontal: '',
     holeDistVertical: '',
-    pricePerHole: '',
   });
 
+  // Detect if any currently selected BOM item or selected Sub-category requires hole data
+  const selectedHoleItems = (() => {
+    if (!formData.beltType || !formData.beltStyle) return [];
+    const cat = (config?.beltTypes || []).find((t: any) => t.name === formData.beltType);
+    const style = (cat?.styles || []).find((s: any) => s.name === formData.beltStyle);
+    if (!style || !style.bom) return [];
+
+    const list: { name: string; holeBaseRate?: number }[] = [];
+
+    style.bom.forEach((item: any) => {
+      const isChecked = formData.selectedBOMOptions?._included?.[item.id] !== false;
+      if (!isChecked) return;
+
+      const hasOptions = Array.isArray(item.options) && item.options.length > 0;
+      if (hasOptions) {
+        const rawSel = formData.selectedBOMOptions[item.id];
+        const selectedOptIndices: number[] = Array.isArray(rawSel)
+          ? rawSel
+          : rawSel !== undefined ? [rawSel] : [];
+
+        selectedOptIndices.forEach((optIdx) => {
+          const opt = item.options[optIdx];
+          if (opt && opt.requiresHoleData) {
+            list.push({
+              name: `${item.name} (${opt.name})`,
+              holeBaseRate: opt.holeBaseRate
+            });
+          }
+        });
+      } else {
+        if (item.requiresHoleData) {
+          list.push({
+            name: item.name,
+            holeBaseRate: item.holeBaseRate
+          });
+        }
+      }
+    });
+
+    return list;
+  })();
+
+  const needsHoleData = selectedHoleItems.length > 0;
+
   const [result, setResult] = useState<any>(null);
+  const [pendingCalculate, setPendingCalculate] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [expandedRates, setExpandedRates] = useState<Record<string, boolean>>({});
@@ -303,6 +353,11 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
           return [{ ...item, rate, unit, name, formula }];
         });
 
+      // Get pricePerHole from config BOM items that have requiresHoleData (admin-set, not salesman)
+      const holeBasePriceFromConfig = selectedHoleItems.length > 0
+        ? (selectedHoleItems[0].holeBaseRate || 0)
+        : 0;
+
       const result = calculateCosting({
         length: parseFloat(formData.length),
         lengthUnit: formData.lengthUnit,
@@ -311,11 +366,14 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
         beltType: formData.beltType,
         manualPackingCost: formData.manualPackingCost || undefined,
         manualProfitMargin: formData.manualProfitMargin || undefined,
-        hasHoles: formData.hasHoles,
-        holeSize: formData.holeSize,
-        holeDistHorizontal: formData.holeDistHorizontal,
-        holeDistVertical: formData.holeDistVertical,
-        pricePerHole: formData.pricePerHole,
+        hasHoles: needsHoleData && !!holeData.holeSize,
+        holeLength: holeData.holeLength,
+        holeWidth: holeData.holeWidth,
+        holeSize: holeData.holeSize,
+        holeDistHorizontal: holeData.holeDistHorizontal,
+        holeDistVertical: holeData.holeDistVertical,
+        pricePerHole: needsHoleData ? String(holeBasePriceFromConfig) : undefined,
+        selectedBOMOptions: formData.selectedBOMOptions,
       }, config, clientProfitRanges, customBOM, {});
 
 
@@ -356,6 +414,10 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
       return;
     }
 
+    const hasHoles = needsHoleData && !!holeData.holeSize;
+    const holeBasePriceFromConfig = selectedHoleItems.length > 0
+      ? (selectedHoleItems[0].holeBaseRate || 0) : 0;
+
     const newItem: QuotationItem = {
       id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
       beltType: formData.beltType,
@@ -365,12 +427,14 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
         lengthUnit: formData.lengthUnit,
         width: parseFloat(formData.width),
         widthUnit: formData.widthUnit,
-        hasHoles: formData.hasHoles,
-        holeSize: formData.hasHoles ? (parseFloat(formData.holeSize) || 0) : undefined,
-        holeDistHorizontal: formData.hasHoles ? (parseFloat(formData.holeDistHorizontal) || 0) : undefined,
-        holeDistVertical: formData.hasHoles ? (parseFloat(formData.holeDistVertical) || 0) : undefined,
-        pricePerHole: formData.hasHoles ? (parseFloat(formData.pricePerHole) || 0) : undefined,
-        totalHoles: formData.hasHoles ? (result.summary.totalHoles || 0) : undefined,
+        hasHoles,
+        holeSize: hasHoles ? (parseFloat(holeData.holeSize) || 0) : undefined,
+        holeLength: hasHoles ? (parseFloat(holeData.holeLength) || 0) : undefined,
+        holeWidth: hasHoles ? (parseFloat(holeData.holeWidth) || 0) : undefined,
+        holeDistHorizontal: hasHoles ? (parseFloat(holeData.holeDistHorizontal) || 0) : undefined,
+        holeDistVertical: hasHoles ? (parseFloat(holeData.holeDistVertical) || 0) : undefined,
+        pricePerHole: hasHoles ? holeBasePriceFromConfig : undefined,
+        totalHoles: hasHoles ? (result.summary.totalHoles || 0) : undefined,
       },
       totalCost: result.summary.finalTotal,
       selectedBOMOptions: JSON.parse(JSON.stringify(formData.selectedBOMOptions)),
@@ -382,6 +446,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
     
     // Clear result and inputs
     setResult(null);
+    setHoleData({ holeLength: '', holeWidth: '', holeSize: '', holeDistHorizontal: '', holeDistVertical: '' });
     setFormData({
       ...formData,
       length: '',
@@ -389,11 +454,6 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
       manualPackingCost: '',
       manualProfitMargin: '',
       beltStyle: '',
-      hasHoles: false,
-      holeSize: '',
-      holeDistHorizontal: '',
-      holeDistVertical: '',
-      pricePerHole: '',
     });
   };
 
@@ -466,7 +526,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-zinc-900 rounded-lg text-white">
+          <div className="p-1.5 bg-blue-50 text-[#1e40af] rounded-lg">
             <CalcIcon className="h-4 w-4" />
           </div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">Costing Calculator</h1>
@@ -477,7 +537,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
         <Card className="lg:col-span-1 border-zinc-300 shadow-xl bg-white/50 backdrop-blur-sm self-start">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2 mb-0.5">
-              <div className="p-1.5 bg-zinc-900 rounded-lg">
+              <div className="p-1.5 bg-blue-50 text-[#1e40af] rounded-lg">
                 <CalcIcon className="h-3.5 w-3.5 text-white" />
               </div>
               <CardTitle className="text-lg">Input Parameters</CardTitle>
@@ -664,71 +724,6 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                     </div>
                   </div>
 
-                  {/* Hole Checkbox Layout Specification */}
-                  <div className="space-y-3 pt-2.5 border-t border-zinc-100">
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="holeCheckbox"
-                        checked={formData.hasHoles || false}
-                        onChange={(e) => setFormData({ ...formData, hasHoles: e.target.checked })}
-                        className="h-4 w-4 rounded border-zinc-400 text-zinc-900 focus:ring-zinc-900 transition-colors"
-                      />
-                      <Label htmlFor="holeCheckbox" className="text-xs font-semibold cursor-pointer">
-                        Hole Checkbox
-                      </Label>
-                    </div>
-
-                    {formData.hasHoles && (
-                      <div className="grid gap-2.5 pl-4 border-l border-zinc-200 mt-2 animate-in fade-in slide-in-from-top-1 duration-150">
-                        <div className="space-y-1">
-                          <Label className="text-[10px] font-bold text-zinc-500 uppercase">Hole Size (mm)</Label>
-                          <Input
-                            type="number"
-                            placeholder="e.g. 5"
-                            value={formData.holeSize || ''}
-                            onChange={(e) => setFormData({ ...formData, holeSize: e.target.value })}
-                            className="bg-white border-zinc-400 h-9 text-xs"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Horizontal Spacing (mm)</Label>
-                            <Input
-                              type="number"
-                              placeholder="e.g. 50"
-                              value={formData.holeDistHorizontal || ''}
-                              onChange={(e) => setFormData({ ...formData, holeDistHorizontal: e.target.value })}
-                              className="bg-white border-zinc-400 h-9 text-xs"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-[10px] font-bold text-zinc-500 uppercase">Vertical Spacing (mm)</Label>
-                            <Input
-                              type="number"
-                              placeholder="e.g. 30"
-                              value={formData.holeDistVertical || ''}
-                              onChange={(e) => setFormData({ ...formData, holeDistVertical: e.target.value })}
-                              className="bg-white border-zinc-400 h-9 text-xs"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-1">
-                          <Label className="text-[10px] font-bold text-zinc-500 uppercase">Price per Hole (₹)</Label>
-                          <Input
-                            type="number"
-                            placeholder="e.g. 2.5"
-                            value={formData.pricePerHole || ''}
-                            onChange={(e) => setFormData({ ...formData, pricePerHole: e.target.value })}
-                            className="bg-white border-zinc-400 h-9 text-xs"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
                 </div>
                 {dimensionInsight && insightOrders.length > 0 && (
                   <Dialog>
@@ -846,11 +841,52 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                                       _included: included
                                     }
                                   });
+                                  // 🔑 If this item requires hole data and is being CHECKED, open hole popup
+                                  if (e.target.checked && item.requiresHoleData) {
+                                    const lMm = Math.round(toMeters(parseFloat(formData.length) || 0, formData.lengthUnit) * 1000);
+                                    const wMm = Math.round(toMeters(parseFloat(formData.width) || 0, formData.widthUnit) * 1000);
+                                    setHoleData(prev => ({
+                                      ...prev,
+                                      holeLength: String(lMm || ''),
+                                      holeWidth: String(wMm || '')
+                                    }));
+                                    setHolePopupOpen(true);
+                                  }
+                                  // If unchecked, clear the hole data for this item
+                                  if (!e.target.checked && item.requiresHoleData) {
+                                    setHoleData({ holeLength: '', holeWidth: '', holeSize: '', holeDistHorizontal: '', holeDistVertical: '' });
+                                  }
                                 }}
                                 className="h-4 w-4 rounded border-zinc-400 text-zinc-950 focus:ring-zinc-950 transition-colors cursor-pointer"
                               />
-                              <Label htmlFor={`bom-chk-${item.id}`} className="text-xs font-bold cursor-pointer text-zinc-800 flex-1">
+                              <Label htmlFor={`bom-chk-${item.id}`} className="text-xs font-bold cursor-pointer text-zinc-800 flex-1 flex items-center gap-2">
                                 {item.name}
+                                {/* Hole badge — shows only on items with requiresHoleData */}
+                                {item.requiresHoleData && isChecked && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      const lMm = Math.round(toMeters(parseFloat(formData.length) || 0, formData.lengthUnit) * 1000);
+                                      const wMm = Math.round(toMeters(parseFloat(formData.width) || 0, formData.widthUnit) * 1000);
+                                      setHoleData(prev => ({
+                                        ...prev,
+                                        holeLength: prev.holeLength || String(lMm || ''),
+                                        holeWidth: prev.holeWidth || String(wMm || '')
+                                      }));
+                                      setHolePopupOpen(true);
+                                    }}
+                                    className={cn(
+                                      "inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-full border transition-colors",
+                                      holeData.holeSize
+                                        ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                                        : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 animate-pulse"
+                                    )}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+                                    {holeData.holeSize ? `⌀${holeData.holeSize}mm (${holeData.holeLength}x${holeData.holeWidth}mm) ✓` : 'Fill Holes'}
+                                  </button>
+                                )}
                               </Label>
                             </div>
                             {/* Remark field - always visible when checked */}
@@ -923,6 +959,21 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                                                      [item.id]: newSelected.length > 0 ? newSelected : undefined
                                                    }
                                                  });
+                                                 // 🔑 Open hole popup if option checked requires hole data
+                                                 if (e.target.checked && opt.requiresHoleData) {
+                                                   const lMm = Math.round(toMeters(parseFloat(formData.length) || 0, formData.lengthUnit) * 1000);
+                                                   const wMm = Math.round(toMeters(parseFloat(formData.width) || 0, formData.widthUnit) * 1000);
+                                                   setHoleData(prev => ({
+                                                     ...prev,
+                                                     holeLength: String(lMm || ''),
+                                                     holeWidth: String(wMm || '')
+                                                   }));
+                                                   setHolePopupOpen(true);
+                                                 }
+                                                 // Clear if unchecked
+                                                 if (!e.target.checked && opt.requiresHoleData) {
+                                                   setHoleData({ holeLength: '', holeWidth: '', holeSize: '', holeDistHorizontal: '', holeDistVertical: '' });
+                                                 }
                                                }}
                                                className="h-3.5 w-3.5 rounded border-zinc-400 text-zinc-950 focus:ring-zinc-950 transition-colors cursor-pointer"
                                              />
@@ -939,6 +990,33 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                                                     <span className="text-[8px] font-black bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">
                                                       Bundle
                                                     </span>
+                                                  )}
+                                                  {/* Sub-category Hole Badge */}
+                                                  {opt.requiresHoleData && isOptSelected && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        const lMm = Math.round(toMeters(parseFloat(formData.length) || 0, formData.lengthUnit) * 1000);
+                                                        const wMm = Math.round(toMeters(parseFloat(formData.width) || 0, formData.widthUnit) * 1000);
+                                                        setHoleData(prev => ({
+                                                          ...prev,
+                                                          holeLength: prev.holeLength || String(lMm || ''),
+                                                          holeWidth: prev.holeWidth || String(wMm || '')
+                                                        }));
+                                                        setHolePopupOpen(true);
+                                                      }}
+                                                      className={cn(
+                                                        "inline-flex items-center gap-1 text-[8px] font-black px-1.5 py-0.5 rounded-full border transition-colors",
+                                                        holeData.holeSize
+                                                          ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                                                          : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 animate-pulse"
+                                                      )}
+                                                    >
+                                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-2 w-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+                                                      {holeData.holeSize ? `⌀${holeData.holeSize}mm (${holeData.holeLength}x${holeData.holeWidth}mm) ✓` : 'Fill Holes'}
+                                                    </button>
                                                   )}
                                                 </span>
                                                 <span className={cn(
@@ -1096,7 +1174,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
             </div>
 
             <Button 
-              className="w-full bg-zinc-900 hover:bg-zinc-800 text-white mt-1 h-10 text-sm font-semibold rounded-lg shadow-md transition-all active:scale-[0.98]" 
+              className="w-full bg-[#1e40af] hover:bg-[#1d4ed8] text-white mt-1 h-10 text-sm font-semibold rounded-[6px] shadow-sm transition-all active:scale-[0.98] cursor-pointer" 
               onClick={triggerCalculate}
               disabled={isLoading}
             >
@@ -1176,7 +1254,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                 {user?.role === 'admin' && result.breakdown && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
-                      <div className="h-1 w-1 rounded-full bg-zinc-900" />
+                      <div className="h-1 w-1 rounded-full bg-[#1e40af]" />
                       <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-600">Material Cost Breakdown</h3>
                     </div>
                     <div className="border border-zinc-100 rounded-lg overflow-x-auto shadow-sm">
@@ -1221,7 +1299,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                 {user?.role === 'admin' && result.summary && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
-                      <div className="h-1 w-1 rounded-full bg-zinc-900" />
+                      <div className="h-1 w-1 rounded-full bg-[#1e40af]" />
                       <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-600">Price Summary</h3>
                     </div>
                     <div className="border border-zinc-100 rounded-lg overflow-x-auto shadow-sm">
@@ -1255,7 +1333,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                             <TableCell className="text-[10px] pl-6 py-1">Packing Charge</TableCell>
                             <TableCell className="text-right font-mono text-[10px] py-1">{formatCurrency(result.summary.packingCost)}</TableCell>
                           </TableRow>
-                          <TableRow className="bg-zinc-900 hover:bg-zinc-800 text-white font-bold h-11">
+                          <TableRow className="bg-[#1e40af] text-white font-bold h-11 hover:bg-[#1d4ed8]">
                             <TableCell className="text-sm py-2">Final Selling Price</TableCell>
                             <TableCell className="text-right text-lg font-mono py-2">{formatCurrency(result.summary.finalTotal)}</TableCell>
                           </TableRow>
@@ -1266,7 +1344,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-zinc-50 p-4 rounded-xl border border-zinc-100 shadow-inner">
-                  <div className="flex flex-col justify-center p-4 bg-zinc-900 rounded-lg text-white shadow-lg overflow-hidden relative col-span-2">
+                  <div className="flex flex-col justify-center p-4 bg-[#1e40af] rounded-lg text-white shadow-sm overflow-hidden relative col-span-2">
                     <p className="text-zinc-400 text-[9px] font-black uppercase tracking-[0.2em] mb-2">Price Summary</p>
                     
                     {user?.role === 'admin' ? (
@@ -1325,7 +1403,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                     Reset Form
                   </Button>
                   <Button 
-                    className="flex-2 gap-1.5 bg-zinc-900 hover:bg-zinc-800 text-white h-10 text-xs font-bold shadow-md transition-all active:scale-[0.98]"
+                    className="flex-2 gap-1.5 bg-[#1e40af] hover:bg-[#1d4ed8] text-white h-10 text-xs font-bold shadow-sm transition-all active:scale-[0.98] rounded-[6px] cursor-pointer"
                     onClick={handleAddItemToQuotation}
                   >
                     <Plus className="h-3.5 w-3.5" />
@@ -1342,7 +1420,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
         <Card className="border-zinc-300 shadow-xl bg-white/80 backdrop-blur-sm mt-4 overflow-hidden animate-in fade-in slide-in-from-top-3 duration-250">
           <CardHeader className="bg-zinc-50/50 border-b border-zinc-100 py-3 flex flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
-              <div className="h-7 w-7 rounded bg-zinc-900 flex items-center justify-center">
+              <div className="h-7 w-7 rounded bg-blue-50 text-[#1e40af] flex items-center justify-center">
                 <ShoppingCart className="h-3.5 w-3.5 text-white" />
               </div>
               <div>
@@ -1678,7 +1756,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                     Save Draft
                   </Button>
                   <Button 
-                    className="flex-2 gap-1.5 bg-zinc-900 hover:bg-zinc-800 text-white h-10 text-xs font-bold shadow-md transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                    className="flex-2 gap-1.5 bg-[#1e40af] hover:bg-[#1d4ed8] text-white h-10 text-xs font-bold shadow-sm transition-all active:scale-[0.98] rounded-[6px] cursor-pointer disabled:opacity-50 cursor-pointer"
                     onClick={() => handleSaveQuotation(discountRequested && parseFloat(discountRequested) > 0 ? 'pending_approval' : 'draft')}
                     disabled={user?.permission === 'read'}
                   >
@@ -1696,7 +1774,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
         <Card className="border-zinc-300 shadow-xl bg-white/80 backdrop-blur-sm mt-4 overflow-hidden">
           <CardHeader className="bg-zinc-50/50 border-b border-zinc-100 py-3">
             <div className="flex items-center gap-2.5">
-              <div className="h-7 w-7 rounded bg-zinc-900 flex items-center justify-center">
+              <div className="h-7 w-7 rounded bg-blue-50 text-[#1e40af] flex items-center justify-center">
                 <Save className="h-3.5 w-3.5 text-white" />
               </div>
               <div>
@@ -1757,6 +1835,112 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
           </CardContent>
         </Card>
       )}
+
+      {/* ─── HOLE DATA POPUP ─── Auto-opens when selected belt needs hole dimensions */}
+      <Dialog open={holePopupOpen} onOpenChange={setHolePopupOpen}>
+        <DialogContent className="max-w-md sm:max-w-md mx-auto p-0 bg-white rounded-2xl border border-amber-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 px-6 py-5 border-b border-amber-100">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-amber-100 rounded-xl border border-amber-200">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+              </div>
+              <div>
+                <h2 className="text-base font-black text-amber-900">Hole Dimensions Required</h2>
+                <p className="text-xs text-amber-600 font-medium mt-0.5">
+                  This belt has {selectedHoleItems.map((i: any) => i.name).join(', ')} which requires hole data
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Belt reference info */}
+          <div className="px-6 pt-4 pb-2">
+            <div className="bg-zinc-50 border border-zinc-150 rounded-xl px-3 py-2.5 flex gap-4 text-xs">
+              <div>
+                <span className="text-zinc-400 font-bold uppercase text-[9px] block">Length</span>
+                <span className="font-black text-zinc-800">{formData.length}{formData.lengthUnit}</span>
+              </div>
+              <div>
+                <span className="text-zinc-400 font-bold uppercase text-[9px] block">Width</span>
+                <span className="font-black text-zinc-800">{formData.width}{formData.widthUnit}</span>
+              </div>
+              <div className="ml-auto text-right">
+                <span className="text-zinc-400 font-bold uppercase text-[9px] block">Price per Hole</span>
+                <span className="font-black text-emerald-700">
+                  {selectedHoleItems.length > 0 && selectedHoleItems[0].holeBaseRate
+                    ? `₹${selectedHoleItems[0].holeBaseRate} / hole`
+                    : <span className="text-zinc-400 italic font-normal">Set in config</span>
+                  }
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Hole Inputs */}
+          <div className="px-6 pb-6 pt-2 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-wider text-amber-700">Hole Area Length (mm)</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 1000"
+                  value={holeData.holeLength}
+                  onChange={(e) => setHoleData({ ...holeData, holeLength: e.target.value })}
+                  className="h-10 border-amber-200 bg-amber-50/40 focus:border-amber-400 focus:bg-white transition-all font-bold text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-wider text-amber-700">Hole Area Width (mm)</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 500"
+                  value={holeData.holeWidth}
+                  onChange={(e) => setHoleData({ ...holeData, holeWidth: e.target.value })}
+                  className="h-10 border-amber-200 bg-amber-50/40 focus:border-amber-400 focus:bg-white transition-all font-bold text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-[10px] font-black uppercase tracking-wider text-amber-700">Hole Size (mm)</Label>
+              <Input
+                type="number"
+                placeholder="e.g. 5"
+                autoFocus
+                value={holeData.holeSize}
+                onChange={(e) => setHoleData({ ...holeData, holeSize: e.target.value })}
+                className="h-10 border-amber-200 bg-amber-50/40 focus:border-amber-400 focus:bg-white transition-all font-bold text-sm"
+              />
+            </div>
+
+            <p className="text-[9px] text-zinc-400 italic">Price per hole is set by admin in configuration and is not editable here.</p>
+
+            <div className="flex gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 border-zinc-200 text-zinc-600 h-10 font-bold"
+                onClick={() => {
+                  setHolePopupOpen(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white h-10 font-black"
+                disabled={!holeData.holeLength || !holeData.holeWidth || !holeData.holeSize}
+                onClick={() => {
+                  setHolePopupOpen(false);
+                }}
+              >
+                Save Hole Data ✓
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog Confirmation Modal */}
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
@@ -1878,7 +2062,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
             </Button>
             <Button 
               onClick={executeCalculate}
-              className="flex-1 bg-zinc-900 hover:bg-zinc-800 text-white h-10 font-bold text-xs rounded-xl shadow-md"
+              className="flex-1 bg-[#1e40af] hover:bg-[#1d4ed8] text-white h-10 font-bold text-xs rounded-xl shadow-sm cursor-pointer"
             >
               Confirm & Calculate
             </Button>

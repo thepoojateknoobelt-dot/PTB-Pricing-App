@@ -53,6 +53,8 @@ export interface BOMItem {
   unit: string;
   formula: string;
   isLocked?: boolean;
+  requiresHoleData?: boolean;   // Admin enables: this BOM item needs hole dimensions from salesman
+  holeBaseRate?: number;         // Price per hole (₹) — set by admin, never shown to salesman
   options?: {
     name: string;
     rate: number;
@@ -62,6 +64,8 @@ export interface BOMItem {
     // Formation fields
     isFormation?: boolean;
     formationItems?: FormationItem[];
+    requiresHoleData?: boolean;
+    holeBaseRate?: number;
   }[];
   linkedStockId?: string;
 }
@@ -80,6 +84,13 @@ export interface BeltType {
   gst?: number;
 }
 
+export interface CustomVariable {
+  id: string;
+  name: string;
+  symbol: string;
+  mappedField: 'length' | 'width' | 'holeSize' | 'holeDistHorizontal' | 'holeDistVertical' | 'pricePerHole' | 'rate';
+}
+
 export interface Config {
   rates: Rates;
   constants: Constants;
@@ -89,6 +100,7 @@ export interface Config {
   units: { id: string; label: string; value: string }[];
   awsServerUrl?: string;
   beltCutProUrl?: string;
+  variables?: CustomVariable[];
 }
 
 
@@ -119,6 +131,8 @@ export interface QuotationItem {
     widthUnit?: string;
     hasHoles?: boolean;
     holeSize?: number;
+    holeLength?: number;
+    holeWidth?: number;
     holeDistHorizontal?: number;
     holeDistVertical?: number;
     pricePerHole?: number;
@@ -144,6 +158,8 @@ export interface Quotation {
     widthUnit?: string;
     hasHoles?: boolean;
     holeSize?: number;
+    holeLength?: number;
+    holeWidth?: number;
     holeDistHorizontal?: number;
     holeDistVertical?: number;
     pricePerHole?: number;

@@ -248,7 +248,7 @@ export const UserManagement = () => {
       {/* Header Panel */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-zinc-900 rounded-xl text-white shadow-md">
+          <div className="p-2.5 bg-blue-50 text-[#1e40af] rounded-xl border border-blue-100 shadow-sm">
             <Users className="h-5 w-5" />
           </div>
           <div>
@@ -469,7 +469,7 @@ export const UserManagement = () => {
 
               <Button 
                 type="submit" 
-                className="w-full mt-4 bg-zinc-950 hover:bg-zinc-800 text-white font-bold h-9 text-xs rounded-xl shadow-md cursor-pointer transition-all duration-200" 
+                className="w-full mt-4 bg-[#1e40af] hover:bg-[#1d4ed8] text-white font-bold h-9 text-xs rounded-xl shadow-sm cursor-pointer transition-all duration-200" 
                 disabled={isAdding}
               >
                 <UserPlus className="h-4 w-4 mr-2" />
@@ -800,7 +800,7 @@ export const UserManagement = () => {
                 <Button type="button" variant="outline" onClick={() => setEditingUser(null)} className="text-xs h-9 cursor-pointer">
                   Cancel
                 </Button>
-                <Button type="submit" className="bg-zinc-950 text-white hover:bg-zinc-800 text-xs h-9 font-bold px-4 rounded-xl shadow-md cursor-pointer">
+                <Button type="submit" className="bg-[#1e3a8a] text-white hover:bg-zinc-800 text-xs h-9 font-bold px-4 rounded-xl shadow-md cursor-pointer">
                   Save Access Rights
                 </Button>
               </DialogFooter>

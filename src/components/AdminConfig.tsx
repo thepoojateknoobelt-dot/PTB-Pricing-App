@@ -54,21 +54,20 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
 
   const verifyDeletionCode = async (itemName: string): Promise<boolean> => {
     if (user?.role !== 'admin') return true; // Non-admins skip
-    // Always check with server - don't rely on stale localStorage hasDeletionCode
     try {
-      // First, check if this admin has a deletion code configured
       const checkRes = await fetch('/api/auth/me');
       if (checkRes.ok) {
         const checkData = await checkRes.json();
         if (!checkData.user?.hasDeletionCode) {
-          return true; // No code set, allow deletion
+          alert('No Deletion Security Code configured for your account. Please set it in User Management first.');
+          return false;
         }
       }
     } catch {
-      // If check fails, still proceed to prompt for safety
+      // If check fails, proceed to prompt for safety
     }
     const entered = prompt(`Enter Deletion Security Code to delete "${itemName}":`);
-    if (entered === null) return false; // User cancelled
+    if (entered === null || entered.trim() === '') return false;
     try {
       const res = await fetch('/api/auth/verify-deletion-code', {
         method: 'POST',
@@ -159,7 +158,8 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
       beltTypes: [],
       jointTypes: [],
       tapeTypes: [],
-      units: [{ id: 'mm', label: 'Millimeters (mm)', value: 'mm' }, { id: 'mtr', label: 'Meters (mtr)', value: 'mtr' }]
+      units: [{ id: 'mm', label: 'Millimeters (mm)', value: 'mm' }, { id: 'mtr', label: 'Meters (mtr)', value: 'mtr' }],
+      variables: []
     };
     
     const merged = { ...defaultConfig, ...config };
@@ -169,6 +169,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
     merged.jointTypes = config?.jointTypes || [];
     merged.tapeTypes = config?.tapeTypes || [];
     merged.units = config?.units || defaultConfig.units;
+    merged.variables = config?.variables || [];
     return merged;
   });
   const [isSaving, setIsSaving] = useState(false);
@@ -179,6 +180,95 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
 
   const [editingBOM, setEditingBOM] = useState<{ tIdx: number, sIdx: number } | null>(null);
   const [newBOMItem, setNewBOMItem] = useState<any>({ name: '', rate: '', unit: '', formula: 'L * W' });
+
+  // Custom variables management state
+  const [newVarName, setNewVarName] = useState('');
+  const [newVarSymbol, setNewVarSymbol] = useState('');
+  const [newVarMappedField, setNewVarMappedField] = useState<'length' | 'width' | 'holeSize' | 'holeDistHorizontal' | 'holeDistVertical' | 'pricePerHole' | 'rate' | 'totalHoles' | 'holesH' | 'holesV' | 'manualPackingCost' | 'manualProfitMargin' | 'purchaseGst' | 'fixCost' | 'defaultProfit' | 'saleGst'>('length');
+  const [showVariablesModal, setShowVariablesModal] = useState(false);
+  const [varTarget, setVarTarget] = useState<'active' | 'new'>('active');
+
+  const getActiveBOMVariables = (): any[] => {
+    if (varTarget === 'new') {
+      return newBOMItem.variables || [];
+    }
+    if (selectedCatIdx !== null && selectedStyleIdx !== null && selectedBOMIdx !== null) {
+      return localConfig.beltTypes[selectedCatIdx]?.styles?.[selectedStyleIdx]?.bom?.[selectedBOMIdx]?.variables || [];
+    }
+    return [];
+  };
+
+  const updateActiveBOMVariables = (updatedVars: any[]) => {
+    if (varTarget === 'new') {
+      setNewBOMItem({ ...newBOMItem, variables: updatedVars });
+    } else if (selectedCatIdx !== null && selectedStyleIdx !== null && selectedBOMIdx !== null) {
+      const updated = JSON.parse(JSON.stringify(localConfig.beltTypes));
+      if (updated[selectedCatIdx]?.styles?.[selectedStyleIdx]?.bom?.[selectedBOMIdx]) {
+        updated[selectedCatIdx].styles[selectedStyleIdx].bom[selectedBOMIdx].variables = updatedVars;
+        const nextConfig = { ...localConfig, beltTypes: updated };
+        setLocalConfig(nextConfig);
+        saveConfig(updated, nextConfig);
+      }
+    }
+  };
+
+  const isValidFormulaInput = (val: string, itemVariables?: any[]) => {
+    const upperVal = val.toUpperCase();
+    if (!/^[0-9A-Z\.\+\-\*\/\(\)\s]*$/.test(upperVal)) {
+      return false;
+    }
+    const allowedVars = ['L', 'W', 'P', 'R', ...(itemVariables || []).map((v: any) => v.symbol.toUpperCase())];
+    const letterTokens = upperVal.match(/[A-Z]+/g) || [];
+    for (const token of letterTokens) {
+      const isPrefixOfAny = allowedVars.some(v => v.startsWith(token));
+      if (!isPrefixOfAny) return false;
+    }
+    return true;
+  };
+
+  const handleAddVariable = () => {
+    if (!newVarName.trim()) {
+      toast.error('Variable Name is required');
+      return;
+    }
+    const symbolClean = newVarSymbol.trim().toUpperCase();
+    if (!symbolClean) {
+      toast.error('Variable symbol (sign) is required');
+      return;
+    }
+    if (!/^[A-Z][A-Z0-9]*$/.test(symbolClean)) {
+      toast.error('Symbol must start with a capital letter and contain only letters and numbers (e.g. HHD, L2)');
+      return;
+    }
+    const isReserved = ['L', 'W', 'P', 'R'].includes(symbolClean);
+    const currentVars = getActiveBOMVariables();
+    const isDuplicate = currentVars.some((v: any) => v.symbol === symbolClean);
+    if (isReserved) {
+      toast.error(`Symbol "${symbolClean}" is a default reserved variable symbol.`);
+      return;
+    }
+    if (isDuplicate) {
+      toast.error(`Symbol "${symbolClean}" is already in use.`);
+      return;
+    }
+    const newVar = {
+      id: Date.now().toString(),
+      name: newVarName.trim(),
+      symbol: symbolClean,
+      mappedField: newVarMappedField
+    };
+    const updatedVars = [...currentVars, newVar];
+    updateActiveBOMVariables(updatedVars);
+    setNewVarName('');
+    setNewVarSymbol('');
+    setNewVarMappedField('length');
+  };
+
+  const handleDeleteVariable = (id: string, symbol: string) => {
+    const currentVars = getActiveBOMVariables();
+    const updatedVars = currentVars.filter((v: any) => v.id !== id);
+    updateActiveBOMVariables(updatedVars);
+  };
 
   const [selectedCatIdx, setSelectedCatIdx] = useState<number | null>(0);
   const [selectedStyleIdx, setSelectedStyleIdx] = useState<number | null>(null);
@@ -229,12 +319,13 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
     { label: '18%', value: '18' },
   ];
 
-  const saveConfig = async (updatedBeltTypes?: Config['beltTypes']) => {
+  const saveConfig = async (updatedBeltTypes?: Config['beltTypes'], configOverride?: Config) => {
     setIsSaving(true);
     try {
+      const baseConfig = configOverride || localConfig;
       const configToSave = {
-        ...localConfig,
-        beltTypes: (updatedBeltTypes || localConfig.beltTypes || []).filter((t: any) => t.name?.trim()),
+        ...baseConfig,
+        beltTypes: (updatedBeltTypes || baseConfig.beltTypes || []).filter((t: any) => t.name?.trim()),
       };
       
       const res = await fetch('/api/settings/config', {
@@ -411,7 +502,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
     
     if (isArea) {
       // Look for existing area units
-      const areaUnits = allUnits.filter(u => {
+      const areaUnits = allUnits.filter((u: any) => {
         const label = (u.label || '').toLowerCase();
         const value = (u.value || '').toLowerCase();
         return label.includes('sq') || value.startsWith('sq') || label.includes('square') || label.includes('area');
@@ -420,10 +511,10 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
       if (areaUnits.length > 0) return areaUnits;
       
       // If no area units defined, virtualize them from length units
-      return allUnits.filter(u => {
+      return allUnits.filter((u: any) => {
         const label = (u.label || '').toLowerCase();
         return !label.includes('nos') && !label.includes('pcs') && !label.includes('unit');
-      }).map(u => ({
+      }).map((u: any) => ({
         ...u,
         id: `sq-${u.id}`,
         label: `Sq. ${u.label}`,
@@ -433,7 +524,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
     
     if (isLength) {
       // Strictly show only linear units
-      return allUnits.filter(u => {
+      return allUnits.filter((u: any) => {
         const label = (u.label || '').toLowerCase();
         const value = (u.value || '').toLowerCase();
         const isAreaUnit = label.includes('sq') || value.startsWith('sq') || label.includes('square') || label.includes('area');
@@ -462,7 +553,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
     
     // If mismatch, force a new unit
     if (isArea !== currentUnitIsArea) {
-      const preferred = filtered.find(u => {
+      const preferred = filtered.find((u: any) => {
         const v = u.value.toLowerCase();
         const l = u.label.toLowerCase();
         if (isArea) return v === 'sqm' || l.includes('sq m') || l.includes('square meter');
@@ -481,27 +572,29 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
       if (item) {
         const syncedUnit = getAutoUnit(item.formula, item.unit);
         if (syncedUnit !== item.unit) {
-          const updated = [...localConfig.beltTypes];
-          if (updated[selectedCatIdx]?.styles?.[selectedStyleIdx]?.bom?.[selectedBOMIdx]) {
-            updated[selectedCatIdx].styles[selectedStyleIdx].bom[selectedBOMIdx].unit = syncedUnit;
-            setLocalConfig({ ...localConfig, beltTypes: updated });
-          }
+          setLocalConfig((prev: any) => {
+            const updated = JSON.parse(JSON.stringify(prev.beltTypes));
+            if (updated[selectedCatIdx]?.styles?.[selectedStyleIdx]?.bom?.[selectedBOMIdx]) {
+              updated[selectedCatIdx].styles[selectedStyleIdx].bom[selectedBOMIdx].unit = syncedUnit;
+            }
+            return { ...prev, beltTypes: updated };
+          });
         }
       }
     }
-  }, [selectedBOMIdx, selectedStyleIdx, selectedCatIdx]);
+  }, [selectedBOMIdx, selectedStyleIdx, selectedCatIdx, localConfig]);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-zinc-900 rounded-lg text-white">
+          <div className="p-1.5 bg-blue-50 text-[#1e40af] rounded-lg">
             <Settings2 className="h-4 w-4" />
           </div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">System Configuration</h1>
         </div>
         <Button 
-          className="bg-zinc-900 hover:bg-zinc-800 text-white gap-1.5 h-8 text-xs px-3 shadow-md" 
+          className="bg-[#1e40af] hover:bg-[#1d4ed8] text-white gap-1.5 h-8 text-xs px-3 shadow-sm rounded-[6px]" 
           onClick={handleSave}
           disabled={isSaving}
         >
@@ -590,7 +683,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                     onKeyDown={(e) => e.key === 'Enter' && handleAddCompany()}
                   />
                 </div>
-                <Button onClick={handleAddCompany} size="sm" className="bg-zinc-900 hover:bg-zinc-800 text-white h-9">
+                <Button onClick={handleAddCompany} size="sm" className="bg-[#1e40af] hover:bg-[#1d4ed8] text-white h-9 rounded-[6px]">
                   Add
                 </Button>
               </div>
@@ -653,7 +746,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
         <Card className="border-zinc-200 shadow-md overflow-hidden bg-white animate-in fade-in duration-200">
           <CardHeader className="flex flex-row items-center justify-between bg-zinc-50/50 border-b py-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-zinc-900 rounded-lg shadow-lg">
+              <div className="p-2 bg-blue-50 text-[#1e40af] rounded-lg border border-blue-100">
                 <Settings2 className="h-5 w-5 text-white" />
               </div>
               <div>
@@ -966,7 +1059,35 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                               </span>
                                <span className="text-[10px] text-blue-500 font-mono font-bold tracking-tighter">={item.formula}</span>
                             </div>
-                            <div className="flex items-center gap-1 shrink-0">
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {/* Hole Settings button — visible on each BOM item row */}
+                              <button
+                                type="button"
+                                title={item.requiresHoleData ? `Hole enabled · ₹${item.holeBaseRate ?? 0}/hole` : 'Enable hole data for this component'}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const updated = JSON.parse(JSON.stringify(localConfig.beltTypes));
+                                  const bomItem = updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[idx];
+                                  bomItem.requiresHoleData = !bomItem.requiresHoleData;
+                                  const nextConfig = { ...localConfig, beltTypes: updated };
+                                  setLocalConfig(nextConfig);
+                                  saveConfig(updated, nextConfig);
+                                  // Select this item to show its detail panel
+                                  setSelectedBOMIdx(idx);
+                                }}
+                                className={cn(
+                                  "flex items-center gap-1 text-[9px] font-black px-2 py-1 rounded-lg border transition-all duration-200",
+                                  item.requiresHoleData
+                                    ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200 shadow-sm"
+                                    : "bg-zinc-50 text-zinc-400 border-zinc-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200 opacity-0 group-hover:opacity-100"
+                                )}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <circle cx="12" cy="12" r="3"/>
+                                  <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+                                </svg>
+                                {item.requiresHoleData ? 'Hole ✓' : 'Hole'}
+                              </button>
                               <Edit2 
                                 className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 cursor-pointer" 
                                 onClick={(e) => {
@@ -1141,28 +1262,112 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                           {item.isLocked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
                                         </Button>
                                     </div>
-                                    <div className="relative">
-                                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-xs">=</div>
-                                      <Input 
-                                        className={cn(
-                                          "pl-7 h-10 font-mono text-xs font-bold transition-all",
-                                          item.isLocked 
-                                            ? "bg-zinc-100 border-zinc-300 text-zinc-800 cursor-not-allowed" 
-                                            : "bg-white border-zinc-300 focus:border-blue-400"
-                                        )}
-                                        disabled={item.isLocked}
-                                        value={item.formula} 
-                                        onChange={(e) => {
-                                          const val = e.target.value.toUpperCase();
-                                          if (val && !/^[0-9LWP\.\+\-\*\/\(\)\s]*$/.test(val)) return;
-                                          const updated = [...localConfig.beltTypes];
-                                          updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].formula = val;
-                                          setLocalConfig({ ...localConfig, beltTypes: updated });
+                                    <div className="flex gap-2">
+                                      <div className="relative flex-1">
+                                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-xs">=</div>
+                                        <Input 
+                                          className={cn(
+                                            "pl-7 h-10 font-mono text-xs font-bold transition-all w-full",
+                                            item.isLocked 
+                                              ? "bg-zinc-100 border-zinc-300 text-zinc-800 cursor-not-allowed" 
+                                              : "bg-white border-zinc-350 focus:border-blue-400 rounded-[6px]"
+                                          )}
+                                          disabled={item.isLocked}
+                                          value={item.formula} 
+                                          onChange={(e) => {
+                                            const val = e.target.value.toUpperCase();
+                                            if (val && !isValidFormulaInput(val, item.variables)) return;
+                                            const updated = [...localConfig.beltTypes];
+                                            updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].formula = val;
+                                            setLocalConfig({ ...localConfig, beltTypes: updated });
+                                          }}
+                                        />
+                                      </div>
+                                      <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        type="button"
+                                        className="h-10 w-10 p-0 border-blue-200 text-blue-700 hover:bg-blue-50/50 cursor-pointer shadow-xs rounded-[6px] shrink-0"
+                                        onClick={() => {
+                                          setVarTarget('active');
+                                          setSelectedBOMIdx(selectedBOMIdx);
+                                          setShowVariablesModal(true);
                                         }}
-                                      />
+                                        title="Manage Variables"
+                                      >
+                                        <Settings2 className="h-4.5 w-4.5" />
+                                      </Button>
                                     </div>
-                                    <p className="text-[9px] text-zinc-400 italic">Allowed: L, W, P (Perimeter), Numbers, +, -, *, /, ( )</p>
+                                    <p className="text-[9px] text-zinc-400 italic">
+                                      Allowed: L, W, P, R{(item.variables || []).length > 0 ? `, ${(item.variables || []).map((v: any) => v.symbol).join(', ')}` : ''}, Numbers, Operators (+, -, *, /)
+                                    </p>
                                   </div>
+                                </div>
+
+                                {/* HOLE CONFIGURATION TOGGLE */}
+                                <div className="pt-3 border-t border-zinc-100">
+                                  <div className="flex items-center justify-between bg-amber-50/60 border border-amber-200/60 rounded-xl px-3 py-2.5">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="p-1.5 bg-amber-100 rounded-lg">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] font-black uppercase tracking-wide text-amber-800">Requires Hole Data</p>
+                                        <p className="text-[9px] text-amber-600 font-medium">
+                                          {item.requiresHoleData ? 'Salesman will be prompted to fill hole dimensions' : 'No hole data needed for this component'}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = JSON.parse(JSON.stringify(localConfig.beltTypes));
+                                        updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].requiresHoleData = !item.requiresHoleData;
+                                        const nextConfig = { ...localConfig, beltTypes: updated };
+                                        setLocalConfig(nextConfig);
+                                        saveConfig(updated, nextConfig);
+                                      }}
+                                      className={cn(
+                                        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                                        item.requiresHoleData ? "bg-amber-500" : "bg-zinc-300"
+                                      )}
+                                    >
+                                      <span className={cn(
+                                        "inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform",
+                                        item.requiresHoleData ? "translate-x-[18px]" : "translate-x-[3px]"
+                                      )} />
+                                    </button>
+                                  </div>
+
+                                  {item.requiresHoleData && (
+                                    <div className="mt-2 px-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                                      <div className="space-y-1">
+                                        <Label className="text-[9px] font-black uppercase tracking-wider text-amber-700 flex items-center gap-1">
+                                          <span>Price Per Hole (₹)</span>
+                                          <span className="text-amber-500 font-normal italic normal-case">— Admin only, hidden from salesman</span>
+                                        </Label>
+                                        <div className="relative">
+                                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-zinc-400">₹</span>
+                                          <Input
+                                            type="number"
+                                            placeholder="e.g. 2.50"
+                                            className="h-9 pl-6 text-xs border-amber-200 bg-amber-50/40 focus:border-amber-400 focus:bg-white transition-all rounded-[6px]"
+                                            value={item.holeBaseRate ?? ''}
+                                            onChange={(e) => {
+                                              const updated = JSON.parse(JSON.stringify(localConfig.beltTypes));
+                                              updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].holeBaseRate = parseFloat(e.target.value) || 0;
+                                              const nextConfig = { ...localConfig, beltTypes: updated };
+                                              setLocalConfig(nextConfig);
+                                            }}
+                                            onBlur={() => {
+                                              saveConfig(localConfig.beltTypes, localConfig);
+                                            }}
+                                          />
+                                        </div>
+                                        <p className="text-[9px] text-amber-600/70 italic">This is the cost per hole punched. Salesman only fills dimensions.</p>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* SCROLLING SUB-CATEGORIES AREA */}
@@ -1208,26 +1413,41 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                          </div>
 
                                          <div className="space-y-1">
-                                           <div className="flex items-center justify-between">
-                                             <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Mathematical Formula (Optional)</Label>
-                                             <span className="text-[8px] text-zinc-400 italic">Defaults to: ={item.formula}</span>
-                                           </div>
-                                           <div className="relative">
-                                             <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-[10px]">=</div>
-                                             <Input 
-                                               placeholder={item.formula}
-                                               className="h-8 pl-6 text-xs font-mono border-zinc-200 bg-zinc-50/50 focus:bg-white focus:border-blue-400 transition-all w-full"
-                                               value={opt.formula || ''}
-                                               onChange={(e) => {
-                                                 const val = e.target.value.toUpperCase();
-                                                 if (val && !/^[0-9LWP\.\+\-\*\/\(\)\s]*$/.test(val)) return;
-                                                 const updated = [...localConfig.beltTypes];
-                                                 updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formula = val;
-                                                 setLocalConfig({ ...localConfig, beltTypes: updated });
-                                               }}
-                                             />
-                                           </div>
-                                         </div>
+                                            <div className="flex items-center justify-between">
+                                              <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1">Mathematical Formula (Optional)</Label>
+                                              <span className="text-[8px] text-zinc-400 italic">Defaults to: ={item.formula}</span>
+                                            </div>
+                                            <div className="flex gap-1.5">
+                                              <div className="relative flex-1">
+                                                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-[10px]">=</div>
+                                                <Input 
+                                                  placeholder={item.formula}
+                                                  className="h-8 pl-6 text-xs font-mono border-zinc-200 bg-zinc-50/50 focus:bg-white focus:border-blue-400 transition-all w-full rounded-[6px]"
+                                                  value={opt.formula || ''}
+                                                  onChange={(e) => {
+                                                    const val = e.target.value.toUpperCase();
+                                                    if (val && !isValidFormulaInput(val, item.variables)) return;
+                                                    const updated = [...localConfig.beltTypes];
+                                                    updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formula = val;
+                                                    setLocalConfig({ ...localConfig, beltTypes: updated });
+                                                  }}
+                                                />
+                                              </div>
+                                              <Button 
+                                                variant="outline" 
+                                                size="sm" 
+                                                type="button"
+                                                className="h-8 w-8 p-0 border-blue-200 text-blue-700 hover:bg-blue-50/50 cursor-pointer shadow-xs rounded-[6px] shrink-0 flex items-center justify-center"
+                                                onClick={() => {
+                                                  setVarTarget('active');
+                                                  setShowVariablesModal(true);
+                                                }}
+                                                title="Manage Variables"
+                                              >
+                                                <Settings2 className="h-3.5 w-3.5" />
+                                              </Button>
+                                            </div>
+                                          </div>
 
                                          <div className="flex items-end gap-2">
                                            <div className="flex-1 space-y-1">
@@ -1312,17 +1532,71 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                              size="icon" 
                                              className="h-8 w-8 text-zinc-300 hover:text-rose-500 hover:bg-rose-50 transition-colors shrink-0"
                                               onClick={async () => {
-                                                if (window.confirm(`Are you sure you want to delete Sub-category "${opt.name}"?`)) {
-                                                  const verified = await verifyDeletionCode(opt.name);
-                                                  if (!verified) return;
-                                                  const updated = [...localConfig.beltTypes];
-                                                  updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options.splice(optIdx, 1);
-                                                  setLocalConfig({ ...localConfig, beltTypes: updated });
-                                                }
+                                                const verified = await verifyDeletionCode(opt.name || `this sub-category`);
+                                                if (!verified) return;
+                                                const updated = [...localConfig.beltTypes];
+                                                updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options.splice(optIdx, 1);
+                                                setLocalConfig({ ...localConfig, beltTypes: updated });
+                                                saveConfig(updated);
                                               }}
                                            >
                                              <Trash2 className="h-4 w-4" />
                                            </Button>
+                                         </div>
+
+                                         {/* ── HOLE CONFIGURATION FOR SUB-CATEGORY ── */}
+                                         <div className="border-t border-amber-100/50 bg-amber-50/20 px-2 py-2 rounded-lg mt-1 space-y-2">
+                                           <div className="flex items-center justify-between">
+                                             <div className="flex items-center gap-1.5">
+                                               <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+                                               <span className="text-[10px] font-black uppercase text-amber-800">Requires Hole Data</span>
+                                             </div>
+                                             <button
+                                               type="button"
+                                               onClick={() => {
+                                                 const updated = JSON.parse(JSON.stringify(localConfig.beltTypes));
+                                                 const option = updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx];
+                                                 option.requiresHoleData = !option.requiresHoleData;
+                                                 const nextConfig = { ...localConfig, beltTypes: updated };
+                                                 setLocalConfig(nextConfig);
+                                                 saveConfig(updated, nextConfig);
+                                               }}
+                                               className={cn(
+                                                 "relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus:outline-none shrink-0",
+                                                 opt.requiresHoleData ? "bg-amber-500" : "bg-zinc-300"
+                                               )}
+                                             >
+                                               <span className={cn(
+                                                 "inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow transition-transform",
+                                                 opt.requiresHoleData ? "translate-x-[13px]" : "translate-x-[2px]"
+                                               )} />
+                                             </button>
+                                           </div>
+                                           {opt.requiresHoleData && (
+                                             <div className="flex items-center gap-2 mt-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                                               <div className="flex-1 space-y-0.5">
+                                                 <Label className="text-[8px] font-black uppercase tracking-wider text-amber-700">Price Per Hole (₹)</Label>
+                                                 <div className="relative">
+                                                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-bold">₹</span>
+                                                   <Input
+                                                     type="number"
+                                                     placeholder="0.00"
+                                                     className="h-7 pl-5 pr-1 text-xs border-amber-200 bg-white font-bold text-zinc-700 rounded-[6px]"
+                                                     value={opt.holeBaseRate ?? ''}
+                                                     onChange={(e) => {
+                                                       const updated = JSON.parse(JSON.stringify(localConfig.beltTypes));
+                                                       updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].holeBaseRate = parseFloat(e.target.value) || 0;
+                                                       const nextConfig = { ...localConfig, beltTypes: updated };
+                                                       setLocalConfig(nextConfig);
+                                                     }}
+                                                     onBlur={() => {
+                                                       saveConfig(localConfig.beltTypes, localConfig);
+                                                     }}
+                                                   />
+                                                 </div>
+                                               </div>
+                                             </div>
+                                           )}
                                          </div>
 
                                          {/* ── FORMATION TOGGLE & BUILDER ── */}
@@ -1407,21 +1681,21 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                                          }}
                                                        />
                                                      </div>
-                                                     <div className="relative w-[70px] shrink-0">
-                                                       <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-400 font-mono">=</span>
-                                                       <Input
-                                                         placeholder={item.formula}
-                                                         className="h-7 pl-4 text-[10px] font-mono border-zinc-200 bg-zinc-50/50 uppercase"
-                                                         value={fi.formula}
-                                                         onChange={(e) => {
-                                                           const val = e.target.value.toUpperCase();
-                                                           if (val && !/^[0-9LWP\.\+\-\*\/\(\)\s]*$/.test(val)) return;
-                                                           const updated = [...localConfig.beltTypes];
-                                                           updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formationItems[fiIdx].formula = val;
-                                                           setLocalConfig({ ...localConfig, beltTypes: updated });
-                                                         }}
-                                                       />
-                                                     </div>
+                                                      <div className="relative w-[70px] shrink-0">
+                                                        <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-400 font-mono">=</span>
+                                                        <Input
+                                                          placeholder={item.formula}
+                                                          className="h-7 pl-4 text-[10px] font-mono border-zinc-200 bg-zinc-50/50 uppercase"
+                                                          value={fi.formula}
+                                                          onChange={(e) => {
+                                                            const val = e.target.value.toUpperCase();
+                                                            if (val && !isValidFormulaInput(val, item.variables)) return;
+                                                            const updated = [...localConfig.beltTypes];
+                                                            updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formationItems[fiIdx].formula = val;
+                                                            setLocalConfig({ ...localConfig, beltTypes: updated });
+                                                          }}
+                                                        />
+                                                      </div>
                                                      <Select
                                                        value={fi.unit || opt.unit || item.unit || 'mtr'}
                                                        onValueChange={(val) => {
@@ -1564,24 +1838,39 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
               </div>
               <div className="col-span-2 md:col-span-4 space-y-2">
                 <Label className="text-xs font-bold text-blue-600">Enter Math Formula (=)</Label>
-                <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-zinc-400">=</div>
-                  <Input 
-                    placeholder="(W + 0.26) * 2 or L * 4" 
-                    className="border-blue-400 bg-blue-50/30 pl-8 font-mono text-blue-800"
-                    value={newBOMItem.formula} 
-                    onChange={(e) => {
-                      const val = e.target.value.toUpperCase();
-                      if (val && !/^[0-9LW\.\+\-\*\/\(\)\s]*$/.test(val)) return;
-                      setNewBOMItem({ 
-                        ...newBOMItem, 
-                        formula: val,
-                        unit: getAutoUnit(val, newBOMItem.unit)
-                      });
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-zinc-400">=</div>
+                    <Input 
+                      placeholder="(W + 0.26) * 2 or L * 4" 
+                      className="border-blue-400 bg-blue-50/30 pl-8 font-mono text-blue-800 w-full rounded-[6px]"
+                      value={newBOMItem.formula} 
+                      onChange={(e) => {
+                        const val = e.target.value.toUpperCase();
+                        if (val && !isValidFormulaInput(val, newBOMItem.variables)) return;
+                        setNewBOMItem({ 
+                          ...newBOMItem, 
+                          formula: val,
+                          unit: getAutoUnit(val, newBOMItem.unit)
+                        });
+                      }}
+                    />
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    type="button"
+                    className="h-10 w-10 p-0 border-blue-200 text-blue-700 hover:bg-blue-50/50 cursor-pointer shadow-xs rounded-[6px] shrink-0 flex items-center justify-center"
+                    onClick={() => {
+                      setVarTarget('new');
+                      setShowVariablesModal(true);
                     }}
-                  />
+                    title="Manage Variables"
+                  >
+                    <Settings2 className="h-4.5 w-4.5" />
+                  </Button>
                 </div>
-                <p className="text-[10px] text-zinc-400 italic">Use 'L' for Length, 'W' for Width (in meters).</p>
+                <p className="text-[10px] text-zinc-400 italic">Use 'L' for Length, 'W' for Width, 'P' for Perimeter, 'R' for Rate, or custom variable symbols.</p>
               </div>
 
               <Button onClick={addBOMItem} className="col-span-2 md:col-span-4 mt-4 shadow-lg active:scale-95 transition-transform">
@@ -1670,7 +1959,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
             <Button variant="outline" className="w-full sm:w-auto text-xs" onClick={() => setCategoryModal({ ...categoryModal, isOpen: false })}>
               Cancel
             </Button>
-            <Button className="w-full sm:w-auto text-xs bg-zinc-900 text-white hover:bg-zinc-800" onClick={handleSaveCategoryModal}>
+            <Button className="w-full sm:w-auto text-xs bg-[#1e40af] text-white hover:bg-zinc-800" onClick={handleSaveCategoryModal}>
               {categoryModal.mode === 'add' ? 'Add Category' : 'Save Changes'}
             </Button>
           </DialogFooter>
@@ -1721,7 +2010,182 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
             )}
           </div>
           <DialogFooter>
-            <Button onClick={() => setRateHistoryItem(null)} className="w-full bg-zinc-900 text-white hover:bg-zinc-800" size="sm">
+            <Button onClick={() => setRateHistoryItem(null)} className="w-full bg-[#1e40af] text-white hover:bg-zinc-800" size="sm">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Variables Management Modal */}
+      <Dialog open={showVariablesModal} onOpenChange={setShowVariablesModal}>
+        <DialogContent className="max-w-4xl sm:max-w-4xl border-blue-100 shadow-[0_8px_30px_rgb(30,58,138,0.1)] rounded-[16px] bg-white text-zinc-900 overflow-hidden p-0 gap-0">
+          <DialogHeader className="bg-blue-50/50 border-b border-blue-100/60 p-6 flex flex-row items-center gap-4">
+            <div className="p-2.5 bg-blue-100 text-[#1e40af] rounded-xl shrink-0">
+              <Settings2 className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg font-black text-[#1e3a8a] tracking-tight">Formula Variables Manager</DialogTitle>
+              <DialogDescription className="text-xs text-zinc-500 mt-0.5">Define and map custom variable signs for use inside mathematical formulas</DialogDescription>
+            </div>
+          </DialogHeader>
+
+          <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+            {/* Form to add variable */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end bg-blue-50/20 p-4 rounded-xl border border-blue-100/40">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-zinc-700">Variable Name</Label>
+                <Input 
+                  placeholder="e.g. Horizontal Spacing" 
+                  value={newVarName}
+                  onChange={(e) => setNewVarName(e.target.value)}
+                  className="h-9 border-blue-200 focus-visible:ring-blue-100 text-xs bg-white rounded-[6px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-zinc-700 font-mono">Sign / Symbol</Label>
+                <Input 
+                  placeholder="e.g. HHD" 
+                  value={newVarSymbol}
+                  onChange={(e) => setNewVarSymbol(e.target.value)}
+                  className="h-9 border-blue-200 focus-visible:ring-blue-100 text-xs bg-white uppercase rounded-[6px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-zinc-700">Mapped Field</Label>
+                <Select 
+                  value={newVarMappedField} 
+                  onValueChange={(val: any) => setNewVarMappedField(val)}
+                >
+                  <SelectTrigger className="h-9 border-blue-200 focus-visible:ring-blue-100 text-xs bg-white rounded-[6px]">
+                    <SelectValue placeholder="Select Field" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="length" className="text-xs">Length (L) (m)</SelectItem>
+                    <SelectItem value="width" className="text-xs">Width (W) (m)</SelectItem>
+                    <SelectItem value="holeSize" className="text-xs">Hole Size (HS) (mm)</SelectItem>
+                    <SelectItem value="holeDistHorizontal" className="text-xs">Horizontal Spacing (HHD) (mm)</SelectItem>
+                    <SelectItem value="holeDistVertical" className="text-xs">Vertical Spacing (VHD) (mm)</SelectItem>
+                    <SelectItem value="pricePerHole" className="text-xs">Price per Hole (PPH) (₹)</SelectItem>
+                    <SelectItem value="rate" className="text-xs">Rate of Component (R) (₹)</SelectItem>
+                    
+                    <SelectItem value="totalHoles" className="text-xs text-blue-700 bg-blue-50/20">Total Holes (Count)</SelectItem>
+                    <SelectItem value="holesH" className="text-xs text-blue-700 bg-blue-50/20">Horizontal Holes (Count)</SelectItem>
+                    <SelectItem value="holesV" className="text-xs text-blue-700 bg-blue-50/20">Vertical Holes (Count)</SelectItem>
+                    
+                    <SelectItem value="manualPackingCost" className="text-xs text-emerald-700 bg-emerald-50/20">Manual Packing Cost (₹)</SelectItem>
+                    <SelectItem value="manualProfitMargin" className="text-xs text-emerald-700 bg-emerald-50/20">Manual Profit Margin (%)</SelectItem>
+                    
+                    <SelectItem value="purchaseGst" className="text-xs text-indigo-700 bg-indigo-50/20">Purchase GST (%)</SelectItem>
+                    <SelectItem value="fixCost" className="text-xs text-indigo-700 bg-indigo-50/20">Fix Cost (₹)</SelectItem>
+                    <SelectItem value="defaultProfit" className="text-xs text-indigo-700 bg-indigo-50/20">Default Profit Margin (%)</SelectItem>
+                    <SelectItem value="saleGst" className="text-xs text-indigo-700 bg-indigo-50/20">Sale GST (%)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button 
+                onClick={handleAddVariable}
+                type="button"
+                className="bg-[#1e40af] hover:bg-[#1d4ed8] text-white h-9 text-xs font-bold rounded-[6px] cursor-pointer"
+              >
+                <Plus className="h-4 w-4 mr-1" /> Add Variable
+              </Button>
+            </div>
+
+            {/* List of configured variables */}
+            <div className="border border-blue-100 rounded-xl overflow-hidden text-xs">
+              <table className="min-w-full divide-y divide-blue-100">
+                <thead className="bg-blue-50/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-bold text-[#1e3a8a]">Variable Name</th>
+                    <th className="px-4 py-3 text-left font-bold text-[#1e3a8a] font-mono">Sign / Symbol</th>
+                    <th className="px-4 py-3 text-left font-bold text-[#1e3a8a]">Mapped Parameter</th>
+                    <th className="px-4 py-3 text-right font-bold text-[#1e3a8a] w-[80px]">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-blue-50 bg-white font-medium text-zinc-700">
+                  {/* Default fallback rows */}
+                  <tr className="bg-zinc-50/40 text-zinc-400">
+                    <td className="px-4 py-3 italic">Length (Default)</td>
+                    <td className="px-4 py-3 font-mono font-bold text-zinc-450">L</td>
+                    <td className="px-4 py-3">Length (m)</td>
+                    <td className="px-4 py-3 text-right italic text-[10px]">Reserved</td>
+                  </tr>
+                  <tr className="bg-zinc-50/40 text-zinc-400">
+                    <td className="px-4 py-3 italic">Width (Default)</td>
+                    <td className="px-4 py-3 font-mono font-bold text-zinc-450">W</td>
+                    <td className="px-4 py-3">Width (m)</td>
+                    <td className="px-4 py-3 text-right italic text-[10px]">Reserved</td>
+                  </tr>
+                  <tr className="bg-zinc-50/40 text-zinc-400">
+                    <td className="px-4 py-3 italic">Perimeter (Default)</td>
+                    <td className="px-4 py-3 font-mono font-bold text-zinc-450">P</td>
+                    <td className="px-4 py-3">Perimeter (m)</td>
+                    <td className="px-4 py-3 text-right italic text-[10px]">Reserved</td>
+                  </tr>
+                  <tr className="bg-zinc-50/40 text-zinc-400">
+                    <td className="px-4 py-3 italic">Rate of Component (Default)</td>
+                    <td className="px-4 py-3 font-mono font-bold text-zinc-450">R</td>
+                    <td className="px-4 py-3">Rate of Component (₹)</td>
+                    <td className="px-4 py-3 text-right italic text-[10px]">Reserved</td>
+                  </tr>
+
+                  {/* Custom variables */}
+                  {(getActiveBOMVariables().length === 0) ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-4 text-center text-zinc-400 italic">
+                        No custom variables defined. Add one above.
+                      </td>
+                    </tr>
+                  ) : (
+                    getActiveBOMVariables().map((v: any) => (
+                      <tr key={v.id} className="hover:bg-blue-50/10">
+                        <td className="px-4 py-3 font-bold text-zinc-800">{v.name}</td>
+                        <td className="px-4 py-3 font-mono font-black text-[#1e40af]">{v.symbol}</td>
+                        <td className="px-4 py-3">
+                          {v.mappedField === 'length' && 'Length (m)'}
+                          {v.mappedField === 'width' && 'Width (m)'}
+                          {v.mappedField === 'holeSize' && 'Hole Size (mm)'}
+                          {v.mappedField === 'holeDistHorizontal' && 'Horizontal Spacing (mm)'}
+                          {v.mappedField === 'holeDistVertical' && 'Vertical Spacing (mm)'}
+                          {v.mappedField === 'pricePerHole' && 'Price per Hole (₹)'}
+                          {v.mappedField === 'rate' && 'Rate of Component (₹)'}
+                          {v.mappedField === 'totalHoles' && 'Total Holes (Count)'}
+                          {v.mappedField === 'holesH' && 'Horizontal Holes (Count)'}
+                          {v.mappedField === 'holesV' && 'Vertical Holes (Count)'}
+                          {v.mappedField === 'manualPackingCost' && 'Manual Packing Cost (₹)'}
+                          {v.mappedField === 'manualProfitMargin' && 'Manual Profit Margin (%)'}
+                          {v.mappedField === 'purchaseGst' && 'Purchase GST (%)'}
+                          {v.mappedField === 'fixCost' && 'Fix Cost (₹)'}
+                          {v.mappedField === 'defaultProfit' && 'Default Profit Margin (%)'}
+                          {v.mappedField === 'saleGst' && 'Sale GST (%)'}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Button 
+                            type="button"
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => handleDeleteVariable(v.id, v.symbol)}
+                            className="h-7 w-7 text-zinc-400 hover:text-rose-500 hover:bg-rose-50 cursor-pointer rounded-full"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <DialogFooter className="bg-zinc-50 border-t p-4 flex gap-2">
+            <Button 
+              type="button"
+              onClick={() => setShowVariablesModal(false)} 
+              className="w-full bg-[#1e40af] text-white hover:bg-blue-800 rounded-[6px]" 
+              size="sm"
+            >
               Close
             </Button>
           </DialogFooter>

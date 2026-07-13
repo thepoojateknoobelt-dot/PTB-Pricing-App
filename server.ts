@@ -105,8 +105,12 @@ async function initializeDatabase() {
         name VARCHAR(255) NOT NULL,
         parent_path VARCHAR(255) DEFAULT '',
         data JSONB NOT NULL,
-        deleted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        deleted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        deleted_by VARCHAR(255) DEFAULT 'System Admin'
       )
+    `);
+    await pool.query(`
+      ALTER TABLE deleted_configs ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(255) DEFAULT 'System Admin';
     `);
 
     // Create Rate History table
@@ -1861,6 +1865,7 @@ app.post('/api/settings/config', authenticate, async (req: any, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
   try {
     const newConfig = req.body;
+    const changerName = req.user.name || req.user.username || 'Admin';
     
     // 1. Fetch old config to diff
     const oldConfigRes = await pool.query('SELECT data FROM system_config WHERE id = $1', ['default']);
@@ -1876,9 +1881,9 @@ app.post('/api/settings/config', authenticate, async (req: any, res) => {
         if (!isStillPresent) {
           const logId = `del-cat-${oldCat.id}-${Date.now()}`;
           await pool.query(
-            `INSERT INTO deleted_configs (id, type, name, parent_path, data) 
-             VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
-            [logId, 'category', oldCat.name, '', JSON.stringify(oldCat)]
+            `INSERT INTO deleted_configs (id, type, name, parent_path, data, deleted_by) 
+             VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
+            [logId, 'category', oldCat.name, '', JSON.stringify(oldCat), changerName]
           );
         } else {
           // Check for Style Deletions
@@ -1889,9 +1894,9 @@ app.post('/api/settings/config', authenticate, async (req: any, res) => {
               if (!isStylePresent) {
                 const logId = `del-style-${oldStyle.id}-${Date.now()}`;
                 await pool.query(
-                  `INSERT INTO deleted_configs (id, type, name, parent_path, data) 
-                   VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
-                  [logId, 'style', oldStyle.name, oldCat.name, JSON.stringify({ style: oldStyle, parentCategoryId: oldCat.id })]
+                  `INSERT INTO deleted_configs (id, type, name, parent_path, data, deleted_by) 
+                   VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
+                  [logId, 'style', oldStyle.name, oldCat.name, JSON.stringify({ style: oldStyle, parentCategoryId: oldCat.id }), changerName]
                 );
               } else {
                 // Check for BOM Component Deletions & Rate Changes
@@ -1902,15 +1907,14 @@ app.post('/api/settings/config', authenticate, async (req: any, res) => {
                     if (!isBOMPresent) {
                       const logId = `del-bom-${oldBOM.id}-${Date.now()}`;
                       await pool.query(
-                        `INSERT INTO deleted_configs (id, type, name, parent_path, data) 
-                         VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
-                        [logId, 'bom', oldBOM.name, `${oldCat.name} › ${oldStyle.name}`, JSON.stringify({ bomItem: oldBOM, parentCategoryId: oldCat.id, parentStyleId: oldStyle.id })]
+                        `INSERT INTO deleted_configs (id, type, name, parent_path, data, deleted_by) 
+                         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
+                        [logId, 'bom', oldBOM.name, `${oldCat.name} › ${oldStyle.name}`, JSON.stringify({ bomItem: oldBOM, parentCategoryId: oldCat.id, parentStyleId: oldStyle.id }), changerName]
                       );
                     } else {
                       // BOM component is still present -> check for rate changes & sub-category option deletions!
                       const newBOM = newStyle.bom.find((b: any) => b.id === oldBOM.id);
                       if (newBOM) {
-                        const changerName = req.user.name || req.user.username || 'Admin';
                         const oldHasOptions = Array.isArray(oldBOM.options) && oldBOM.options.length > 0;
                         const newHasOptions = Array.isArray(newBOM.options) && newBOM.options.length > 0;
                         
@@ -1922,9 +1926,9 @@ app.post('/api/settings/config', authenticate, async (req: any, res) => {
                             if (!isOptStillPresent) {
                               const logId = `del-opt-${oldBOM.id}-${oldOpt.name}-${Date.now()}`;
                               await pool.query(
-                                `INSERT INTO deleted_configs (id, type, name, parent_path, data) 
-                                 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
-                                [logId, 'subcategory', oldOpt.name, `${oldCat.name} › ${oldStyle.name} › ${oldBOM.name}`, JSON.stringify({ option: oldOpt, parentCategoryId: oldCat.id, parentStyleId: oldStyle.id, parentBOMId: oldBOM.id })]
+                                `INSERT INTO deleted_configs (id, type, name, parent_path, data, deleted_by) 
+                                 VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
+                                [logId, 'subcategory', oldOpt.name, `${oldCat.name} › ${oldStyle.name} › ${oldBOM.name}`, JSON.stringify({ option: oldOpt, parentCategoryId: oldCat.id, parentStyleId: oldStyle.id, parentBOMId: oldBOM.id }), changerName]
                               );
                             }
                           }
@@ -2006,7 +2010,9 @@ app.get('/api/settings/config/deleted', authenticate, async (req: any, res) => {
       type: r.type,
       name: r.name,
       parentPath: r.parent_path,
-      deletedAt: r.deleted_at
+      deletedAt: r.deleted_at,
+      deletedBy: r.deleted_by || 'System Admin',
+      data: r.data
     })));
   } catch (err) {
     console.error('Failed to fetch deleted configs', err);

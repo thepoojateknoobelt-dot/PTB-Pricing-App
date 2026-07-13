@@ -579,7 +579,7 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-zinc-900 rounded-lg text-white">
+          <div className="p-1.5 bg-blue-50 text-[#1e40af] rounded-lg">
             <FileText className="h-4 w-4" />
           </div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900">Quotations & Orders</h1>

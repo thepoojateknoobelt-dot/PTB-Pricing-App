@@ -506,7 +506,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
     <div className="space-y-6 w-full pb-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 pb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-zinc-950 rounded-xl text-white shadow-md">
+          <div className="p-2.5 bg-[#1e3a8a] rounded-xl text-white shadow-md">
             <BarChart3 className="h-6 w-6" />
           </div>
           <div>
@@ -543,7 +543,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
                   className={cn(
                     "py-1.5 px-3 rounded-lg border text-xs font-bold transition-all duration-200 cursor-pointer",
                     selectedPreset === preset.id
-                      ? "bg-zinc-950 text-white border-zinc-950 shadow-sm"
+                      ? "bg-[#1e3a8a] text-white border-zinc-950 shadow-sm"
                       : "bg-zinc-50 border-zinc-200 text-zinc-650 hover:bg-zinc-105 hover:border-zinc-300"
                   )}
                 >
@@ -579,13 +579,13 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
                 <div className="flex items-center gap-2 border-t sm:border-t-0 sm:border-l border-zinc-200 pt-2 sm:pt-0 sm:pl-3 w-full sm:w-auto justify-end">
                   <Button
                     onClick={handleExportCSV}
-                    className="bg-zinc-900 hover:bg-zinc-800 text-white h-9 text-xs font-bold px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    className="bg-[#1e40af] hover:bg-[#1d4ed8] text-white h-9 text-xs font-bold px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm"
                   >
                     <Download size={13} /> Export CSV
                   </Button>
                   <Button
                     onClick={handlePrintReport}
-                    className="bg-zinc-900 hover:bg-zinc-800 text-white h-9 text-xs font-bold px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    className="bg-[#1e40af] hover:bg-[#1d4ed8] text-white h-9 text-xs font-bold px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm"
                   >
                     <Printer size={13} /> Print
                   </Button>
@@ -602,7 +602,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
         {/* Card 0: Overview Dashboard */}
         <button type="button" onClick={() => openReportWithDatePicker('overview')}
           className={`group w-full text-left p-4 rounded-2xl border-2 transition-all duration-200 cursor-pointer flex items-center gap-3 shadow-sm hover:shadow-md ${
-            activeReportCard === 'overview' ? 'bg-zinc-950 border-zinc-950 text-white shadow-lg scale-[1.01]' : 'bg-white border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50/50'
+            activeReportCard === 'overview' ? 'bg-[#1e3a8a] border-zinc-950 text-white shadow-lg scale-[1.01]' : 'bg-white border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50/50'
           }`}>
           <div className={`p-2.5 rounded-xl shrink-0 transition-transform group-hover:scale-110 ${activeReportCard === 'overview' ? 'bg-white/10' : 'bg-zinc-100'}`}>
             <BarChart3 size={18} className={activeReportCard === 'overview' ? 'text-white' : 'text-zinc-700'} />
@@ -617,7 +617,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
         {/* Card 1: Purchase Cost */}
         <button type="button" onClick={() => openReportWithDatePicker('purchase')}
           className={`group w-full text-left p-4 rounded-2xl border-2 transition-all duration-200 cursor-pointer flex items-center gap-3 shadow-sm hover:shadow-md ${
-            activeReportCard === 'purchase' ? 'bg-zinc-950 border-zinc-950 text-white shadow-lg scale-[1.01]' : 'bg-white border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50/50'
+            activeReportCard === 'purchase' ? 'bg-[#1e3a8a] border-zinc-950 text-white shadow-lg scale-[1.01]' : 'bg-white border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50/50'
           }`}>
           <div className={`p-2.5 rounded-xl shrink-0 transition-transform group-hover:scale-110 ${activeReportCard === 'purchase' ? 'bg-white/10' : 'bg-zinc-100'}`}>
             <IndianRupee size={18} className={activeReportCard === 'purchase' ? 'text-white' : 'text-zinc-700'} />
@@ -705,7 +705,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
                 <button key={p.id} type="button"
                   onClick={() => handleDialogPreset(p.id)}
                   className={cn('py-1.5 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer',
-                    dialogPreset === p.id ? 'bg-zinc-950 text-white border-zinc-950' : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100'
+                    dialogPreset === p.id ? 'bg-[#1e3a8a] text-white border-zinc-950' : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100'
                   )}>
                   {p.label}
                 </button>
@@ -1330,7 +1330,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
               <div className="flex items-center gap-3 w-full md:w-auto">
                 <div className={cn(
                   "p-3 rounded-xl text-white shrink-0 shadow-sm",
-                  activeReportCard === 'purchase' && "bg-zinc-950",
+                  activeReportCard === 'purchase' && "bg-[#1e3a8a]",
                   activeReportCard === 'profitability' && "bg-emerald-700",
                   activeReportCard === 'company' && "bg-indigo-700"
                 )}>

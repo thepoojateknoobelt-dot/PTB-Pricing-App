@@ -1,21 +1,76 @@
 import { ProfitRange, BOMItem } from '../types';
 
-const evaluateFormula = (formula: string, L: number, W: number) => {
+const evaluateFormula = (
+  formula: string, 
+  L: number, 
+  W: number, 
+  variables: any[] = [], 
+  costingData: any = {}, 
+  activeRate: number = 0
+) => {
   try {
     if (!formula) return 0;
-    // Replace L and W with values, ensuring they are treated as tokens
-    // We use a regex with word boundaries or just replace if they are single letters
-    const sanitized = formula.toUpperCase().replace(/\s/g, '');
-    if (!/^[0-9LWP\.\+\-\*\/\(\)]+$/.test(sanitized)) return 0;
     
+    let expr = formula.replace(/\s/g, '').toUpperCase();
+    
+    // Sort custom variables by length descending to prevent substring replace conflicts
+    const sortedVars = [...(variables || [])].sort((a, b) => b.symbol.length - a.symbol.length);
+    
+    // Replace custom variables
+    sortedVars.forEach(v => {
+      let val = 0;
+      if (v.mappedField === 'length') val = L;
+      else if (v.mappedField === 'width') val = W;
+      else if (v.mappedField === 'rate') val = activeRate;
+      else if (v.mappedField === 'holesH') {
+        const hDist = parseFloat(costingData.holeDistHorizontal) || 0;
+        const lMm = L * 1000;
+        val = hDist > 0 ? Math.floor(lMm / hDist) : 0;
+      }
+      else if (v.mappedField === 'holesV') {
+        const vDist = parseFloat(costingData.holeDistVertical) || 0;
+        const wMm = W * 1000;
+        val = vDist > 0 ? Math.floor(wMm / vDist) : 0;
+      }
+      else if (v.mappedField === 'totalHoles') {
+        const hDist = parseFloat(costingData.holeDistHorizontal) || 0;
+        const vDist = parseFloat(costingData.holeDistVertical) || 0;
+        const lMm = L * 1000;
+        const wMm = W * 1000;
+        const holesH = hDist > 0 ? Math.floor(lMm / hDist) : 0;
+        const holesV = vDist > 0 ? Math.floor(wMm / vDist) : 0;
+        val = holesH * holesV;
+      }
+      else {
+        val = parseFloat(costingData[v.mappedField]) || 0;
+      }
+      
+      const escapedSymbol = v.symbol.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const regex = new RegExp('\\b' + escapedSymbol + '\\b', 'g');
+      expr = expr.replace(regex, `(${val})`);
+    });
+    
+    // Fallback default variables
     const P = 2 * ((L || 0) + (W || 0));
+    const defaultVars = [
+      { symbol: 'L', value: L },
+      { symbol: 'W', value: W },
+      { symbol: 'P', value: P },
+      { symbol: 'R', value: activeRate }
+    ];
     
-    const expr = sanitized
-      .replace(/L/g, `(${L || 0})`)
-      .replace(/W/g, `(${W || 0})`)
-      .replace(/P/g, `(${P})`);
+    defaultVars.forEach(v => {
+      const regex = new RegExp('\\b' + v.symbol + '\\b', 'g');
+      expr = expr.replace(regex, `(${v.value})`);
+    });
     
-    const result = Function(`"use strict"; return (${expr})`)();
+    const cleanExpr = expr.replace(/\s/g, '');
+    if (!/^[0-9\.\+\-\*\/\(\)]+$/.test(cleanExpr)) {
+      console.warn('Formula contains invalid symbols after substitution:', cleanExpr);
+      return 0;
+    }
+    
+    const result = Function(`"use strict"; return (${cleanExpr})`)();
     return isNaN(result) ? 0 : result;
   } catch (e) {
     console.error('Formula Error:', formula, e);
@@ -43,25 +98,65 @@ export const calculateCosting = (data: any, config: any, clientProfitRanges: Pro
   let breakdown: any = {};
   let subtotal = 0;
   let packingCost = 0;
+  let totalHoles = 0;
+  let holesCost = 0;
 
   if (customBOM && customBOM.length > 0) {
     // Custom Formula Calculation
     customBOM.forEach(item => {
-      let consumption = evaluateFormula(item.formula || '', lMtr, wMtr);
+      const activeRate = selectedRates[item.id] !== undefined ? selectedRates[item.id] : (item.rate || 0);
       
-      // Convert consumption from Meters/SqM to the item's specified unit
-      const u = (item.unit || '').toLowerCase();
-      if (u === 'ft' || u === 'feet') consumption = consumption / 0.3048;
-      else if (u === 'in' || u === 'inch' || u === 'inches') consumption = consumption / 0.0254;
-      else if (u === 'mm' || u === 'millimeters') consumption = consumption * 1000;
-      else if (u.includes('sq')) {
-        if (u.includes('ft') || u.includes('feet')) consumption = consumption / (0.3048 * 0.3048);
-        else if (u.includes('in') || u.includes('inch') || u.includes('inches')) consumption = consumption / (0.0254 * 0.0254);
-        else if (u.includes('mm') || u.includes('millimeters')) consumption = consumption * (1000 * 1000);
+      // Determine if formula contains rate symbol (default 'R' or custom variable mapped to 'rate')
+      const rateSymbols = ['R', ...(item?.variables || [])
+        .filter((v: any) => v.mappedField === 'rate')
+        .map((v: any) => v.symbol.toUpperCase())];
+      const formulaUpper = (item.formula || '').toUpperCase();
+      const hasRateInFormula = rateSymbols.some(symbol => {
+        const regex = new RegExp('\\b' + symbol.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '\\b');
+        return regex.test(formulaUpper);
+      });
+
+      // Check if this BOM item or its selected sub-category option requires hole data
+      let itemRequiresHole = !!item.requiresHoleData;
+      if (item.options && item.options.length > 0 && data.selectedBOMOptions) {
+        const rawSel = data.selectedBOMOptions[item.id];
+        const selectedOptIndices: number[] = Array.isArray(rawSel)
+          ? rawSel
+          : rawSel !== undefined ? [rawSel] : [];
+        if (selectedOptIndices.some(optIdx => item.options[optIdx]?.requiresHoleData)) {
+          itemRequiresHole = true;
+        }
       }
 
-      const activeRate = selectedRates[item.id] || item.rate;
-      const totalCost = Math.round(consumption * activeRate);
+      // If item requires holes and data is provided, use hole area dimensions as target L & W (converted to meters)
+      const targetL = itemRequiresHole && data.hasHoles && data.holeLength ? (parseFloat(data.holeLength) / 1000) : lMtr;
+      const targetW = itemRequiresHole && data.hasHoles && data.holeWidth ? (parseFloat(data.holeWidth) / 1000) : wMtr;
+
+      let consumption = 0;
+      let totalCost = 0;
+
+      if (hasRateInFormula) {
+        // Formula calculates cost directly (since rate is in the formula)
+        const costVal = evaluateFormula(item.formula || '', targetL, targetW, item?.variables || [], { ...data, ...config?.constants }, activeRate);
+        totalCost = Math.round(costVal);
+        consumption = activeRate > 0 ? (totalCost / activeRate) : evaluateFormula(item.formula || '', targetL, targetW, item?.variables || [], { ...data, ...config?.constants }, 1);
+      } else {
+        // Formula calculates consumption quantity
+        consumption = evaluateFormula(item.formula || '', targetL, targetW, item?.variables || [], { ...data, ...config?.constants }, activeRate);
+        
+        // Convert consumption from Meters/SqM to the item's specified unit
+        const u = (item.unit || '').toLowerCase();
+        if (u === 'ft' || u === 'feet') consumption = consumption / 0.3048;
+        else if (u === 'in' || u === 'inch' || u === 'inches') consumption = consumption / 0.0254;
+        else if (u === 'mm' || u === 'millimeters') consumption = consumption * 1000;
+        else if (u.includes('sq')) {
+          if (u.includes('ft') || u.includes('feet')) consumption = consumption / (0.3048 * 0.3048);
+          else if (u.includes('in') || u.includes('inch') || u.includes('inches')) consumption = consumption / (0.0254 * 0.0254);
+          else if (u.includes('mm') || u.includes('millimeters')) consumption = consumption * (1000 * 1000);
+        }
+        
+        totalCost = Math.round(consumption * activeRate);
+      }
       
       breakdown[item.name] = { 
         consumption: consumption, 
@@ -111,8 +206,6 @@ export const calculateCosting = (data: any, config: any, clientProfitRanges: Pro
 
   // Holes Layout Spacing and Costing Calculation
   const hasHoles = !!data.hasHoles;
-  let totalHoles = 0;
-  let holesCost = 0;
   if (hasHoles) {
     const lMm = lMtr * 1000;
     const wMm = wMtr * 1000;
@@ -128,7 +221,7 @@ export const calculateCosting = (data: any, config: any, clientProfitRanges: Pro
       consumption: totalHoles,
       rate: ratePerHole,
       cost: holesCost,
-      unit: 'holes',
+      unit: 'pcs',
       details: {
         holeSize: parseFloat(data.holeSize) || 0,
         holeDistHorizontal: hDist,
