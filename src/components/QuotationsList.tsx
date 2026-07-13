@@ -1072,35 +1072,7 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ config }) => {
                   </div>
                 </div>
 
-                {/* Single Item Hole specifications overlay (only if legacy single item has holes) */}
-                {(!selectedQuotation.items || selectedQuotation.items.length === 0) && selectedQuotation.dimensions.hasHoles && (
-                  <div className="p-3.5 bg-indigo-50/60 border border-indigo-150 rounded-2xl space-y-1.5 animate-in fade-in duration-200 shadow-sm">
-                    <h4 className="text-[10px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
-                      <AlertCircle className="h-3.5 w-3.5 text-indigo-700" />
-                      Holes Layout Specifications
-                    </h4>
-                    <div className="grid grid-cols-4 gap-2 text-xs font-semibold text-slate-700 mt-1">
-                      <div>
-                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Total Holes</span>
-                        <p className="text-sm font-black text-indigo-950">{selectedQuotation.dimensions.totalHoles}</p>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Hole Size</span>
-                        <p className="text-xs font-bold text-slate-900">{selectedQuotation.dimensions.holeSize} mm</p>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Spacing (H / V)</span>
-                        <p className="text-xs font-bold text-slate-900">
-                          {selectedQuotation.dimensions.holeDistHorizontal}mm / {selectedQuotation.dimensions.holeDistVertical}mm
-                        </p>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Price per Hole</span>
-                        <p className="text-xs font-bold text-slate-900">₹{selectedQuotation.dimensions.pricePerHole}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+
 
                 {/* Sales Markup details */}
                 {selectedQuotation.salesMarkup && selectedQuotation.salesMarkup > 0 && (

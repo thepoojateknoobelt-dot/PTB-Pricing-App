@@ -1219,37 +1219,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
               </div>
             ) : (
               <div className="space-y-6">
-                {/* Hole Layout Info Card */}
-                {result.summary && result.summary.hasHoles && (
-                  <div className="p-3 bg-indigo-50 border border-indigo-150 rounded-xl space-y-1.5 animate-in fade-in duration-200">
-                    <h3 className="text-[10px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
-                      <AlertCircle className="h-3.5 w-3.5 text-indigo-700" />
-                      Holes Layout Specifications
-                    </h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-semibold text-slate-700 mt-1">
-                      <div>
-                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Total Holes</span>
-                        <p className="text-base font-black text-indigo-900">{result.summary.totalHoles}</p>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Holes Grid (L x W)</span>
-                        <p className="text-xs font-bold text-slate-900">
-                          {Math.floor(toMeters(parseFloat(formData.length), formData.lengthUnit) * 1000 / (parseFloat(formData.holeDistHorizontal) || 1))} × {Math.floor(toMeters(parseFloat(formData.width), formData.widthUnit) * 1000 / (parseFloat(formData.holeDistVertical) || 1))}
-                        </p>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Hole Size</span>
-                        <p className="text-xs font-bold text-slate-900">{formData.holeSize} mm</p>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Spacing (H / V)</span>
-                        <p className="text-xs font-bold text-slate-900">
-                          {formData.holeDistHorizontal}mm / {formData.holeDistVertical}mm
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+
 
                 {user?.role === 'admin' && result.breakdown && (
                   <div className="space-y-3">
