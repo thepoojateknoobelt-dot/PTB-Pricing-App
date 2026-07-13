@@ -24,6 +24,7 @@ export interface Constants {
   fixCost: number;
   defaultProfit: number;
   saleGst: number;
+  deletionCode?: string;
 }
 
 export interface JointType {
