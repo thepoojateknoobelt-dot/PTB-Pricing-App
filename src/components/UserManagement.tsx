@@ -426,7 +426,7 @@ export const UserManagement = () => {
       {/* Viewing Details Dialog Modal Overlay */}
       {viewingUser && (
         <Dialog open={!!viewingUser} onOpenChange={(open) => !open && setViewingUser(null)}>
-          <DialogContent className="max-w-md rounded-2xl bg-white border border-zinc-200 shadow-xl overflow-hidden p-0">
+          <DialogContent className="sm:max-w-md w-full rounded-2xl bg-white border border-zinc-200 shadow-xl overflow-hidden p-0">
             <DialogHeader className="bg-zinc-50 p-5 border-b border-zinc-100 flex flex-col items-center">
               <div className="h-16 w-16 rounded-2xl bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center justify-center text-2xl font-black shadow-inner mb-3">
                 {(viewingUser?.name?.charAt(0) || viewingUser?.username?.charAt(0) || '?').toUpperCase()}
@@ -510,7 +510,7 @@ export const UserManagement = () => {
       {/* Add User Dialog Modal Overlay */}
       {isAddUserOpen && (
         <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
-          <DialogContent className="max-w-4xl rounded-2xl bg-white border border-zinc-200 shadow-xl overflow-hidden p-0">
+          <DialogContent className="sm:max-w-4xl w-full rounded-2xl bg-white border border-zinc-200 shadow-xl overflow-hidden p-0">
             <DialogHeader className="bg-zinc-50 p-5 border-b border-zinc-100">
               <DialogTitle className="text-base font-bold flex items-center gap-2 text-zinc-950">
                 <UserPlus className="h-4 w-4 text-zinc-500" />
@@ -735,7 +735,7 @@ export const UserManagement = () => {
       {/* Edit Dialog Modal Overlay */}
       {editingUser && (
         <Dialog open={!!editingUser} onOpenChange={(open) => !open && setEditingUser(null)}>
-          <DialogContent className="max-w-4xl rounded-2xl bg-white border border-zinc-200 shadow-xl overflow-hidden p-0">
+          <DialogContent className="sm:max-w-4xl w-full rounded-2xl bg-white border border-zinc-200 shadow-xl overflow-hidden p-0">
             <DialogHeader className="bg-zinc-50 p-5 border-b border-zinc-100">
               <DialogTitle className="text-base font-bold flex items-center gap-2 text-zinc-950">
                 <Sliders className="h-4 w-4 text-zinc-500" />
