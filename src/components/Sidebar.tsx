@@ -31,9 +31,10 @@ interface SidebarProps {
   onClose?: () => void;
   beltCutProUrl?: string;
   onBackToMaster?: () => void;
+  pendingMarginRequestsCount?: number;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, onClose, beltCutProUrl, onBackToMaster }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, onClose, beltCutProUrl, onBackToMaster, pendingMarginRequestsCount = 0 }) => {
   const { user, logout } = useAuth();
   const isAdmin = user?.role === 'admin';
 
@@ -108,7 +109,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpe
             )}
           >
             <item.icon className={cn("h-5 w-5", activeTab === item.id ? "text-[#1e40af]" : "text-blue-500/80")} />
-            {item.label}
+            <span className="flex-1 text-left">{item.label}</span>
+            {item.id === 'dashboard' && isAdmin && pendingMarginRequestsCount > 0 && (
+              <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">
+                {pendingMarginRequestsCount}
+              </span>
+            )}
           </button>
         ))}
       </nav>
@@ -131,6 +137,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpe
           <LogOut className="h-5 w-5" />
           Sign Out
         </Button>
+        <div className="mt-3 text-[10px] text-blue-500/40 font-mono text-center select-none">
+          {(() => {
+            const build = "01";
+            const now = new Date();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const yy = String(now.getFullYear()).slice(-2);
+            return `V.${mm}.${yy}.${build}`;
+          })()}
+        </div>
       </div>
     </aside>
   );

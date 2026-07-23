@@ -21,7 +21,7 @@ import { findGlobalBestPlacement, isSpaceAvailable } from './services/optimizati
 import RollVisualizer from './components/RollVisualizer';
 import StatsCard from './components/StatsCard';
 import { SearchableSelect } from './components/SearchableSelect';
-import { getShortRollId } from './utils';
+import { getShortRollId, getResolvedRollCuts } from './utils';
 
 const CONVERSIONS: Record<Unit, number> = {
   'm': 1,
@@ -320,6 +320,41 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   const [editingMaterialType, setEditingMaterialType] = useState<string | null>(null);
   const [editingMaterialTypeName, setEditingMaterialTypeName] = useState<string>('');
   const [isOrderDimensionsUnlocked, setIsOrderDimensionsUnlocked] = useState(false);
+
+  // Shared helper: fuzzy-match a belt type string against actual DB materialTypes list
+  const matchMaterialType = React.useCallback((bType: string): string => {
+    const bt = (bType || '').toLowerCase().trim();
+    if (!bt) return materialTypes[0] || MATERIAL_TYPES[0];
+    // 1. Try exact match first (case-insensitive)
+    const exact = materialTypes.find(t => t.toLowerCase() === bt);
+    if (exact) return exact;
+    // 2. Try substring match — find the DB type whose name includes the order belt type string
+    const substringMatch = materialTypes.find(t => t.toLowerCase().includes(bt) || bt.includes(t.toLowerCase()));
+    if (substringMatch) return substringMatch;
+    // 3. Keyword-based fallback
+    if (bt.includes('pvc') && bt.includes('food')) {
+      const found = materialTypes.find(t => t.toLowerCase().includes('food'));
+      if (found) return found;
+    }
+    if (bt.includes('pvc')) {
+      const found = materialTypes.find(t => t.toLowerCase().includes('pvc'));
+      if (found) return found;
+    }
+    if (bt.includes('rubber') || bt.includes('black')) {
+      const found = materialTypes.find(t => t.toLowerCase().includes('rubber'));
+      if (found) return found;
+    }
+    if (bt.includes('pu') || bt.includes('heat')) {
+      const found = materialTypes.find(t => t.toLowerCase().includes('pu') || t.toLowerCase().includes('heat'));
+      if (found) return found;
+    }
+    if (bt.includes('taflon') || bt.includes('teflon') || bt.includes('ptfe')) {
+      const found = materialTypes.find(t => t.toLowerCase().includes('taflon') || t.toLowerCase().includes('teflon') || t.toLowerCase().includes('ptfe'));
+      if (found) return found;
+    }
+    // 4. Final fallback: first available type
+    return materialTypes[0] || MATERIAL_TYPES[0];
+  }, [materialTypes]);
   const [selectedOrderData, setSelectedOrderData] = useState<any | null>(null);
   const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
   const [justCutExecuted, setJustCutExecuted] = useState(false);
@@ -1228,14 +1263,6 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
             if (u === 'mtr' || u === 'm') return val;
             return val / 1000;
           };
-          const matchMaterialType = (bType: string) => {
-            const bt = (bType || '').toLowerCase();
-            if (bt.includes('pvc') && bt.includes('food')) return 'PVC - White Food Grade';
-            if (bt.includes('pvc')) return 'PVC - Green Rough Top';
-            if (bt.includes('rubber') || bt.includes('black')) return 'Rubber - Heavy Duty Black';
-            if (bt.includes('pu') || bt.includes('heat')) return 'PU - Blue Heat Resistant';
-            return MATERIAL_TYPES[0];
-          };
 
           const w = convertToMeters(nextItem.dimensions.width, nextItem.dimensions.widthUnit || nextItem.dimensions.unit || 'mm');
           const l = convertToMeters(nextItem.dimensions.length, nextItem.dimensions.lengthUnit || nextItem.dimensions.unit || 'mm');
@@ -1415,11 +1442,18 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
           return 1; // recommended first
         }
       }
+
+      // 3. Prioritize remnants (reuse rolls) over fresh master rolls to minimize scrap
+      const aReuse = isRollReuse(a);
+      const bReuse = isRollReuse(b);
+      if (aReuse && !bReuse) return -1;
+      if (!aReuse && bReuse) return 1;
+
       return 0;
     });
 
-    // Show at most 4 rolls in the visualization accordion
-    return list.slice(0, 4);
+    // Show at most 10 rolls in the visualization accordion
+    return list.slice(0, 10);
   }, [rolls, selectedOrder.materialType, optimizationResults, lastCutRollId, cutPurpose, cuttingSelectedRollId]);
 
   // Set the first visible roll as expanded by default or keep the current one expanded if still visible
@@ -1742,10 +1776,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
 
     setIsSyncing(true);
 
-    const isInventory = cutPurpose === 'inventory' || cutPurpose === 'scrap' || !!selectedOrder.isInventoryCut;
+    const isInventory = (cutPurpose as string) === 'inventory' || (cutPurpose as string) === 'scrap' || !!selectedOrder.isInventoryCut;
     const clientName = (selectedOrder.customerName || '').trim();
-    const cutColor = isInventory ? '#1e293b' : (cutPurpose === 'scrap' ? '#ef4444' : CUT_COLORS[Math.floor(Math.random() * CUT_COLORS.length)]);
-    const customerName = isInventory ? 'REUSE STOCK' : (cutPurpose === 'scrap' ? 'SCRAP WASTE' : clientName);
+    const cutColor = isInventory ? '#1e293b' : ((cutPurpose as string) === 'scrap' ? '#ef4444' : CUT_COLORS[Math.floor(Math.random() * CUT_COLORS.length)]);
+    const customerName = isInventory ? 'REUSE STOCK' : ((cutPurpose as string) === 'scrap' ? 'SCRAP WASTE' : clientName);
 
     const reqWidth = activeOrderDimensions.width || 0;
     const reqLength = activeOrderDimensions.length || 0;
@@ -1898,10 +1932,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     setMultiCutPreview(null);
     setViewingSimulatedCutIndex(null);
 
-    const isInventory = cutPurpose === 'inventory' || cutPurpose === 'scrap' || !!selectedOrder.isInventoryCut;
+    const isInventory = (cutPurpose as string) === 'inventory' || (cutPurpose as string) === 'scrap' || !!selectedOrder.isInventoryCut;
     const clientName = (selectedOrder.customerName || '').trim();
-    const cutColor = isInventory ? '#1e293b' : (cutPurpose === 'scrap' ? '#ef4444' : CUT_COLORS[Math.floor(Math.random() * CUT_COLORS.length)]);
-    const customerName = isInventory ? 'REUSE STOCK' : (cutPurpose === 'scrap' ? 'SCRAP WASTE' : clientName);
+    const cutColor = isInventory ? '#1e293b' : ((cutPurpose as string) === 'scrap' ? '#ef4444' : CUT_COLORS[Math.floor(Math.random() * CUT_COLORS.length)]);
+    const customerName = isInventory ? 'REUSE STOCK' : ((cutPurpose as string) === 'scrap' ? 'SCRAP WASTE' : clientName);
 
     const reqWidth = activeOrderDimensions.width || 0;
     const reqLength = activeOrderDimensions.length || 0;
@@ -2307,12 +2341,13 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   };
 
   const handleDeleteCut = async (rollId: string, cut: Cut) => {
+    const targetRollId = (cut as any).parentRollId || rollId;
     const sizeStr = `${fromMeters(cut.length).toFixed(1)}${currentUnit} x ${fromMeters(cut.width).toFixed(1)}${currentUnit}`;
-    const confirmMsg = `Are you sure you want to delete the cut for client "${cut.customerName}" (${sizeStr}) on roll "${rollId}"?\nThis will restore the roll area.`;
+    const confirmMsg = `Are you sure you want to delete the cut for client "${cut.customerName}" (${sizeStr}) on roll "${targetRollId}"?\nThis will restore the roll area.`;
     if (window.confirm(confirmMsg)) {
       setIsSyncing(true);
       try {
-        await deleteCut(rollId, cut.id);
+        await deleteCut(targetRollId, cut.id);
         await loadRollsData();
       } catch (err) {
         console.error("Error deleting cut:", err);
@@ -2339,7 +2374,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   const handlePrintRollAllocations = (rollId: string) => {
     const roll = rolls.find(r => r.id === rollId);
     if (!roll) return;
-    const cuts = roll.cuts || [];
+    const cuts = getResolvedRollCuts(roll, rolls);
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -2738,7 +2773,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   const handleExportCSV = (rollId: string) => {
     const roll = rolls.find(r => r.id === rollId);
     if (!roll) return;
-    const cuts = roll.cuts || [];
+    const cuts = getResolvedRollCuts(roll, rolls);
 
     const headers = ['S.No', 'Client Name', 'Cut ID', 'Length', 'Width', 'Unit', 'Type', 'Date & Time'];
     const rows = cuts.map((cut, idx) => {
@@ -3318,6 +3353,15 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
               ))}
             </div>
           </div>
+          <div className="text-[10px] text-zinc-500/50 font-mono text-center select-none pt-1">
+            {(() => {
+              const build = "01";
+              const now = new Date();
+              const mm = String(now.getMonth() + 1).padStart(2, '0');
+              const yy = String(now.getFullYear()).slice(-2);
+              return `V.${mm}.${yy}.${build}`;
+            })()}
+          </div>
         </div>
       </aside>
 
@@ -3393,7 +3437,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     </button>
                     <button
                       onClick={() => {
-                        setRequestForm({ materialId: materialStocks[0]?.id || '', quantity: '', notes: '' });
+                        setRequestForm({ materialId: materialStocks[0]?.id || '', quantity: '', notes: '', lotNumber: '' });
                         setShowRequestModal(true);
                       }}
                       className="px-2.5 py-1 bg-zinc-950 hover:bg-zinc-800 text-white rounded-lg text-[10px] font-black transition flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
@@ -3450,6 +3494,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                       unit={currentUnit}
                       onSelectCut={(cut) => handleDeleteCut(roll.id, cut)}
                       onMaximize={() => setFullscreenRollId(roll.id)}
+                      allRolls={rolls}
                     />
                   ))
                 )}
@@ -3564,14 +3609,6 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                           if (u === 'in') return val * 0.0254;
                                           if (u === 'mtr' || u === 'm') return val;
                                           return val / 1000;
-                                        };
-                                        const matchMaterialType = (bType: string) => {
-                                          const bt = (bType || '').toLowerCase();
-                                          if (bt.includes('pvc') && bt.includes('food')) return 'PVC - White Food Grade';
-                                          if (bt.includes('pvc')) return 'PVC - Green Rough Top';
-                                          if (bt.includes('rubber') || bt.includes('black')) return 'Rubber - Heavy Duty Black';
-                                          if (bt.includes('pu') || bt.includes('heat')) return 'PU - Blue Heat Resistant';
-                                          return MATERIAL_TYPES[0];
                                         };
                                         const wMtr = convertToMeters(o.dimensions.width, o.dimensions.widthUnit || o.dimensions.unit);
                                         const lMtr = convertToMeters(o.dimensions.length, o.dimensions.lengthUnit || o.dimensions.unit);
@@ -3740,14 +3777,6 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                       type="button"
                                       onClick={() => {
                                         setSelectedItemIndex(idx);
-                                        const matchMaterialType = (bType: string) => {
-                                          const bt = (bType || '').toLowerCase();
-                                          if (bt.includes('pvc') && bt.includes('food')) return 'PVC - White Food Grade';
-                                          if (bt.includes('pvc')) return 'PVC - Green Rough Top';
-                                          if (bt.includes('rubber') || bt.includes('black')) return 'Rubber - Heavy Duty Black';
-                                          if (bt.includes('pu') || bt.includes('heat')) return 'PU - Blue Heat Resistant';
-                                          return MATERIAL_TYPES[0];
-                                        };
                                         setSelectedOrder(prev => ({
                                           ...prev,
                                           requiredWidth: w,
@@ -4538,6 +4567,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             }}
                             suggestedPlacement={(currentResult?.rollId === roll.id) ? { ...(currentResult as any).placement, width: activeOrderDimensions.width, length: activeOrderDimensions.length } : null}
                             onMaximize={() => setFullscreenRollId(roll.id)}
+                            allRolls={rolls}
                           />
                         );
                       })}
@@ -6009,6 +6039,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             unit={currentUnit}
                             onSelectCut={() => {}}
                             onMaximize={() => {}}
+                            allRolls={rolls}
                           />
                         </div>
                         {/* Footer stats */}
@@ -7270,6 +7301,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                             width: item.width,
                             length: item.length
                           }}
+                          allRolls={rolls}
                         />
                       ) : (
                         <div className="py-20 text-center text-zinc-400 text-xs font-medium border-2 border-dashed border-zinc-200 rounded-3xl">
@@ -7797,6 +7829,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
         if (!roll) return null;
 
         const isReuse = isRollReuse(roll);
+        const resolvedCuts = getResolvedRollCuts(roll, rolls);
         const cuts = roll.cuts || [];
         const lenVal = fromMeters(roll.fullLength).toFixed(1);
         const widVal = fromMeters(roll.fullWidth).toFixed(1);
@@ -7880,11 +7913,12 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                     hideTitle={true}
                     noBorder={true}
                     height={isLayoutFrozen ? 'h-full flex-grow' : 'h-[500px] flex-grow'}
+                    allRolls={rolls}
                   />
                 </div>
 
                 {/* Right Column: Stats & Cuts Allocations Sidebar (fixed width on desktop) */}
-                <div className={`w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-zinc-150 bg-white flex flex-col transition-all duration-300 ease-in-out ${isLayoutFrozen ? 'overflow-hidden h-full lg:h-[calc(92vh-88px)] lg:sticky lg:top-0' : 'overflow-visible h-auto'
+                <div className={`w-full lg:w-96 lg:shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-150 bg-white flex flex-col transition-all duration-300 ease-in-out ${isLayoutFrozen ? 'overflow-hidden h-full lg:h-[calc(92vh-88px)] lg:sticky lg:top-0' : 'overflow-visible h-auto'
                   }`}>
 
                   {/* Scrollable Sidebar Content */}
@@ -7916,10 +7950,10 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
 
                     {/* Cuts Allocations Details list */}
                     <div className="space-y-3">
-                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Cuts Allocations ({cuts.length})</h4>
+                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Cuts Allocations ({resolvedCuts.length})</h4>
                       <div className={`space-y-2.5 transition-all duration-300 ease-in-out ${isLayoutFrozen ? 'max-h-[350px] overflow-y-auto pr-1' : 'max-h-none overflow-visible'
                         }`}>
-                        {cuts.map((cut, idx) => {
+                        {resolvedCuts.map((cut, idx) => {
                           let dateStr = 'N/A';
                           const tsMatch = cut.id.match(/C-(\d+)/);
                           if (tsMatch) {

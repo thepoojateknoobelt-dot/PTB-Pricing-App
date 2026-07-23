@@ -53,9 +53,8 @@ export interface BOMItem {
   unit: string;
   formula: string;
   isLocked?: boolean;
-  requiresHoleData?: boolean;   // Admin enables: this BOM item needs hole dimensions from salesman
-  holeBaseRate?: number;         // Price per hole (₹) — set by admin, never shown to salesman
   options?: {
+    id?: string;
     name: string;
     rate: number;
     unit?: string;
@@ -64,10 +63,9 @@ export interface BOMItem {
     // Formation fields
     isFormation?: boolean;
     formationItems?: FormationItem[];
-    requiresHoleData?: boolean;
-    holeBaseRate?: number;
   }[];
   linkedStockId?: string;
+  variables?: CustomVariable[];
 }
 
 export interface BeltStyle {
@@ -115,7 +113,14 @@ export interface Client {
   name: string;
   company: string;
   city: string;
-  profitMargins: Record<string, ProfitRange[]>; // beltType -> ranges
+  /**
+   * Nested profit margins: beltType → styleName → ProfitRange[]
+   * e.g. { "PTFE": { "4x4 Fabric": [...], "2x2 Fabric": [...] } }
+   *
+   * Legacy flat format (beltType → ProfitRange[]) is handled gracefully via
+   * the `getStyleRanges` / `flattenMargins` helpers in the UI.
+   */
+  profitMargins: Record<string, Record<string, ProfitRange[]>>;
   mobile?: string;
 }
 
@@ -181,9 +186,13 @@ export interface Quotation {
   beltStyle?: string;
   selectedBOMOptions?: Record<string, number>;
   items?: QuotationItem[];
+  orderNumber?: string | number;
+  calculated?: any;
+  createdByName?: string;
 }
 
 export interface AuditLog {
+  id: string;
   timestamp: any;
   userId: string;
   userName: string;

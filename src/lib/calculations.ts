@@ -106,8 +106,29 @@ export const calculateCosting = (data: any, config: any, clientProfitRanges: Pro
     customBOM.forEach(item => {
       const activeRate = selectedRates[item.id] !== undefined ? selectedRates[item.id] : (item.rate || 0);
       
+      // Get the name of the currently selected options for this item to filter variables
+      const activeOptionNames: string[] = [];
+      if (item.options && item.options.length > 0 && data.selectedBOMOptions) {
+        const rawSel = data.selectedBOMOptions[item.id];
+        const selectedOptIndices: number[] = Array.isArray(rawSel)
+          ? rawSel
+          : rawSel !== undefined ? [rawSel] : [];
+        selectedOptIndices.forEach((optIdx) => {
+          const opt = item.options[optIdx];
+          if (opt && opt.name) {
+            activeOptionNames.push(opt.name);
+          }
+        });
+      }
+
+      // Filter variables: they must either have no forOptionName, or their forOptionName must match one of the active options
+      const filteredVariables = (item.variables || []).filter((v: any) => {
+        if (!v.forOptionName) return true;
+        return activeOptionNames.includes(v.forOptionName);
+      });
+
       // Determine if formula contains rate symbol (default 'R' or custom variable mapped to 'rate')
-      const rateSymbols = ['R', ...(item?.variables || [])
+      const rateSymbols = ['R', ...filteredVariables
         .filter((v: any) => v.mappedField === 'rate')
         .map((v: any) => v.symbol.toUpperCase())];
       const formulaUpper = (item.formula || '').toUpperCase();
@@ -116,33 +137,45 @@ export const calculateCosting = (data: any, config: any, clientProfitRanges: Pro
         return regex.test(formulaUpper);
       });
 
-      // Check if this BOM item or its selected sub-category option requires hole data
-      let itemRequiresHole = !!item.requiresHoleData;
-      if (item.options && item.options.length > 0 && data.selectedBOMOptions) {
-        const rawSel = data.selectedBOMOptions[item.id];
-        const selectedOptIndices: number[] = Array.isArray(rawSel)
-          ? rawSel
-          : rawSel !== undefined ? [rawSel] : [];
-        if (selectedOptIndices.some(optIdx => item.options[optIdx]?.requiresHoleData)) {
-          itemRequiresHole = true;
+      // Check if this BOM item or its selected sub-category option requires hole data based on custom variables mapped to hole fields
+      let itemRequiresHole = false;
+      if (filteredVariables.length > 0) {
+        let activeFormula = item.formula || '';
+        if (item.options && item.options.length > 0 && data.selectedBOMOptions) {
+          const rawSel = data.selectedBOMOptions[item.id];
+          const selectedOptIndices: number[] = Array.isArray(rawSel)
+            ? rawSel
+            : rawSel !== undefined ? [rawSel] : [];
+          selectedOptIndices.forEach((optIdx) => {
+            const opt = item.options[optIdx];
+            if (opt && opt.formula) {
+              activeFormula += ' ' + opt.formula;
+            }
+          });
         }
+        const holeFields = ['holeSize', 'holeDistHorizontal', 'holeDistVertical', 'pricePerHole', 'totalHoles', 'holesH', 'holesV'];
+        itemRequiresHole = filteredVariables.some((v: any) => {
+          const escaped = v.symbol.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const regex = new RegExp('\\b' + escaped + '\\b', 'i');
+          return regex.test(activeFormula) && holeFields.includes(v.mappedField);
+        });
       }
 
       // If item requires holes and data is provided, use hole area dimensions as target L & W (converted to meters)
-      const targetL = itemRequiresHole && data.hasHoles && data.holeLength ? (parseFloat(data.holeLength) / 1000) : lMtr;
-      const targetW = itemRequiresHole && data.hasHoles && data.holeWidth ? (parseFloat(data.holeWidth) / 1000) : wMtr;
+      const targetL = itemRequiresHole && data.holeLength ? (parseFloat(data.holeLength) / 1000) : lMtr;
+      const targetW = itemRequiresHole && data.holeWidth ? (parseFloat(data.holeWidth) / 1000) : wMtr;
 
       let consumption = 0;
       let totalCost = 0;
 
       if (hasRateInFormula) {
         // Formula calculates cost directly (since rate is in the formula)
-        const costVal = evaluateFormula(item.formula || '', targetL, targetW, item?.variables || [], { ...data, ...config?.constants }, activeRate);
+        const costVal = evaluateFormula(item.formula || '', targetL, targetW, filteredVariables, { ...data, ...config?.constants }, activeRate);
         totalCost = Math.round(costVal);
-        consumption = activeRate > 0 ? (totalCost / activeRate) : evaluateFormula(item.formula || '', targetL, targetW, item?.variables || [], { ...data, ...config?.constants }, 1);
+        consumption = activeRate > 0 ? (totalCost / activeRate) : evaluateFormula(item.formula || '', targetL, targetW, filteredVariables, { ...data, ...config?.constants }, 1);
       } else {
         // Formula calculates consumption quantity
-        consumption = evaluateFormula(item.formula || '', targetL, targetW, item?.variables || [], { ...data, ...config?.constants }, activeRate);
+        consumption = evaluateFormula(item.formula || '', targetL, targetW, filteredVariables, { ...data, ...config?.constants }, activeRate);
         
         // Convert consumption from Meters/SqM to the item's specified unit
         const u = (item.unit || '').toLowerCase();
@@ -251,7 +284,7 @@ export const calculateCosting = (data: any, config: any, clientProfitRanges: Pro
   const fixCostAmount = Math.round(totalWithPurchaseGst * (applicableFixCost / 100));
   const totalWithFixCost = Math.round(totalWithPurchaseGst + fixCostAmount);
   
-  let resolvedClientMargin = constants.defaultProfit;
+  let resolvedClientMargin = 0;
   if (Array.isArray(clientProfitRanges) && clientProfitRanges.length > 0) {
     const applicableRange = clientProfitRanges?.find?.(r => 
       lMtr >= r.minLength && (r.maxLength === null || lMtr < r.maxLength)

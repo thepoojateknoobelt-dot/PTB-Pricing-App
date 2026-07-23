@@ -58,17 +58,37 @@ interface ClientModalProps {
   onSaved: () => void;
 }
 
+// ─── Helper: get ranges for beltType+styleName from nested or legacy flat margin data ──
+const getStyleRanges = (
+  margins: Record<string, any>,
+  beltTypeName: string,
+  styleName: string
+): ProfitRange[] => {
+  const typeData = margins?.[beltTypeName];
+  if (!typeData) return [];
+  // New nested format: { styleName: ProfitRange[] }
+  if (!Array.isArray(typeData) && typeof typeData === 'object') {
+    return Array.isArray(typeData[styleName]) ? typeData[styleName] : [];
+  }
+  // Legacy flat format: ProfitRange[] — return for first style only
+  if (Array.isArray(typeData)) return typeData;
+  return [];
+};
+
 const ClientModal: React.FC<ClientModalProps> = ({ client, config, onClose, onSaved }) => {
+  const { user } = useAuth();
   const [tab, setTab] = useState<'overview' | 'history' | 'margins' | 'edit'>('overview');
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [loadingQ, setLoadingQ] = useState(false);
+  // Expanded belt type accordion in edit margins
+  const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({});
 
-  // Edit state
+  // Edit state — nested: { beltTypeName: { styleName: ProfitRange[] } }
   const [editName, setEditName]       = useState(client?.name || '');
   const [editCompany, setEditCompany] = useState(client?.company || '');
   const [editCity, setEditCity]       = useState(client?.city || '');
   const [editMobile, setEditMobile]   = useState(client?.mobile || '');
-  const [editMargins, setEditMargins] = useState<Record<string, ProfitRange[]>>(client?.profitMargins || {});
+  const [editMargins, setEditMargins] = useState<Record<string, Record<string, ProfitRange[]>>>(client?.profitMargins || {});
   const [saving, setSaving] = useState(false);
 
   // Reset when client changes
@@ -80,6 +100,7 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, config, onClose, onSa
     setEditCity(client.city || '');
     setEditMobile(client.mobile || '');
     setEditMargins(client.profitMargins || {});
+    setExpandedTypes({});
     fetchQuotations(client.id);
   }, [client?.id]);
 
@@ -128,6 +149,17 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, config, onClose, onSa
     }
   };
 
+  // Tabs — defined before any early returns to comply with Rules of Hooks
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: User },
+    { id: 'history',  label: 'History',  icon: FileText },
+    { id: 'margins',  label: 'Margins',  icon: TrendingUp },
+  ] as const;
+
+  const activeTabs = useMemo(() => {
+    return tabs.filter(t => t.id !== 'margins' || user?.role === 'admin');
+  }, [user?.role]);
+
   if (!client) return null;
 
   const totalSpend = quotations
@@ -135,11 +167,6 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, config, onClose, onSa
     .reduce((s, q) => s + (q.totalCost || 0), 0);
   const totalOrders = quotations.filter(q => q.status === 'order' || q.status === 'executed').length;
 
-  const tabs = [
-    { id: 'overview', label: 'Overview', icon: User },
-    { id: 'history',  label: 'History',  icon: FileText },
-    { id: 'margins',  label: 'Margins',  icon: TrendingUp },
-  ] as const;
 
   return (
     <Dialog open={!!client} onOpenChange={(open) => !open && onClose()}>
@@ -209,7 +236,7 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, config, onClose, onSa
 
         {/* ── Tabs ── */}
         <div className="shrink-0 flex gap-1 px-6 pt-3 bg-white border-b border-zinc-100">
-          {tabs.map(t => (
+          {activeTabs.map(t => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
@@ -258,28 +285,42 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, config, onClose, onSa
               </div>
 
 
-              {/* Profit Margins Summary */}
-              <div className="bg-zinc-50 rounded-xl border border-zinc-100 p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-zinc-500" />
-                  <h3 className="text-xs font-black uppercase tracking-wider text-zinc-600">Profit Margins by Category</h3>
+              {/* Profit Margins Summary — per style */}
+              {user?.role === 'admin' && (
+                <div className="bg-zinc-50 rounded-xl border border-zinc-100 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-zinc-500" />
+                    <h3 className="text-xs font-black uppercase tracking-wider text-zinc-600">Profit Margins by Category</h3>
+                  </div>
+                  <div className="space-y-2">
+                    {(Array.isArray(config?.beltTypes) ? config.beltTypes : []).map(type => {
+                      const styles = Array.isArray(type.styles) ? type.styles : [];
+                      const typeData = client.profitMargins?.[type.name];
+                      const hasAny = styles.some(s => getStyleRanges(client.profitMargins || {}, type.name, s.name).length > 0);
+                      if (!hasAny && !typeData) return null;
+                      return (
+                        <div key={type.id} className="space-y-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{type.name}</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {styles.map(style => {
+                              const ranges = getStyleRanges(client.profitMargins || {}, type.name, style.name);
+                              if (ranges.length === 0) return null;
+                              const firstMargin = ranges[0]?.margin;
+                              return (
+                                <div key={style.id} className="bg-white rounded-lg border border-zinc-200 px-2.5 py-1.5 flex items-center gap-1.5">
+                                  <span className="text-[10px] font-bold text-zinc-600">{style.name}</span>
+                                  <span className="text-[10px] font-black text-emerald-700">{firstMargin}%</span>
+                                  {ranges.length > 1 && <span className="text-[9px] text-zinc-400">+{ranges.length - 1}</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {(Array.isArray(config?.beltTypes) ? config.beltTypes : []).map(type => {
-                    const ranges = client.profitMargins?.[type.name] || [];
-                    const firstMargin = ranges[0]?.margin;
-                    return (
-                      <div key={type.id} className="bg-white rounded-lg border border-zinc-200 px-3 py-2 flex items-center gap-2">
-                        <span className="text-xs font-bold text-zinc-700">{type.name}</span>
-                        <span className="text-xs font-black text-emerald-700">{firstMargin ?? '—'}%</span>
-                        {ranges.length > 1 && (
-                          <span className="text-[9px] text-zinc-400">+{ranges.length - 1} ranges</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              )}
 
               {/* Recent Activity */}
               <div className="bg-zinc-50 rounded-xl border border-zinc-100 p-4 space-y-3">
@@ -374,14 +415,14 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, config, onClose, onSa
             </div>
           )}
 
-          {/* MARGINS TAB */}
+          {/* MARGINS TAB — per style read-only view */}
           {tab === 'margins' && (
-            <div className="p-6 space-y-5">
+            <div className="p-6 space-y-4">
               <p className="text-xs text-zinc-500 italic">
-                Profit margin ranges define what % markup is applied based on belt length (in meters). Click "Edit" tab to change them.
+                Profit margin ranges per belt style. Click "Edit Client" to modify them.
               </p>
               {(Array.isArray(config?.beltTypes) ? config.beltTypes : []).map(type => {
-                const ranges = client.profitMargins?.[type.name] || [];
+                const styles = Array.isArray(type.styles) ? type.styles : [];
                 return (
                   <div key={type.id} className="bg-zinc-50 rounded-xl border border-zinc-100 p-4 space-y-3">
                     <div className="flex items-center gap-2">
@@ -390,20 +431,37 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, config, onClose, onSa
                         <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 rounded px-1.5 py-0.5 border border-emerald-100">GST {type.gst}%</span>
                       )}
                     </div>
-                    {ranges.length === 0 ? (
-                      <p className="text-xs text-zinc-400 italic">No margins configured.</p>
+                    {styles.length === 0 ? (
+                      <p className="text-xs text-zinc-400 italic">No styles configured for this type.</p>
                     ) : (
-                      <div className="space-y-1.5">
-                        {ranges.map((r, i) => (
-                          <div key={i} className="flex items-center gap-3 bg-white rounded-lg border border-zinc-200 px-4 py-2.5">
-                            <span className="text-xs text-zinc-500 font-mono">
-                              {r.minLength}m — {r.maxLength != null ? `${r.maxLength}m` : '∞'}
-                            </span>
-                            <ChevronRight className="h-3 w-3 text-zinc-300" />
-                            <span className="text-sm font-black text-emerald-700">{r.margin}%</span>
-                            <span className="text-[10px] text-zinc-400">profit</span>
-                          </div>
-                        ))}
+                      <div className="space-y-3">
+                        {styles.map(style => {
+                          const ranges = getStyleRanges(client.profitMargins || {}, type.name, style.name);
+                          return (
+                            <div key={style.id} className="space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <div className="w-1.5 h-1.5 rounded-full bg-zinc-300" />
+                                <span className="text-[11px] font-bold text-zinc-600">{style.name}</span>
+                              </div>
+                              {ranges.length === 0 ? (
+                                <p className="text-[10px] text-zinc-400 italic pl-3.5">No margin configured.</p>
+                              ) : (
+                                <div className="space-y-1 pl-3.5">
+                                  {ranges.map((r, i) => (
+                                    <div key={i} className="flex items-center gap-3 bg-white rounded-lg border border-zinc-200 px-3 py-2">
+                                      <span className="text-xs text-zinc-500 font-mono">
+                                        {r.minLength}m — {r.maxLength != null ? `${r.maxLength}m` : '∞'}
+                                      </span>
+                                      <ChevronRight className="h-3 w-3 text-zinc-300" />
+                                      <span className="text-sm font-black text-emerald-700">{r.margin}%</span>
+                                      <span className="text-[10px] text-zinc-400">profit</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -438,104 +496,164 @@ const ClientModal: React.FC<ClientModalProps> = ({ client, config, onClose, onSa
                 </div>
               </div>
 
-              {/* Profit Margins */}
-              <div className="bg-zinc-50 rounded-xl border border-zinc-150 p-5 space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-zinc-600">Profit Margins by Category</h3>
-                <div className="space-y-5">
-                  {(Array.isArray(config?.beltTypes) ? config.beltTypes : []).map(type => (
-                    <div key={type.id} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-zinc-700 uppercase tracking-wider">{type.name}</span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 text-[10px] text-blue-600 hover:text-blue-800"
-                          onClick={() => {
-                            const current = Array.isArray(editMargins[type.name]) ? editMargins[type.name] : [];
-                            const lastMax = current.length > 0 ? current[current.length - 1].maxLength : 0;
-                            setEditMargins({ ...editMargins, [type.name]: [...current, { minLength: lastMax || 0, maxLength: null, margin: 20 }] });
-                          }}
-                        >
-                          + Add Range
-                        </Button>
-                      </div>
-                      <div className="space-y-2.5">
-                        {(Array.isArray(editMargins[type.name]) ? editMargins[type.name] : []).map((range, idx) => (
-                          <div key={idx} className="flex flex-wrap items-center gap-3 bg-white rounded-xl border border-zinc-200 p-3 shadow-xs">
+              {/* Profit Margins — nested per style */}
+              {user?.role === 'admin' && (
+                <div className="bg-zinc-50 rounded-xl border border-zinc-150 p-5 space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-zinc-600">Profit Margins by Category &amp; Style</h3>
+                  <div className="space-y-3">
+                    {(Array.isArray(config?.beltTypes) ? config.beltTypes : []).map(type => {
+                      const isExpanded = expandedTypes[type.id] !== false; // default expanded
+                      const styles = Array.isArray(type.styles) ? type.styles : [];
+                      return (
+                        <div key={type.id} className="rounded-xl border border-zinc-200 bg-white overflow-hidden">
+                          {/* Belt Type Header */}
+                          <button
+                            type="button"
+                            onClick={() => setExpandedTypes(prev => ({ ...prev, [type.id]: !isExpanded }))}
+                            className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-50 transition-colors"
+                          >
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-zinc-550">From</span>
-                              <div className="relative">
-                                <Input
-                                  type="number"
-                                  className="h-8 text-xs w-20 pr-6 font-semibold text-zinc-800 border-zinc-300"
-                                  value={range.minLength}
-                                  onChange={e => {
-                                    const r = [...editMargins[type.name]];
-                                    r[idx] = { ...r[idx], minLength: parseFloat(e.target.value) || 0 };
-                                    setEditMargins({ ...editMargins, [type.name]: r });
-                                  }}
-                                />
-                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-zinc-400 font-bold">m</span>
-                              </div>
+                              <span className="text-xs font-black uppercase tracking-wider text-zinc-800">{type.name}</span>
+                              {styles.length > 0 && (
+                                <span className="text-[9px] font-bold text-zinc-400 bg-zinc-100 rounded px-1.5 py-0.5">{styles.length} styles</span>
+                              )}
                             </div>
+                            <ChevronRight className={`h-3.5 w-3.5 text-zinc-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                          </button>
 
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-zinc-550">To</span>
-                              <div className="relative">
-                                <Input
-                                  type="number"
-                                  className="h-8 text-xs w-20 pr-6 font-semibold text-zinc-800 border-zinc-300"
-                                  value={range.maxLength || ''}
-                                  placeholder="∞"
-                                  onChange={e => {
-                                    const r = [...editMargins[type.name]];
-                                    r[idx] = { ...r[idx], maxLength: e.target.value ? parseFloat(e.target.value) : null };
-                                    setEditMargins({ ...editMargins, [type.name]: r });
-                                  }}
-                                />
-                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-zinc-400 font-bold">m</span>
-                              </div>
+                          {/* Styles */}
+                          {isExpanded && (
+                            <div className="border-t border-zinc-100 divide-y divide-zinc-100">
+                              {styles.length === 0 ? (
+                                <p className="text-[10px] text-zinc-400 italic px-4 py-3">No styles configured for this type.</p>
+                              ) : (
+                                styles.map(style => {
+                                  const styleRanges: ProfitRange[] = (
+                                    editMargins[type.name]?.[style.name]
+                                  ) || [];
+
+                                  const setStyleRanges = (newRanges: ProfitRange[]) => {
+                                    setEditMargins(prev => ({
+                                      ...prev,
+                                      [type.name]: {
+                                        ...(prev[type.name] || {}),
+                                        [style.name]: newRanges,
+                                      },
+                                    }));
+                                  };
+
+                                  return (
+                                    <div key={style.id} className="px-4 py-3 space-y-2.5 bg-zinc-50/50">
+                                      {/* Style header */}
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
+                                          <span className="text-[11px] font-bold text-zinc-700">{style.name}</span>
+                                        </div>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2"
+                                          onClick={() => {
+                                            const lastMax = styleRanges.length > 0 ? styleRanges[styleRanges.length - 1].maxLength : 0;
+                                            setStyleRanges([...styleRanges, { minLength: lastMax || 0, maxLength: null, margin: 20 }]);
+                                          }}
+                                        >
+                                          + Add Range
+                                        </Button>
+                                      </div>
+
+                                      {/* Range rows */}
+                                      <div className="space-y-2">
+                                        {styleRanges.length === 0 ? (
+                                          <p className="text-[10px] text-zinc-400 italic">No ranges. Click "+ Add Range".</p>
+                                        ) : (
+                                          styleRanges.map((range, idx) => (
+                                            <div key={idx} className="flex flex-wrap items-center gap-2 bg-white rounded-xl border border-zinc-200 px-3 py-2.5 shadow-xs">
+                                              {/* From */}
+                                              <div className="flex items-center gap-1.5">
+                                                <span className="text-[10px] font-bold text-zinc-500">From</span>
+                                                <div className="relative">
+                                                  <Input
+                                                    type="number"
+                                                    className="h-7 text-xs w-16 pr-5 font-semibold text-zinc-800 border-zinc-300"
+                                                    value={range.minLength}
+                                                    onChange={e => {
+                                                      const r = [...styleRanges];
+                                                      r[idx] = { ...r[idx], minLength: parseFloat(e.target.value) || 0 };
+                                                      setStyleRanges(r);
+                                                    }}
+                                                  />
+                                                  <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-400 font-bold">m</span>
+                                                </div>
+                                              </div>
+
+                                              {/* To */}
+                                              <div className="flex items-center gap-1.5">
+                                                <span className="text-[10px] font-bold text-zinc-500">To</span>
+                                                <div className="relative">
+                                                  <Input
+                                                    type="number"
+                                                    className="h-7 text-xs w-16 pr-5 font-semibold text-zinc-800 border-zinc-300"
+                                                    value={range.maxLength || ''}
+                                                    placeholder="∞"
+                                                    onChange={e => {
+                                                      const r = [...styleRanges];
+                                                      r[idx] = { ...r[idx], maxLength: e.target.value ? parseFloat(e.target.value) : null };
+                                                      setStyleRanges(r);
+                                                    }}
+                                                  />
+                                                  <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-400 font-bold">m</span>
+                                                </div>
+                                              </div>
+
+                                              {/* Margin */}
+                                              <div className="flex items-center gap-1.5 ml-auto">
+                                                <span className="text-[10px] font-bold text-zinc-500">Margin</span>
+                                                <div className="relative">
+                                                  <Input
+                                                    type="number"
+                                                    className="h-7 text-xs w-16 pr-5 font-black text-emerald-700 border-zinc-300"
+                                                    value={range.margin}
+                                                    onChange={e => {
+                                                      const r = [...styleRanges];
+                                                      r[idx] = { ...r[idx], margin: parseFloat(e.target.value) || 0 };
+                                                      setStyleRanges(r);
+                                                    }}
+                                                  />
+                                                  <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-emerald-600 font-extrabold">%</span>
+                                                </div>
+                                              </div>
+
+                                              {/* Delete range */}
+                                              <Button
+                                                size="icon"
+                                                variant="ghost"
+                                                className="h-7 w-7 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                                                onClick={() => {
+                                                  const r = [...styleRanges];
+                                                  r.splice(idx, 1);
+                                                  setStyleRanges(r);
+                                                }}
+                                              >
+                                                <X className="h-3.5 w-3.5" />
+                                              </Button>
+                                            </div>
+                                          ))
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
                             </div>
-
-                            <div className="flex items-center gap-2 ml-0 sm:ml-auto">
-                              <span className="text-xs font-bold text-zinc-550">Margin</span>
-                              <div className="relative">
-                                <Input
-                                  type="number"
-                                  className="h-8 text-xs w-18 pr-6 font-black text-emerald-700 border-zinc-300"
-                                  value={range.margin}
-                                  onChange={e => {
-                                    const r = [...editMargins[type.name]];
-                                    r[idx] = { ...r[idx], margin: parseFloat(e.target.value) || 0 };
-                                    setEditMargins({ ...editMargins, [type.name]: r });
-                                  }}
-                                />
-                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-emerald-600 font-extrabold">%</span>
-                              </div>
-                            </div>
-
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
-                              onClick={() => {
-                                const r = [...editMargins[type.name]];
-                                r.splice(idx, 1);
-                                setEditMargins({ ...editMargins, [type.name]: r });
-                              }}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ))}
-                        {(!editMargins[type.name] || editMargins[type.name].length === 0) && (
-                          <p className="text-[10px] text-zinc-400 italic px-1">No ranges. Click "+ Add Range" to add one.</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Save Button */}
               <div className="flex gap-3 justify-end pt-2 border-t border-zinc-150">
@@ -577,7 +695,6 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
     e.preventDefault();
     setIsAdding(true);
     try {
-      const defaultRanges: ProfitRange[] = [{ minLength: 0, maxLength: null, margin: 20 }];
       const res = await fetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -586,9 +703,16 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
           company: formData.company,
           city: formData.city,
           mobile: formData.mobile,
+          // New nested structure: beltType -> styleName -> ProfitRange[]
           profitMargins: (Array.isArray(config?.beltTypes) ? config.beltTypes : []).reduce(
-            (acc, type) => ({ ...acc, [type.name]: defaultRanges }),
-            {} as Record<string, ProfitRange[]>
+            (acc, type) => ({
+              ...acc,
+              [type.name]: (Array.isArray(type.styles) ? type.styles : []).reduce(
+                (styleAcc, style) => ({ ...styleAcc, [style.name]: [] }),
+                {} as Record<string, ProfitRange[]>
+              ),
+            }),
+            {} as Record<string, Record<string, ProfitRange[]>>
           ),
         }),
       });
@@ -692,8 +816,18 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
               address,
               gstin,
               profitMargins: (Array.isArray(config?.beltTypes) ? config.beltTypes : []).reduce(
-                (acc, type) => ({ ...acc, [type.name]: [{ minLength: 0, maxLength: null, margin: profitMargin }] }),
-                {} as Record<string, ProfitRange[]>
+                (acc, type) => ({
+                  ...acc,
+                  [type.name]: (Array.isArray(type.styles) ? type.styles : []).reduce(
+                    (styleAcc, style) => {
+                      const hasProfitVal = colMap.profit !== -1 && values[colMap.profit] !== undefined && values[colMap.profit] !== '';
+                      const initialMargin = hasProfitVal ? [{ minLength: 0, maxLength: null, margin: parseFloat(values[colMap.profit]) || 20 }] : [];
+                      return { ...styleAcc, [style.name]: initialMargin };
+                    },
+                    {} as Record<string, ProfitRange[]>
+                  ),
+                }),
+                {} as Record<string, Record<string, ProfitRange[]>>
               ),
             }),
           });
@@ -822,7 +956,7 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
                       )}
                     </th>
                     <th scope="col" className="px-4 py-3">Mobile</th>
-                    <th scope="col" className="px-4 py-3">Profit Margins</th>
+                    {user?.role === 'admin' && <th scope="col" className="px-4 py-3">Profit Margins</th>}
                     <th scope="col" className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -844,18 +978,27 @@ export const ClientRegistry: React.FC<ClientRegistryProps> = ({ clients, config,
                       <td className="px-4 py-3.5 text-zinc-500 font-semibold">{c.company}</td>
                       <td className="px-4 py-3.5 text-zinc-600 font-semibold">{c.city}</td>
                       <td className="px-4 py-3.5 text-zinc-500 font-mono whitespace-nowrap">{c.mobile || '-'}</td>
-                      <td className="px-4 py-3.5">
-                        <div className="flex flex-wrap gap-1">
-                          {(Array.isArray(config?.beltTypes) ? config.beltTypes : []).slice(0, 3).map(type => {
-                            const m = c.profitMargins?.[type.name]?.[0]?.margin;
-                            return m !== undefined ? (
-                              <span key={type.id} className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5">
-                                {type.name} {m}%
-                              </span>
-                            ) : null;
-                          })}
-                        </div>
-                      </td>
+                      {user?.role === 'admin' && (
+                        <td className="px-4 py-3.5">
+                          <div className="flex flex-wrap gap-1">
+                            {(Array.isArray(config?.beltTypes) ? config.beltTypes : []).slice(0, 3).map(type => {
+                              // Find first configured style margin for summary display
+                              const styles = Array.isArray(type.styles) ? type.styles : [];
+                              const firstStyleWithMargin = styles.find(s => {
+                                const r = getStyleRanges(c.profitMargins || {}, type.name, s.name);
+                                return r.length > 0;
+                              });
+                              if (!firstStyleWithMargin) return null;
+                              const margin = getStyleRanges(c.profitMargins || {}, type.name, firstStyleWithMargin.name)?.[0]?.margin;
+                              return margin !== undefined ? (
+                                <span key={type.id} className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.5">
+                                  {type.name} {margin}%
+                                </span>
+                              ) : null;
+                            })}
+                          </div>
+                        </td>
+                      )}
                       <td className="px-4 py-3.5 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
                           <Button

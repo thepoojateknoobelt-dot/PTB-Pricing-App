@@ -219,7 +219,16 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
         }
 
         const client = clients?.find(c => c.id === q.clientId) || null;
-        const clientProfitRanges = client?.profitMargins?.[q.beltType] || [];
+        const typeData = client?.profitMargins?.[q.beltType];
+        const clientProfitRanges: import('../types').ProfitRange[] = (() => {
+          if (!typeData) return [];
+          // New nested format: { styleName: ProfitRange[] }
+          if (!Array.isArray(typeData) && typeof typeData === 'object') {
+            return Array.isArray(typeData[q.beltStyle]) ? typeData[q.beltStyle] : [];
+          }
+          // Legacy flat format
+          return Array.isArray(typeData) ? typeData : [];
+        })();
         const category = config?.beltTypes?.find(t => t.name === q.beltType) || null;
         const style = category?.styles?.find(s => s.name === q.beltStyle) || null;
 

@@ -187,6 +187,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
   const [newVarMappedField, setNewVarMappedField] = useState<'length' | 'width' | 'holeSize' | 'holeDistHorizontal' | 'holeDistVertical' | 'pricePerHole' | 'rate' | 'totalHoles' | 'holesH' | 'holesV' | 'manualPackingCost' | 'manualProfitMargin' | 'purchaseGst' | 'fixCost' | 'defaultProfit' | 'saleGst'>('length');
   const [showVariablesModal, setShowVariablesModal] = useState(false);
   const [varTarget, setVarTarget] = useState<'active' | 'new'>('active');
+  const [activeOptionName, setActiveOptionName] = useState<string | null>(null);
 
   const getActiveBOMVariables = (): any[] => {
     if (varTarget === 'new') {
@@ -212,12 +213,15 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
     }
   };
 
-  const isValidFormulaInput = (val: string, itemVariables?: any[]) => {
+  const isValidFormulaInput = (val: string, itemVariables?: any[], optionName?: string) => {
     const upperVal = val.toUpperCase();
     if (!/^[0-9A-Z\.\+\-\*\/\(\)\s]*$/.test(upperVal)) {
       return false;
     }
-    const allowedVars = ['L', 'W', 'P', 'R', ...(itemVariables || []).map((v: any) => v.symbol.toUpperCase())];
+    // Filter variables: only allow variables that have no option restriction, or match the current option name
+    const targetOption = optionName || undefined;
+    const filteredVars = (itemVariables || []).filter((v: any) => v.forOptionName === targetOption);
+    const allowedVars = ['L', 'W', 'P', 'R', ...filteredVars.map((v: any) => v.symbol.toUpperCase())];
     const letterTokens = upperVal.match(/[A-Z]+/g) || [];
     for (const token of letterTokens) {
       const isPrefixOfAny = allowedVars.some(v => v.startsWith(token));
@@ -242,7 +246,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
     }
     const isReserved = ['L', 'W', 'P', 'R'].includes(symbolClean);
     const currentVars = getActiveBOMVariables();
-    const isDuplicate = currentVars.some((v: any) => v.symbol === symbolClean);
+    const isDuplicate = currentVars.some((v: any) => v.symbol === symbolClean && v.forOptionName === (activeOptionName || undefined));
     if (isReserved) {
       toast.error(`Symbol "${symbolClean}" is a default reserved variable symbol.`);
       return;
@@ -255,7 +259,8 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
       id: Date.now().toString(),
       name: newVarName.trim(),
       symbol: symbolClean,
-      mappedField: newVarMappedField
+      mappedField: newVarMappedField,
+      forOptionName: varTarget === 'active' ? (activeOptionName || undefined) : undefined
     };
     const updatedVars = [...currentVars, newVar];
     updateActiveBOMVariables(updatedVars);
@@ -405,7 +410,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
     const name = newItem.styleName.trim();
     if (!name) return;
     const updated = [...localConfig.beltTypes];
-    updated[typeIdx].styles = [...(updated[typeIdx].styles || []), { id: Date.now().toString(), name }];
+    updated[typeIdx].styles = [...(updated[typeIdx].styles || []), { id: Date.now().toString(), name, bom: [] }];
     setLocalConfig({ ...localConfig, beltTypes: updated });
     setNewItem({ ...newItem, styleName: '' });
   };
@@ -422,6 +427,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
     const updated = [...localConfig.beltTypes];
     const style = updated[tIdx].styles[sIdx];
     style.bom = [...(style.bom || []), { 
+      id: Date.now().toString(),
       ...newBOMItem, 
       rate: parseFloat(newBOMItem.rate) || 0
     }];
@@ -1060,34 +1066,6 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                <span className="text-[10px] text-blue-500 font-mono font-bold tracking-tighter">={item.formula}</span>
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
-                              {/* Hole Settings button — visible on each BOM item row */}
-                              <button
-                                type="button"
-                                title={item.requiresHoleData ? `Hole enabled · ₹${item.holeBaseRate ?? 0}/hole` : 'Enable hole data for this component'}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const updated = JSON.parse(JSON.stringify(localConfig.beltTypes));
-                                  const bomItem = updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[idx];
-                                  bomItem.requiresHoleData = !bomItem.requiresHoleData;
-                                  const nextConfig = { ...localConfig, beltTypes: updated };
-                                  setLocalConfig(nextConfig);
-                                  saveConfig(updated, nextConfig);
-                                  // Select this item to show its detail panel
-                                  setSelectedBOMIdx(idx);
-                                }}
-                                className={cn(
-                                  "flex items-center gap-1 text-[9px] font-black px-2 py-1 rounded-lg border transition-all duration-200",
-                                  item.requiresHoleData
-                                    ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200 shadow-sm"
-                                    : "bg-zinc-50 text-zinc-400 border-zinc-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200 opacity-0 group-hover:opacity-100"
-                                )}
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                  <circle cx="12" cy="12" r="3"/>
-                                  <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
-                                </svg>
-                                {item.requiresHoleData ? 'Hole ✓' : 'Hole'}
-                              </button>
                               <Edit2 
                                 className="h-3 w-3 text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 cursor-pointer" 
                                 onClick={(e) => {
@@ -1171,11 +1149,12 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                       <div className="space-y-1.5">
                                         <Label className="text-[10px] font-bold uppercase text-zinc-500 flex items-center gap-1">
                                           <span>Unit Rate (₹)</span>
-                                          <Info 
-                                            className="h-3.5 w-3.5 text-zinc-400 hover:text-blue-600 hover:scale-110 transition-all cursor-pointer"
-                                            onClick={() => openRateHistory(item.id, item.name)}
-                                            title="Click to view price change history"
-                                          />
+                                          <span title="Click to view price change history">
+                                            <Info 
+                                              className="h-3.5 w-3.5 text-zinc-400 hover:text-blue-600 hover:scale-110 transition-all cursor-pointer"
+                                              onClick={() => openRateHistory(item.id, item.name)}
+                                            />
+                                          </span>
                                         </Label>
                                         <div className="flex gap-2">
                                           <div className="relative flex-1">
@@ -1289,10 +1268,11 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                         type="button"
                                         className="h-10 w-10 p-0 border-blue-200 text-blue-700 hover:bg-blue-50/50 cursor-pointer shadow-xs rounded-[6px] shrink-0"
                                         onClick={() => {
-                                          setVarTarget('active');
-                                          setSelectedBOMIdx(selectedBOMIdx);
-                                          setShowVariablesModal(true);
-                                        }}
+                                           setVarTarget('active');
+                                           setSelectedBOMIdx(selectedBOMIdx);
+                                           setActiveOptionName(null);
+                                           setShowVariablesModal(true);
+                                         }}
                                         title="Manage Variables"
                                       >
                                         <Settings2 className="h-4.5 w-4.5" />
@@ -1304,71 +1284,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                   </div>
                                 </div>
 
-                                {/* HOLE CONFIGURATION TOGGLE */}
-                                <div className="pt-3 border-t border-zinc-100">
-                                  <div className="flex items-center justify-between bg-amber-50/60 border border-amber-200/60 rounded-xl px-3 py-2.5">
-                                    <div className="flex items-center gap-2.5">
-                                      <div className="p-1.5 bg-amber-100 rounded-lg">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
-                                      </div>
-                                      <div>
-                                        <p className="text-[10px] font-black uppercase tracking-wide text-amber-800">Requires Hole Data</p>
-                                        <p className="text-[9px] text-amber-600 font-medium">
-                                          {item.requiresHoleData ? 'Salesman will be prompted to fill hole dimensions' : 'No hole data needed for this component'}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const updated = JSON.parse(JSON.stringify(localConfig.beltTypes));
-                                        updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].requiresHoleData = !item.requiresHoleData;
-                                        const nextConfig = { ...localConfig, beltTypes: updated };
-                                        setLocalConfig(nextConfig);
-                                        saveConfig(updated, nextConfig);
-                                      }}
-                                      className={cn(
-                                        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none shrink-0",
-                                        item.requiresHoleData ? "bg-amber-500" : "bg-zinc-300"
-                                      )}
-                                    >
-                                      <span className={cn(
-                                        "inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform",
-                                        item.requiresHoleData ? "translate-x-[18px]" : "translate-x-[3px]"
-                                      )} />
-                                    </button>
-                                  </div>
-
-                                  {item.requiresHoleData && (
-                                    <div className="mt-2 px-1 animate-in fade-in slide-in-from-top-1 duration-200">
-                                      <div className="space-y-1">
-                                        <Label className="text-[9px] font-black uppercase tracking-wider text-amber-700 flex items-center gap-1">
-                                          <span>Price Per Hole (₹)</span>
-                                          <span className="text-amber-500 font-normal italic normal-case">— Admin only, hidden from salesman</span>
-                                        </Label>
-                                        <div className="relative">
-                                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-zinc-400">₹</span>
-                                          <Input
-                                            type="number"
-                                            placeholder="e.g. 2.50"
-                                            className="h-9 pl-6 text-xs border-amber-200 bg-amber-50/40 focus:border-amber-400 focus:bg-white transition-all rounded-[6px]"
-                                            value={item.holeBaseRate ?? ''}
-                                            onChange={(e) => {
-                                              const updated = JSON.parse(JSON.stringify(localConfig.beltTypes));
-                                              updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].holeBaseRate = parseFloat(e.target.value) || 0;
-                                              const nextConfig = { ...localConfig, beltTypes: updated };
-                                              setLocalConfig(nextConfig);
-                                            }}
-                                            onBlur={() => {
-                                              saveConfig(localConfig.beltTypes, localConfig);
-                                            }}
-                                          />
-                                        </div>
-                                        <p className="text-[9px] text-amber-600/70 italic">This is the cost per hole punched. Salesman only fills dimensions.</p>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
+                                {/* SUB-CATEGORIES AREA */}
 
                                 {/* SCROLLING SUB-CATEGORIES AREA */}
                                 <div className="flex-1 flex flex-col min-h-0 space-y-3 pt-6 border-t border-zinc-100">
@@ -1386,7 +1302,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                       onClick={() => {
                                         const updated = [...localConfig.beltTypes];
                                         const bomItem = updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx];
-                                        bomItem.options = [...(bomItem.options || []), { name: '', rate: 0, unit: bomItem.unit }];
+                                        bomItem.options = [...(bomItem.options || []), { id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 4), name: '', rate: 0, unit: bomItem.unit }];
                                         setLocalConfig({ ...localConfig, beltTypes: updated });
                                       }}
                                     >
@@ -1426,7 +1342,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                                   value={opt.formula || ''}
                                                   onChange={(e) => {
                                                     const val = e.target.value.toUpperCase();
-                                                    if (val && !isValidFormulaInput(val, item.variables)) return;
+                                                    if (val && !isValidFormulaInput(val, item.variables, opt.name)) return;
                                                     const updated = [...localConfig.beltTypes];
                                                     updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formula = val;
                                                     setLocalConfig({ ...localConfig, beltTypes: updated });
@@ -1440,6 +1356,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                                 className="h-8 w-8 p-0 border-blue-200 text-blue-700 hover:bg-blue-50/50 cursor-pointer shadow-xs rounded-[6px] shrink-0 flex items-center justify-center"
                                                 onClick={() => {
                                                   setVarTarget('active');
+                                                  setActiveOptionName(opt.name);
                                                   setShowVariablesModal(true);
                                                 }}
                                                 title="Manage Variables"
@@ -1454,11 +1371,12 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                              <Label className="text-[9px] font-black uppercase tracking-tighter text-zinc-400 ml-1 flex items-center gap-1.5">
                                                <span>Rate {opt.isFormation ? <span className="text-violet-400 font-normal normal-case">(auto from formation)</span> : ''}</span>
                                                {opt.name && !opt.isFormation && (
-                                                 <Info 
-                                                   className="h-3.5 w-3.5 text-zinc-400 hover:text-blue-600 hover:scale-110 transition-all cursor-pointer" 
-                                                   onClick={() => openRateHistory(`${item.id}::${opt.name}`, opt.name)}
-                                                   title="Click to view price change history"
-                                                 />
+                                                 <span title="Click to view price change history">
+                                                   <Info 
+                                                     className="h-3.5 w-3.5 text-zinc-400 hover:text-blue-600 hover:scale-110 transition-all cursor-pointer" 
+                                                     onClick={() => openRateHistory(`${item.id}::${opt.name}`, opt.name)}
+                                                   />
+                                                 </span>
                                                )}
                                              </Label>
                                              <div className="relative">
@@ -1544,60 +1462,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                            </Button>
                                          </div>
 
-                                         {/* ── HOLE CONFIGURATION FOR SUB-CATEGORY ── */}
-                                         <div className="border-t border-amber-100/50 bg-amber-50/20 px-2 py-2 rounded-lg mt-1 space-y-2">
-                                           <div className="flex items-center justify-between">
-                                             <div className="flex items-center gap-1.5">
-                                               <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
-                                               <span className="text-[10px] font-black uppercase text-amber-800">Requires Hole Data</span>
-                                             </div>
-                                             <button
-                                               type="button"
-                                               onClick={() => {
-                                                 const updated = JSON.parse(JSON.stringify(localConfig.beltTypes));
-                                                 const option = updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx];
-                                                 option.requiresHoleData = !option.requiresHoleData;
-                                                 const nextConfig = { ...localConfig, beltTypes: updated };
-                                                 setLocalConfig(nextConfig);
-                                                 saveConfig(updated, nextConfig);
-                                               }}
-                                               className={cn(
-                                                 "relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus:outline-none shrink-0",
-                                                 opt.requiresHoleData ? "bg-amber-500" : "bg-zinc-300"
-                                               )}
-                                             >
-                                               <span className={cn(
-                                                 "inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow transition-transform",
-                                                 opt.requiresHoleData ? "translate-x-[13px]" : "translate-x-[2px]"
-                                               )} />
-                                             </button>
-                                           </div>
-                                           {opt.requiresHoleData && (
-                                             <div className="flex items-center gap-2 mt-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
-                                               <div className="flex-1 space-y-0.5">
-                                                 <Label className="text-[8px] font-black uppercase tracking-wider text-amber-700">Price Per Hole (₹)</Label>
-                                                 <div className="relative">
-                                                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-bold">₹</span>
-                                                   <Input
-                                                     type="number"
-                                                     placeholder="0.00"
-                                                     className="h-7 pl-5 pr-1 text-xs border-amber-200 bg-white font-bold text-zinc-700 rounded-[6px]"
-                                                     value={opt.holeBaseRate ?? ''}
-                                                     onChange={(e) => {
-                                                       const updated = JSON.parse(JSON.stringify(localConfig.beltTypes));
-                                                       updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].holeBaseRate = parseFloat(e.target.value) || 0;
-                                                       const nextConfig = { ...localConfig, beltTypes: updated };
-                                                       setLocalConfig(nextConfig);
-                                                     }}
-                                                     onBlur={() => {
-                                                       saveConfig(localConfig.beltTypes, localConfig);
-                                                     }}
-                                                   />
-                                                 </div>
-                                               </div>
-                                             </div>
-                                           )}
-                                         </div>
+                                         {/* FORMATION TOGGLE & BUILDER */}
 
                                          {/* ── FORMATION TOGGLE & BUILDER ── */}
                                          <div className="border-t border-zinc-100 pt-2.5 mt-0.5">
@@ -2024,9 +1889,29 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
             <div className="p-2.5 bg-blue-100 text-[#1e40af] rounded-xl shrink-0">
               <Settings2 className="h-5 w-5" />
             </div>
-            <div>
+            <div className="flex-1">
               <DialogTitle className="text-lg font-black text-[#1e3a8a] tracking-tight">Formula Variables Manager</DialogTitle>
               <DialogDescription className="text-xs text-zinc-500 mt-0.5">Define and map custom variable signs for use inside mathematical formulas</DialogDescription>
+              {/* Context label — shows which BOM item these variables belong to */}
+              {(() => {
+                const itemName = varTarget === 'new'
+                  ? 'New BOM Item'
+                  : (selectedCatIdx !== null && selectedStyleIdx !== null && selectedBOMIdx !== null)
+                    ? localConfig.beltTypes[selectedCatIdx]?.styles?.[selectedStyleIdx]?.bom?.[selectedBOMIdx]?.name || 'Unknown Item'
+                    : null;
+                return itemName ? (
+                  <div className="mt-2 inline-flex flex-wrap items-center gap-1.5 bg-[#1e40af]/10 border border-[#1e40af]/20 text-[#1e40af] text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#1e40af] animate-pulse" />
+                    Working on: {itemName}
+                    {activeOptionName && (
+                      <span className="bg-amber-100 border border-amber-200 text-amber-800 px-2 py-0.5 rounded-full ml-1 font-black normal-case">
+                        Option: {activeOptionName}
+                      </span>
+                    )}
+                    <span className="font-normal text-blue-500 normal-case tracking-normal ml-0.5">— variables here apply only to this specific {activeOptionName ? 'option' : 'item'}</span>
+                  </div>
+                ) : null;
+              })()}
             </div>
           </DialogHeader>
 
@@ -2131,14 +2016,21 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                   </tr>
 
                   {/* Custom variables */}
-                  {(getActiveBOMVariables().length === 0) ? (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-4 text-center text-zinc-400 italic">
-                        No custom variables defined. Add one above.
-                      </td>
-                    </tr>
-                  ) : (
-                    getActiveBOMVariables().map((v: any) => (
+                  {(() => {
+                    const allVars = getActiveBOMVariables();
+                    const filteredVars = allVars.filter((v: any) => v.forOptionName === (activeOptionName || undefined));
+                    
+                    if (filteredVars.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-4 text-center text-zinc-400 italic">
+                            No custom variables defined for this context. Add one above.
+                          </td>
+                        </tr>
+                      );
+                    }
+                    
+                    return filteredVars.map((v: any) => (
                       <tr key={v.id} className="hover:bg-blue-50/10">
                         <td className="px-4 py-3 font-bold text-zinc-800">{v.name}</td>
                         <td className="px-4 py-3 font-mono font-black text-[#1e40af]">{v.symbol}</td>
@@ -2172,8 +2064,8 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                           </Button>
                         </td>
                       </tr>
-                    ))
-                  )}
+                    ));
+                  })()}
                 </tbody>
               </table>
             </div>

@@ -28,6 +28,8 @@ const formatOrderDate = (dateVal: any, showYear = true) => {
 
 export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
   const { user } = useAuth();
+  const [marginRequests, setMarginRequests] = useState<any[]>([]);
+  const [isSendingMarginRequest, setIsSendingMarginRequest] = useState(false);
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
   const [clientSearchQuery, setClientSearchQuery] = useState('');
   const clientDropdownRef = useRef<HTMLDivElement>(null);
@@ -60,59 +62,189 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
     selectedBOMOptions: {} as Record<string, any>,
   });
 
-  // Smart Hole Data state — auto-populated when selected BOM item has requiresHoleData = true
+  // Smart Hole Data state — auto-populated when active formulas use custom variables mapping to user inputs
   const [holePopupOpen, setHolePopupOpen] = useState(false);
+  // Track which BOM item triggered the hole popup (for context label)
+  const [holePopupItem, setHolePopupItem] = useState<{ name: string; optionName?: string } | null>(null);
   const [holeData, setHoleData] = useState({
     holeLength: '',
     holeWidth: '',
     holeSize: '',
     holeDistHorizontal: '',
     holeDistVertical: '',
+    pricePerHole: '',
   });
 
-  // Detect if any currently selected BOM item or selected Sub-category requires hole data
-  const selectedHoleItems = (() => {
-    if (!formData.beltType || !formData.beltStyle) return [];
+  const isVariableUsedInFormula = (formula: string, symbol: string) => {
+    if (!formula) return false;
+    const escaped = symbol.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp('\\b' + escaped + '\\b', 'i');
+    return regex.test(formula);
+  };
+
+  const getItemActiveOptionNames = (item: any, selectedBOMOptions: any) => {
+    if (!selectedBOMOptions) return [];
+    const rawSel = selectedBOMOptions[item.id];
+    if (rawSel === undefined || rawSel === null) return [];
+    const hasOptions = Array.isArray(item.options) && item.options.length > 0;
+    if (!hasOptions) return [];
+
+    const selectedOptIndices: number[] = Array.isArray(rawSel)
+      ? rawSel
+      : [rawSel];
+
+    return selectedOptIndices
+      .map(optIdx => item.options[optIdx]?.name)
+      .filter(Boolean);
+  };
+
+  const getItemActiveVariables = (item: any) => {
+    // Only use variables scoped to this specific BOM item — NOT global config.variables.
+    // This ensures EYELET variables don't leak into BUTTONS or other items.
+    const itemVars: any[] = Array.isArray(item.variables) ? item.variables : [];
+    if (itemVars.length === 0) return [];
+
+    // Filter variables: only allow variables that have no option restriction, or match the active selected option name
+    const activeOptionNames = getItemActiveOptionNames(item, formData.selectedBOMOptions);
+    const filteredItemVars = itemVars.filter((v: any) => {
+      if (!v.forOptionName) return true;
+      return activeOptionNames.includes(v.forOptionName);
+    });
+
+    if (filteredItemVars.length === 0) return [];
+
+    // PARAMETER FIELDS (holeDistHorizontal, holeDistVertical, holeSize, pricePerHole) are always
+    // included if configured for this item — regardless of whether the formula currently references them.
+    // This ensures EYELET popup opens as long as the admin has configured those variables.
+    const parameterMappedFields = new Set(['holeDistHorizontal', 'holeDistVertical', 'holeSize', 'pricePerHole', 'holesH', 'holesV', 'totalHoles']);
+
+    // Build the full active formula string for this item (including selected sub-options)
+    let activeFormula = item.formula || '';
+    const hasOptions = Array.isArray(item.options) && item.options.length > 0;
+    if (hasOptions) {
+      const rawSel = formData.selectedBOMOptions[item.id];
+      const selectedOptIndices: number[] = Array.isArray(rawSel)
+        ? rawSel
+        : rawSel !== undefined ? [rawSel] : [];
+      selectedOptIndices.forEach((optIdx) => {
+        const opt = item.options[optIdx];
+        if (opt && opt.formula) {
+          activeFormula += ' ' + opt.formula;
+        }
+      });
+    }
+
+    return filteredItemVars.filter((v: any) => {
+      // Parameter-mapped variables are always active if configured
+      if (parameterMappedFields.has(v.mappedField)) return true;
+      // Other (formula-symbol) variables: only if used in formula
+      return isVariableUsedInFormula(activeFormula, v.symbol);
+    });
+  };
+
+  const getRequiredFields = () => {
+    if (!formData.beltType || !formData.beltStyle || !config) return [];
     const cat = (config?.beltTypes || []).find((t: any) => t.name === formData.beltType);
     const style = (cat?.styles || []).find((s: any) => s.name === formData.beltStyle);
     if (!style || !style.bom) return [];
 
-    const list: { name: string; holeBaseRate?: number }[] = [];
+    const requiredFields = new Set<string>();
 
     style.bom.forEach((item: any) => {
       const isChecked = formData.selectedBOMOptions?._included?.[item.id] !== false;
       if (!isChecked) return;
 
-      const hasOptions = Array.isArray(item.options) && item.options.length > 0;
-      if (hasOptions) {
-        const rawSel = formData.selectedBOMOptions[item.id];
-        const selectedOptIndices: number[] = Array.isArray(rawSel)
-          ? rawSel
-          : rawSel !== undefined ? [rawSel] : [];
-
-        selectedOptIndices.forEach((optIdx) => {
-          const opt = item.options[optIdx];
-          if (opt && opt.requiresHoleData) {
-            list.push({
-              name: `${item.name} (${opt.name})`,
-              holeBaseRate: opt.holeBaseRate
-            });
-          }
-        });
-      } else {
-        if (item.requiresHoleData) {
-          list.push({
-            name: item.name,
-            holeBaseRate: item.holeBaseRate
-          });
+      const activeVars = getItemActiveVariables(item);
+      activeVars.forEach((v: any) => {
+        if (v.mappedField === 'holeDistHorizontal' || v.mappedField === 'holesH' || v.mappedField === 'totalHoles') {
+          requiredFields.add('holeDistHorizontal');
         }
+        if (v.mappedField === 'holeDistVertical' || v.mappedField === 'holesV' || v.mappedField === 'totalHoles') {
+          requiredFields.add('holeDistVertical');
+        }
+        if (v.mappedField === 'holeSize') {
+          requiredFields.add('holeSize');
+        }
+        if (v.mappedField === 'pricePerHole') {
+          requiredFields.add('pricePerHole');
+        }
+      });
+    });
+
+    return Array.from(requiredFields);
+  };
+
+  // Only checks the specific item being toggled — NOT all checked items
+  const triggerPopupIfRequiredFieldsEmpty = (item: any, updatedBOMOptions: any) => {
+    // Only use variables scoped to this specific BOM item — NOT global config.variables
+    const itemVars: any[] = Array.isArray(item.variables) ? item.variables : [];
+    const activeOptionNames = getItemActiveOptionNames(item, updatedBOMOptions);
+    const vars = itemVars.filter((v: any) => {
+      if (!v.forOptionName) return true;
+      return activeOptionNames.includes(v.forOptionName);
+    });
+
+    // Collect required fields from PARAMETER-MAPPED variables.
+    // These are always required when configured — no formula check needed.
+    // This means EYELET's HHD/VHD/HS will trigger the popup even if formula is not yet set.
+    const requiredFields = new Set<string>();
+    vars.forEach((v: any) => {
+      if (v.mappedField === 'holeDistHorizontal' || v.mappedField === 'holesH' || v.mappedField === 'totalHoles') requiredFields.add('holeDistHorizontal');
+      if (v.mappedField === 'holeDistVertical' || v.mappedField === 'holesV' || v.mappedField === 'totalHoles') requiredFields.add('holeDistVertical');
+      if (v.mappedField === 'holeSize') requiredFields.add('holeSize');
+      if (v.mappedField === 'pricePerHole') requiredFields.add('pricePerHole');
+    });
+
+    if (requiredFields.size === 0) return; // This item has no parameter-mapped variables
+
+    const hasEmptyNeeded = Array.from(requiredFields).some(f => {
+      if (f === 'holeSize') return !holeData.holeSize;
+      if (f === 'holeDistHorizontal') return !holeData.holeDistHorizontal;
+      if (f === 'holeDistVertical') return !holeData.holeDistVertical;
+      if (f === 'pricePerHole') return !holeData.pricePerHole;
+      return false;
+    });
+
+    if (hasEmptyNeeded) {
+      const lMm = Math.round(toMeters(parseFloat(formData.length) || 0, formData.lengthUnit) * 1000);
+      const wMm = Math.round(toMeters(parseFloat(formData.width) || 0, formData.widthUnit) * 1000);
+      setHoleData(prev => ({
+        ...prev,
+        holeLength: prev.holeLength || String(lMm || ''),
+        holeWidth: prev.holeWidth || String(wMm || '')
+      }));
+      // Store context: which item opened the popup
+      const activeOptName = activeOptionNames.length > 0 ? activeOptionNames[0] : undefined;
+      setHolePopupItem({ name: item.name, optionName: activeOptName });
+      setHolePopupOpen(true);
+    }
+  };
+
+  const selectedVariableItems = (() => {
+    if (!formData.beltType || !formData.beltStyle || !config) return [];
+    const cat = (config?.beltTypes || []).find((t: any) => t.name === formData.beltType);
+    const style = (cat?.styles || []).find((s: any) => s.name === formData.beltStyle);
+    if (!style || !style.bom) return [];
+
+    const list: { name: string; variables: any[] }[] = [];
+
+    style.bom.forEach((item: any) => {
+      const isChecked = formData.selectedBOMOptions?._included?.[item.id] !== false;
+      if (!isChecked) return;
+
+      const activeVars = getItemActiveVariables(item);
+      if (activeVars.length > 0) {
+        list.push({
+          name: item.name,
+          variables: activeVars
+        });
       }
     });
 
     return list;
   })();
 
-  const needsHoleData = selectedHoleItems.length > 0;
+  const needsHoleData = selectedVariableItems.length > 0;
 
   const [result, setResult] = useState<any>(null);
   const [pendingCalculate, setPendingCalculate] = useState(false);
@@ -129,6 +261,119 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
   const [dimensionInsight, setDimensionInsight] = useState<string | null>(null);
   const [insightOrders, setInsightOrders] = useState<Quotation[]>([]);
   const selectedClient = clients?.find?.(c => c.id === formData.clientId) || null;
+
+  const clientProfitRanges = (() => {
+    if (!selectedClient || !formData.beltType || !formData.beltStyle) return [];
+    const typeData = selectedClient.profitMargins?.[formData.beltType];
+    if (!typeData) return [];
+    if (!Array.isArray(typeData) && typeof typeData === 'object') {
+      return Array.isArray(typeData[formData.beltStyle]) ? typeData[formData.beltStyle] : [];
+    }
+    if (Array.isArray(typeData)) return typeData;
+    return [];
+  })();
+
+  // Margin is considered "set" only when there is at least one range with a margin > 0.
+  // A profit margin of 0% means admin has NOT properly configured it yet.
+  const isMarginSet = clientProfitRanges &&
+    clientProfitRanges.length > 0 &&
+    clientProfitRanges.some((r: any) => (r.margin || 0) > 0);
+
+  // Combine quotations with margin configuration requests to show them in Client History
+  const combinedHistory = (() => {
+    const currentClientRequests = (marginRequests || [])
+      .filter((mr: any) => mr.clientId === formData.clientId)
+      .map((mr: any) => ({
+        id: mr.id,
+        createdAt: mr.createdAt,
+        beltType: mr.beltType,
+        beltStyle: mr.beltStyle,
+        dimensions: { 
+          length: mr.length || 0, 
+          width: mr.width || 0,
+          lengthUnit: mr.lengthUnit || 'mm',
+          widthUnit: mr.widthUnit || 'mm'
+        },
+        totalCost: 0,
+        status: `margin_${mr.status}`,
+        isMarginRequest: true,
+      }));
+
+    const quotes = (clientHistory || []).map((q: any) => ({
+      ...q,
+      isMarginRequest: false,
+    }));
+
+    return [...currentClientRequests, ...quotes].sort((a: any, b: any) => {
+      const dateA = new Date(a.createdAt).getTime();
+      const dateB = new Date(b.createdAt).getTime();
+      return dateB - dateA;
+    });
+  })();
+
+  const fetchMarginRequests = async () => {
+    try {
+      const res = await fetch('/api/margin-requests');
+      if (res.ok) {
+        const data = await res.json();
+        setMarginRequests(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch margin requests', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchMarginRequests();
+    const interval = setInterval(fetchMarginRequests, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSendMarginRequest = async () => {
+    if (!formData.clientId || !formData.beltType || !formData.beltStyle) return;
+
+    // Validate that length and width are entered and valid before allowing requests
+    if (!formData.length || !formData.width) {
+      toast.error('Please enter the belt Length and Width first before sending the margin request!');
+      return;
+    }
+    const lenVal = parseFloat(formData.length);
+    const widVal = parseFloat(formData.width);
+    if (isNaN(lenVal) || lenVal <= 0 || isNaN(widVal) || widVal <= 0) {
+      toast.error('Please enter a valid Length and Width greater than 0 first!');
+      return;
+    }
+
+    setIsSendingMarginRequest(true);
+    try {
+      const res = await fetch('/api/margin-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: formData.clientId,
+          clientName: selectedClient?.name || '',
+          beltType: formData.beltType,
+          beltStyle: formData.beltStyle,
+          length: lenVal,
+          width: widVal,
+          lengthUnit: formData.lengthUnit,
+          widthUnit: formData.widthUnit
+        })
+      });
+      if (res.ok) {
+        toast.success('Margin setting request sent to Admin!');
+        fetchMarginRequests();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(errData.error || 'Failed to send request');
+      }
+    } catch (err) {
+      console.error('Failed to send margin request', err);
+      toast.error('Failed to send request');
+    } finally {
+      setIsSendingMarginRequest(false);
+    }
+  };
 
   useEffect(() => {
     if (!formData.length || !formData.width || !formData.clientId) {
@@ -272,6 +517,27 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
       }
     }
 
+    const missingFields = getRequiredFields().filter((field) => {
+      if (field === 'holeSize') return !holeData.holeSize;
+      if (field === 'holeDistHorizontal') return !holeData.holeDistHorizontal;
+      if (field === 'holeDistVertical') return !holeData.holeDistVertical;
+      if (field === 'pricePerHole') return !holeData.pricePerHole;
+      return false;
+    });
+
+    if (missingFields.length > 0) {
+      const fieldLabels = missingFields.map(f => {
+        if (f === 'holeSize') return 'Hole Size (mm)';
+        if (f === 'holeDistHorizontal') return 'Horizontal Spacing (mm)';
+        if (f === 'holeDistVertical') return 'Vertical Spacing (mm)';
+        if (f === 'pricePerHole') return 'Price per Hole (₹)';
+        return f;
+      });
+      toast.error(`Please fill in required variables: ${fieldLabels.join(', ')} before calculating costing.`);
+      setHolePopupOpen(true);
+      return;
+    }
+
     setIsConfirmOpen(true);
   };
 
@@ -281,13 +547,22 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
     try {
       const selectedCategory = (Array.isArray(config?.beltTypes) ? config.beltTypes : [])?.find?.(t => t.name === formData.beltType) || null;
       const selectedStyle = (Array.isArray(selectedCategory?.styles) ? selectedCategory.styles : [])?.find?.(s => s.name === formData.beltStyle) || null;
-      const clientProfitRanges = selectedClient?.profitMargins?.[formData.beltType] || [];
+      const clientProfitRanges: import('../types').ProfitRange[] = (() => {
+        const typeData = selectedClient?.profitMargins?.[formData.beltType];
+        if (!typeData) return [];
+        // New nested format: { styleName: ProfitRange[] }
+        if (!Array.isArray(typeData) && typeof typeData === 'object') {
+          return Array.isArray(typeData[formData.beltStyle]) ? typeData[formData.beltStyle] : [];
+        }
+        // Legacy flat format: ProfitRange[]
+        return Array.isArray(typeData) ? typeData : [];
+      })();
       
       const included = formData.selectedBOMOptions?._included;
       const customRates = formData.selectedBOMOptions?._customRates || {};
-      const customBOM = (selectedStyle?.bom || [])
-        .filter(item => !included || included[item.id] !== false)
-        .flatMap(item => {
+      const customBOM = ((selectedStyle?.bom || [])
+        .filter(item => !included || included[item.id] !== false) as any[])
+        .flatMap((item: any) => {
           // Support both old single-index and new multi-index formats
           const rawSel = formData.selectedBOMOptions[item.id];
           const selectedOptIndices: number[] = Array.isArray(rawSel)
@@ -296,7 +571,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
 
           if (selectedOptIndices.length > 0 && Array.isArray(item.options) && item.options.length > 0) {
             // Each selected option becomes a separate BOM line item
-            return selectedOptIndices
+            return (selectedOptIndices as any[])
               .flatMap((optIdx: number) => {
                 const opt = item.options![optIdx];
                 if (!opt) return [];
@@ -353,10 +628,9 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
           return [{ ...item, rate, unit, name, formula }];
         });
 
-      // Get pricePerHole from config BOM items that have requiresHoleData (admin-set, not salesman)
-      const holeBasePriceFromConfig = selectedHoleItems.length > 0
-        ? (selectedHoleItems[0].holeBaseRate || 0)
-        : 0;
+      const requiredFields = getRequiredFields();
+      const hasHoles = requiredFields.length > 0;
+      const finalPricePerHole = holeData.pricePerHole || '0';
 
       const result = calculateCosting({
         length: parseFloat(formData.length),
@@ -366,15 +640,15 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
         beltType: formData.beltType,
         manualPackingCost: formData.manualPackingCost || undefined,
         manualProfitMargin: formData.manualProfitMargin || undefined,
-        hasHoles: needsHoleData && !!holeData.holeSize,
+        hasHoles: hasHoles && !!holeData.holeSize,
         holeLength: holeData.holeLength,
         holeWidth: holeData.holeWidth,
         holeSize: holeData.holeSize,
         holeDistHorizontal: holeData.holeDistHorizontal,
         holeDistVertical: holeData.holeDistVertical,
-        pricePerHole: needsHoleData ? String(holeBasePriceFromConfig) : undefined,
+        pricePerHole: finalPricePerHole,
         selectedBOMOptions: formData.selectedBOMOptions,
-      }, config, clientProfitRanges, customBOM, {});
+      }, config, clientProfitRanges, customBOM as any, {});
 
 
       if (user?.role !== 'admin') {
@@ -414,9 +688,8 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
       return;
     }
 
-    const hasHoles = needsHoleData && !!holeData.holeSize;
-    const holeBasePriceFromConfig = selectedHoleItems.length > 0
-      ? (selectedHoleItems[0].holeBaseRate || 0) : 0;
+    const hasHoles = getRequiredFields().length > 0 && !!holeData.holeSize;
+    const finalPricePerHole = holeData.pricePerHole ? parseFloat(holeData.pricePerHole) : 0;
 
     const newItem: QuotationItem = {
       id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
@@ -433,7 +706,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
         holeWidth: hasHoles ? (parseFloat(holeData.holeWidth) || 0) : undefined,
         holeDistHorizontal: hasHoles ? (parseFloat(holeData.holeDistHorizontal) || 0) : undefined,
         holeDistVertical: hasHoles ? (parseFloat(holeData.holeDistVertical) || 0) : undefined,
-        pricePerHole: hasHoles ? holeBasePriceFromConfig : undefined,
+        pricePerHole: hasHoles ? finalPricePerHole : undefined,
         totalHoles: hasHoles ? (result.summary.totalHoles || 0) : undefined,
       },
       totalCost: result.summary.finalTotal,
@@ -446,7 +719,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
     
     // Clear result and inputs
     setResult(null);
-    setHoleData({ holeLength: '', holeWidth: '', holeSize: '', holeDistHorizontal: '', holeDistVertical: '' });
+    setHoleData({ holeLength: '', holeWidth: '', holeSize: '', holeDistHorizontal: '', holeDistVertical: '', pricePerHole: '' });
     setFormData({
       ...formData,
       length: '',
@@ -727,15 +1000,17 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                 </div>
                 {dimensionInsight && insightOrders.length > 0 && (
                   <Dialog>
-                    <DialogTrigger asChild>
-                      <button type="button" className="w-full text-left mt-3 p-2 bg-indigo-50 hover:bg-indigo-100 transition-colors border border-indigo-100 rounded-lg flex items-start gap-2 animate-in fade-in slide-in-from-top-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50">
-                        <AlertCircle className="h-4 w-4 text-indigo-600 mt-0.5 shrink-0" />
-                        <div>
-                          <p className="text-xs font-semibold text-indigo-900">Insight</p>
-                          <p className="text-[10px] text-indigo-700">{dimensionInsight}</p>
-                        </div>
-                      </button>
-                    </DialogTrigger>
+                    <DialogTrigger
+                      render={
+                        <button type="button" className="w-full text-left mt-3 p-2 bg-indigo-50 hover:bg-indigo-100 transition-colors border border-indigo-100 rounded-lg flex items-start gap-2 animate-in fade-in slide-in-from-top-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50">
+                          <AlertCircle className="h-4 w-4 text-indigo-600 mt-0.5 shrink-0" />
+                          <div>
+                            <p className="text-xs font-semibold text-indigo-900">Insight</p>
+                            <p className="text-[10px] text-indigo-700">{dimensionInsight}</p>
+                          </div>
+                        </button>
+                      }
+                    />
                     <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col p-6 sm:max-w-2xl">
                       <DialogHeader>
                         <DialogTitle>Previous Orders Insight</DialogTitle>
@@ -834,59 +1109,69 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                                     }
                                   });
                                   included[item.id] = e.target.checked;
+                                  const updatedBOMOptions = {
+                                    ...formData.selectedBOMOptions,
+                                    _included: included
+                                  };
                                   setFormData({
                                     ...formData,
-                                    selectedBOMOptions: {
-                                      ...formData.selectedBOMOptions,
-                                      _included: included
-                                    }
+                                    selectedBOMOptions: updatedBOMOptions
                                   });
-                                  // 🔑 If this item requires hole data and is being CHECKED, open hole popup
-                                  if (e.target.checked && item.requiresHoleData) {
-                                    const lMm = Math.round(toMeters(parseFloat(formData.length) || 0, formData.lengthUnit) * 1000);
-                                    const wMm = Math.round(toMeters(parseFloat(formData.width) || 0, formData.widthUnit) * 1000);
-                                    setHoleData(prev => ({
-                                      ...prev,
-                                      holeLength: String(lMm || ''),
-                                      holeWidth: String(wMm || '')
-                                    }));
-                                    setHolePopupOpen(true);
-                                  }
-                                  // If unchecked, clear the hole data for this item
-                                  if (!e.target.checked && item.requiresHoleData) {
-                                    setHoleData({ holeLength: '', holeWidth: '', holeSize: '', holeDistHorizontal: '', holeDistVertical: '' });
+                                  if (e.target.checked) {
+                                    triggerPopupIfRequiredFieldsEmpty(item, updatedBOMOptions);
                                   }
                                 }}
                                 className="h-4 w-4 rounded border-zinc-400 text-zinc-950 focus:ring-zinc-950 transition-colors cursor-pointer"
                               />
                               <Label htmlFor={`bom-chk-${item.id}`} className="text-xs font-bold cursor-pointer text-zinc-800 flex-1 flex items-center gap-2">
                                 {item.name}
-                                {/* Hole badge — shows only on items with requiresHoleData */}
-                                {item.requiresHoleData && isChecked && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      const lMm = Math.round(toMeters(parseFloat(formData.length) || 0, formData.lengthUnit) * 1000);
-                                      const wMm = Math.round(toMeters(parseFloat(formData.width) || 0, formData.widthUnit) * 1000);
-                                      setHoleData(prev => ({
-                                        ...prev,
-                                        holeLength: prev.holeLength || String(lMm || ''),
-                                        holeWidth: prev.holeWidth || String(wMm || '')
-                                      }));
-                                      setHolePopupOpen(true);
-                                    }}
-                                    className={cn(
-                                      "inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-full border transition-colors",
-                                      holeData.holeSize
-                                        ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
-                                        : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 animate-pulse"
-                                    )}
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
-                                    {holeData.holeSize ? `⌀${holeData.holeSize}mm (${holeData.holeLength}x${holeData.holeWidth}mm) ✓` : 'Fill Holes'}
-                                  </button>
-                                )}
+                                {getItemActiveVariables(item).length > 0 && isChecked && (() => {
+                                  const itemVars = getItemActiveVariables(item);
+                                  const itemRequiredFields = itemVars.map(v => {
+                                    if (v.mappedField === 'holeDistHorizontal' || v.mappedField === 'holesH' || v.mappedField === 'totalHoles') return 'holeDistHorizontal';
+                                    if (v.mappedField === 'holeDistVertical' || v.mappedField === 'holesV' || v.mappedField === 'totalHoles') return 'holeDistVertical';
+                                    if (v.mappedField === 'holeSize') return 'holeSize';
+                                    if (v.mappedField === 'pricePerHole') return 'pricePerHole';
+                                    return '';
+                                  }).filter(Boolean);
+
+                                  const isComplete = itemRequiredFields.every(f => {
+                                    if (f === 'holeSize') return !!holeData.holeSize;
+                                    if (f === 'holeDistHorizontal') return !!holeData.holeDistHorizontal;
+                                    if (f === 'holeDistVertical') return !!holeData.holeDistVertical;
+                                    if (f === 'pricePerHole') return !!holeData.pricePerHole;
+                                    return true;
+                                  });
+
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        const lMm = Math.round(toMeters(parseFloat(formData.length) || 0, formData.lengthUnit) * 1000);
+                                        const wMm = Math.round(toMeters(parseFloat(formData.width) || 0, formData.widthUnit) * 1000);
+                                        setHoleData(prev => ({
+                                          ...prev,
+                                          holeLength: prev.holeLength || String(lMm || ''),
+                                          holeWidth: prev.holeWidth || String(wMm || '')
+                                        }));
+                                        setHolePopupOpen(true);
+                                      }}
+                                      className={cn(
+                                        "inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-full border transition-colors cursor-pointer",
+                                        isComplete
+                                          ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                                          : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 animate-pulse"
+                                      )}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+                                      {isComplete 
+                                        ? `Variables filled ✓` 
+                                        : `Fill variables (${itemVars.map(v => v.symbol).join(', ')})`
+                                      }
+                                    </button>
+                                  );
+                                })()}
                               </Label>
                             </div>
                             {/* Remark field - always visible when checked */}
@@ -944,37 +1229,26 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                                                id={`bom-opt-${item.id}-${i}`}
                                                checked={isOptSelected}
                                                onChange={(e) => {
-                                                 const currentSelected: number[] = Array.isArray(formData.selectedBOMOptions[item.id])
-                                                   ? [...formData.selectedBOMOptions[item.id]]
-                                                   : formData.selectedBOMOptions[item.id] !== undefined
-                                                     ? [formData.selectedBOMOptions[item.id]]
-                                                     : [];
-                                                 const newSelected = e.target.checked
-                                                   ? [...currentSelected, i]
-                                                   : currentSelected.filter((x: number) => x !== i);
-                                                 setFormData({
-                                                   ...formData,
-                                                   selectedBOMOptions: {
-                                                     ...formData.selectedBOMOptions,
-                                                     [item.id]: newSelected.length > 0 ? newSelected : undefined
-                                                   }
-                                                 });
-                                                 // 🔑 Open hole popup if option checked requires hole data
-                                                 if (e.target.checked && opt.requiresHoleData) {
-                                                   const lMm = Math.round(toMeters(parseFloat(formData.length) || 0, formData.lengthUnit) * 1000);
-                                                   const wMm = Math.round(toMeters(parseFloat(formData.width) || 0, formData.widthUnit) * 1000);
-                                                   setHoleData(prev => ({
-                                                     ...prev,
-                                                     holeLength: String(lMm || ''),
-                                                     holeWidth: String(wMm || '')
-                                                   }));
-                                                   setHolePopupOpen(true);
-                                                 }
-                                                 // Clear if unchecked
-                                                 if (!e.target.checked && opt.requiresHoleData) {
-                                                   setHoleData({ holeLength: '', holeWidth: '', holeSize: '', holeDistHorizontal: '', holeDistVertical: '' });
-                                                 }
-                                               }}
+                                                  const currentSelected: number[] = Array.isArray(formData.selectedBOMOptions[item.id])
+                                                    ? [...formData.selectedBOMOptions[item.id]]
+                                                    : formData.selectedBOMOptions[item.id] !== undefined
+                                                      ? [formData.selectedBOMOptions[item.id]]
+                                                      : [];
+                                                  const newSelected = e.target.checked
+                                                    ? [...currentSelected, i]
+                                                    : currentSelected.filter((x: number) => x !== i);
+                                                  const updatedBOMOptions = {
+                                                    ...formData.selectedBOMOptions,
+                                                    [item.id]: newSelected.length > 0 ? newSelected : undefined
+                                                  };
+                                                  setFormData({
+                                                    ...formData,
+                                                    selectedBOMOptions: updatedBOMOptions
+                                                  });
+                                                  if (e.target.checked) {
+                                                    triggerPopupIfRequiredFieldsEmpty(item, updatedBOMOptions);
+                                                  }
+                                                }}
                                                className="h-3.5 w-3.5 rounded border-zinc-400 text-zinc-950 focus:ring-zinc-950 transition-colors cursor-pointer"
                                              />
                                              <Label 
@@ -991,47 +1265,22 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                                                       Bundle
                                                     </span>
                                                   )}
-                                                  {/* Sub-category Hole Badge */}
-                                                  {opt.requiresHoleData && isOptSelected && (
-                                                    <button
-                                                      type="button"
-                                                      onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        const lMm = Math.round(toMeters(parseFloat(formData.length) || 0, formData.lengthUnit) * 1000);
-                                                        const wMm = Math.round(toMeters(parseFloat(formData.width) || 0, formData.widthUnit) * 1000);
-                                                        setHoleData(prev => ({
-                                                          ...prev,
-                                                          holeLength: prev.holeLength || String(lMm || ''),
-                                                          holeWidth: prev.holeWidth || String(wMm || '')
-                                                        }));
-                                                        setHolePopupOpen(true);
-                                                      }}
-                                                      className={cn(
-                                                        "inline-flex items-center gap-1 text-[8px] font-black px-1.5 py-0.5 rounded-full border transition-colors",
-                                                        holeData.holeSize
-                                                          ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
-                                                          : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 animate-pulse"
-                                                      )}
-                                                    >
-                                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-2 w-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
-                                                      {holeData.holeSize ? `⌀${holeData.holeSize}mm (${holeData.holeLength}x${holeData.holeWidth}mm) ✓` : 'Fill Holes'}
-                                                    </button>
-                                                  )}
                                                 </span>
-                                                <span className={cn(
-                                                  "text-[9px] font-black px-1.5 py-0.5 rounded-md border shrink-0 tabular-nums transition-colors",
-                                                  isOptSelected
-                                                    ? isFormationOpt
-                                                      ? "bg-violet-50 text-violet-700 border-violet-200"
-                                                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                                    : "bg-zinc-100 text-zinc-400 border-zinc-200"
-                                                )}>
-                                                  {isFormationOpt && displayRate !== null
-                                                    ? `₹${(displayRate as number).toFixed(0)}/${opt.unit || item.unit}`
-                                                    : `₹${opt.rate}/${opt.unit || item.unit}`
-                                                  }
-                                                </span>
+                                                {user?.role === 'admin' && (
+                                                  <span className={cn(
+                                                    "text-[9px] font-black px-1.5 py-0.5 rounded-md border shrink-0 tabular-nums transition-colors",
+                                                    isOptSelected
+                                                      ? isFormationOpt
+                                                        ? "bg-violet-50 text-violet-700 border-violet-200"
+                                                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                      : "bg-zinc-100 text-zinc-400 border-zinc-200"
+                                                  )}>
+                                                    {isFormationOpt && displayRate !== null
+                                                      ? `₹${(displayRate as number).toFixed(0)}/${opt.unit || item.unit}`
+                                                      : `₹${opt.rate}/${opt.unit || item.unit}`
+                                                    }
+                                                  </span>
+                                                )}
                                               </Label>
                                            </div>
                                            {/* Remark field below selected sub-category */}
@@ -1173,23 +1422,69 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
               )}
             </div>
 
-            <Button 
-              className="w-full bg-[#1e40af] hover:bg-[#1d4ed8] text-white mt-1 h-10 text-sm font-semibold rounded-[6px] shadow-sm transition-all active:scale-[0.98] cursor-pointer" 
-              onClick={triggerCalculate}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-                  Calculating...
+            {formData.clientId && formData.beltType && formData.beltStyle && !isMarginSet ? (
+              user?.role !== 'admin' ? (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3 mt-2 animate-in fade-in slide-in-from-top-2">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-xs font-bold text-amber-900">Margin Not Set</h4>
+                      <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                        Profit margins for <strong>{formData.beltType} ({formData.beltStyle})</strong> have not been configured for this client yet.
+                      </p>
+                    </div>
+                  </div>
+                  {marginRequests.some(r => 
+                    r.clientId === formData.clientId && 
+                    r.beltType === formData.beltType && 
+                    r.beltStyle === formData.beltStyle && 
+                    r.status === 'pending'
+                  ) ? (
+                    <div className="text-center py-2 px-3 bg-amber-100/50 rounded-lg border border-amber-200 text-xs font-bold text-amber-800">
+                      ⌛ Request Sent (Pending Admin Configuration)
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={handleSendMarginRequest}
+                      disabled={isSendingMarginRequest}
+                      className="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs h-9 rounded-lg"
+                    >
+                      {isSendingMarginRequest ? 'Sending...' : 'Send Request to Admin to Set Margin'}
+                    </Button>
+                  )}
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <CalcIcon className="h-3.5 w-3.5" />
-                  Calculate Costing
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3 mt-2 animate-in fade-in slide-in-from-top-2">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-xs font-bold text-amber-900">Margin Not Configured</h4>
+                      <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                        Profit margins for <strong>{formData.beltType} ({formData.beltStyle})</strong> have not been configured for this client yet. Please set the margin for this client first.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </Button>
+              )
+            ) : (
+              <Button 
+                className="w-full bg-[#1e40af] hover:bg-[#1d4ed8] text-white mt-1 h-10 text-sm font-semibold rounded-[6px] shadow-sm transition-all active:scale-[0.98] cursor-pointer" 
+                onClick={triggerCalculate}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+                    Calculating...
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <CalcIcon className="h-3.5 w-3.5" />
+                    Calculate Costing
+                  </div>
+                )}
+              </Button>
+            )}
           </CardContent>
         </Card>
 
@@ -1355,6 +1650,14 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                     className="flex-1 gap-1.5 h-10 border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition-all" 
                     onClick={() => {
                       setResult(null);
+                      setHoleData({
+                        holeLength: '',
+                        holeWidth: '',
+                        holeSize: '',
+                        holeDistHorizontal: '',
+                        holeDistVertical: '',
+                        pricePerHole: '',
+                      });
                       setFormData({
                         ...formData,
                         length: '',
@@ -1362,11 +1665,6 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                         manualPackingCost: '',
                         manualProfitMargin: '',
                         beltStyle: '',
-                        hasHoles: false,
-                        holeSize: '',
-                        holeDistHorizontal: '',
-                        holeDistVertical: '',
-                        pricePerHole: '',
                       });
                     }}
                   >
@@ -1664,7 +1962,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                   <div className="space-y-1">
                     <Label className="text-[10px] font-bold uppercase text-zinc-500">Sales Markup (+)</Label>
                     <div className="relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-xs">{config.currency || '₹'}</span>
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-xs">₹</span>
                       <Input 
                         type="number" 
                         placeholder="Add extra markup amount" 
@@ -1679,7 +1977,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                       <span>Discount Requested (-)</span>
                     </Label>
                     <div className="relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-xs">{config.currency || '₹'}</span>
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 font-mono text-xs">₹</span>
                       <Input 
                         type="number" 
                         placeholder="Overall discount amount" 
@@ -1754,7 +2052,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {clientHistory.length === 0 ? (
+            {combinedHistory.length === 0 ? (
               <div className="py-10 flex flex-col items-center justify-center opacity-40">
                 <CalcIcon className="h-7 w-7 mb-1.5" />
                 <p className="text-[10px] font-bold uppercase tracking-widest italic">New Client Data Flow</p>
@@ -1772,7 +2070,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {clientHistory.map((q) => (
+                    {combinedHistory.map((q) => (
                       <TableRow key={q.id} className="text-xs hover:bg-zinc-50/50 transition-colors group h-10">
                         <TableCell className="text-zinc-400 font-mono text-[10px] pl-4 py-2">
                           {formatOrderDate(q.createdAt, false)}
@@ -1781,20 +2079,40 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                           {q.beltType} <span className="text-zinc-400 font-normal ml-0.5">({q.beltStyle || 'Std'})</span>
                         </TableCell>
                         <TableCell className="font-mono text-[10px] text-zinc-600 py-2">
-                          {q.dimensions.length}{q.dimensions.lengthUnit || 'mm'}×{q.dimensions.width}{q.dimensions.widthUnit || 'mm'}
+                          {q.isMarginRequest ? (
+                            <span className="text-zinc-400 font-sans font-medium">—</span>
+                          ) : (
+                            `${q.dimensions.length}${q.dimensions.lengthUnit || 'mm'}×${q.dimensions.width}${q.dimensions.widthUnit || 'mm'}`
+                          )}
                         </TableCell>
                         <TableCell className="font-black text-right pr-4 py-2">
-                          {formatCurrency(Math.round(q.totalCost))}
+                          {q.isMarginRequest ? (
+                            <span className="text-[10px] text-zinc-400 font-medium font-sans">Pending Margin</span>
+                          ) : (
+                            formatCurrency(Math.round(q.totalCost))
+                          )}
                         </TableCell>
                         <TableCell className="py-2 pr-4 text-center">
-                           <div className={cn(
-                             "inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter border",
-                             q.status === 'approved' ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
-                             q.status === 'pending_approval' ? "bg-amber-50 text-amber-700 border-amber-100" :
-                             "bg-zinc-100 text-zinc-600 border-zinc-200"
-                           )}>
-                             {q.status.replace('_', ' ')}
-                           </div>
+                           {q.isMarginRequest ? (
+                             <div className={cn(
+                               "inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter border",
+                               q.status === 'margin_approved' ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
+                               q.status === 'margin_rejected' ? "bg-rose-50 text-rose-700 border-rose-100" :
+                               "bg-amber-50 text-amber-700 border-amber-100"
+                             )}>
+                               {q.status === 'margin_approved' ? 'Margin Configured' :
+                                q.status === 'margin_rejected' ? 'Margin Rejected' : 'Margin Request'}
+                             </div>
+                           ) : (
+                             <div className={cn(
+                               "inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter border",
+                               q.status === 'approved' ? "bg-emerald-50 text-emerald-700 border-emerald-100" :
+                               q.status === 'pending_approval' ? "bg-amber-50 text-amber-700 border-amber-100" :
+                               "bg-zinc-100 text-zinc-600 border-zinc-200"
+                             )}>
+                               {q.status.replace('_', ' ')}
+                             </div>
+                           )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1806,52 +2124,46 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
         </Card>
       )}
 
-      {/* ─── HOLE DATA POPUP ─── Auto-opens when selected belt needs hole dimensions */}
+      {/* ─── HOLE DATA POPUP ─── Auto-opens when selected belt item needs variable inputs */}
       <Dialog open={holePopupOpen} onOpenChange={setHolePopupOpen}>
-        <DialogContent className="max-w-md sm:max-w-md mx-auto p-0 bg-white rounded-2xl border border-amber-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <DialogContent className="max-w-lg sm:max-w-lg mx-auto p-0 bg-white rounded-2xl border border-amber-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
           {/* Header */}
           <div className="bg-gradient-to-r from-amber-50 to-orange-50 px-6 py-5 border-b border-amber-100">
             <div className="flex items-center gap-3">
               <div className="p-2.5 bg-amber-100 rounded-xl border border-amber-200">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
               </div>
-              <div>
-                <h2 className="text-base font-black text-amber-900">Hole Dimensions Required</h2>
-                <p className="text-xs text-amber-600 font-medium mt-0.5">
-                  This belt has {selectedHoleItems.map((i: any) => i.name).join(', ')} which requires hole data
-                </p>
+              <div className="flex-1">
+                <h2 className="text-base font-black text-amber-900">Variables Configuration</h2>
+                {holePopupItem && (
+                  <p className="text-xs text-amber-700 font-bold mt-0.5">
+                    ● Working on: <span className="text-amber-900 uppercase tracking-wide">{holePopupItem.optionName || holePopupItem.name}</span>
+                    <span className="text-amber-500 font-medium"> — fill in the required variables below</span>
+                  </p>
+                )}
               </div>
             </div>
           </div>
 
           {/* Belt reference info */}
           <div className="px-6 pt-4 pb-2">
-            <div className="bg-zinc-50 border border-zinc-150 rounded-xl px-3 py-2.5 flex gap-4 text-xs">
+            <div className="bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2.5 flex gap-6 text-xs">
               <div>
-                <span className="text-zinc-400 font-bold uppercase text-[9px] block">Length</span>
-                <span className="font-black text-zinc-800">{formData.length}{formData.lengthUnit}</span>
+                <span className="text-zinc-400 font-bold uppercase text-[9px] block">Belt Length</span>
+                <span className="font-black text-zinc-800">{formData.length} {formData.lengthUnit}</span>
               </div>
               <div>
-                <span className="text-zinc-400 font-bold uppercase text-[9px] block">Width</span>
-                <span className="font-black text-zinc-800">{formData.width}{formData.widthUnit}</span>
-              </div>
-              <div className="ml-auto text-right">
-                <span className="text-zinc-400 font-bold uppercase text-[9px] block">Price per Hole</span>
-                <span className="font-black text-emerald-700">
-                  {selectedHoleItems.length > 0 && selectedHoleItems[0].holeBaseRate
-                    ? `₹${selectedHoleItems[0].holeBaseRate} / hole`
-                    : <span className="text-zinc-400 italic font-normal">Set in config</span>
-                  }
-                </span>
+                <span className="text-zinc-400 font-bold uppercase text-[9px] block">Belt Width</span>
+                <span className="font-black text-zinc-800">{formData.width} {formData.widthUnit}</span>
               </div>
             </div>
           </div>
 
-          {/* Hole Inputs */}
-          <div className="px-6 pb-6 pt-2 space-y-4">
+          {/* Inputs */}
+          <div className="px-6 pb-4 pt-2 space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-[10px] font-black uppercase tracking-wider text-amber-700">Hole Area Length (mm)</Label>
+                <Label className="text-[10px] font-black uppercase tracking-wider text-amber-700">Area Length (mm)</Label>
                 <Input
                   type="number"
                   placeholder="e.g. 1000"
@@ -1861,7 +2173,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-[10px] font-black uppercase tracking-wider text-amber-700">Hole Area Width (mm)</Label>
+                <Label className="text-[10px] font-black uppercase tracking-wider text-amber-700">Area Width (mm)</Label>
                 <Input
                   type="number"
                   placeholder="e.g. 500"
@@ -1872,19 +2184,135 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-[10px] font-black uppercase tracking-wider text-amber-700">Hole Size (mm)</Label>
-              <Input
-                type="number"
-                placeholder="e.g. 5"
-                autoFocus
-                value={holeData.holeSize}
-                onChange={(e) => setHoleData({ ...holeData, holeSize: e.target.value })}
-                className="h-10 border-amber-200 bg-amber-50/40 focus:border-amber-400 focus:bg-white transition-all font-bold text-sm"
-              />
-            </div>
+            {getRequiredFields().includes('holeDistHorizontal') && (
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-wider text-amber-700">Horizontal Spacing — HHD (mm) <span className="text-amber-400 normal-case font-medium">(gap between holes)</span></Label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 15"
+                  value={holeData.holeDistHorizontal}
+                  onChange={(e) => setHoleData({ ...holeData, holeDistHorizontal: e.target.value })}
+                  className="h-10 border-amber-200 bg-amber-50/40 focus:border-amber-400 focus:bg-white transition-all font-bold text-sm"
+                />
+              </div>
+            )}
 
-            <p className="text-[9px] text-zinc-400 italic">Price per hole is set by admin in configuration and is not editable here.</p>
+            {getRequiredFields().includes('holeDistVertical') && (
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-wider text-amber-700">Vertical Spacing — VHD (mm) <span className="text-amber-400 normal-case font-medium">(gap between holes)</span></Label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 12"
+                  value={holeData.holeDistVertical}
+                  onChange={(e) => setHoleData({ ...holeData, holeDistVertical: e.target.value })}
+                  className="h-10 border-amber-200 bg-amber-50/40 focus:border-amber-400 focus:bg-white transition-all font-bold text-sm"
+                />
+              </div>
+            )}
+
+            {/* Hole Size — ALWAYS shown when spacing fields are present (needed for Pitch = Spacing + HoleSize) */}
+            {(getRequiredFields().includes('holeSize') || getRequiredFields().includes('holeDistHorizontal') || getRequiredFields().includes('holeDistVertical')) && (
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-wider text-amber-700">
+                  Hole / Eyelet Size — HS (mm)
+                  <span className="text-amber-400 normal-case font-medium ml-1">(Pitch = HHD + HS)</span>
+                </Label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 5"
+                  value={holeData.holeSize}
+                  onChange={(e) => setHoleData({ ...holeData, holeSize: e.target.value })}
+                  className="h-10 border-amber-200 bg-amber-50/40 focus:border-amber-400 focus:bg-white transition-all font-bold text-sm"
+                />
+              </div>
+            )}
+
+            {getRequiredFields().includes('pricePerHole') && (
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-wider text-amber-700">Price per Hole / Eyelet (₹)</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 2.50"
+                  value={holeData.pricePerHole}
+                  onChange={(e) => setHoleData({ ...holeData, pricePerHole: e.target.value })}
+                  className="h-10 border-amber-200 bg-amber-50/40 focus:border-amber-400 focus:bg-white transition-all font-bold text-sm"
+                />
+              </div>
+            )}
+
+            {/* ─── LIVE CALCULATION PREVIEW (Center-to-Center / Pitch Logic) ─── */}
+            {(() => {
+              const L = parseFloat(holeData.holeLength) || 0;
+              const W = parseFloat(holeData.holeWidth) || 0;
+              const hSpacing = parseFloat(holeData.holeDistHorizontal) || 0; // gap between holes
+              const vSpacing = parseFloat(holeData.holeDistVertical) || 0;   // gap between holes
+              const holeSize = parseFloat(holeData.holeSize) || 0;
+              const showLive = getRequiredFields().includes('holeDistHorizontal') || getRequiredFields().includes('holeDistVertical');
+              if (!showLive) return null;
+
+              // PITCH (Center-to-Center) = Spacing (khaali gap) + Hole Size
+              // e.g. spacing=15mm + hole=5mm → pitch=20mm center-to-center
+              const pitchH = hSpacing > 0 ? hSpacing + holeSize : 0;
+              const pitchV = vSpacing > 0 ? vSpacing + holeSize : 0;
+
+              // Holes = floor(Length / Pitch) + 1  (corner se shuru, corner tak)
+              const holesH = pitchH > 0 && L > 0 ? Math.floor(L / pitchH) + 1 : null;
+              const holesV = pitchV > 0 && W > 0 ? Math.floor(W / pitchV) + 1 : null;
+              const totalHoles = (holesH !== null && holesV !== null) ? holesH * holesV : null;
+
+              return (
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 space-y-3">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-amber-600">📐 Live Hole Count Preview (Center-to-Center)</p>
+
+                  {/* Pitch row */}
+                  {holeSize > 0 && (hSpacing > 0 || vSpacing > 0) && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {hSpacing > 0 && (
+                        <div className="bg-white/80 border border-amber-100 rounded-lg px-3 py-1.5 text-center">
+                          <span className="text-[9px] font-black uppercase text-amber-400 block">H Pitch</span>
+                          <span className="text-xs font-black text-amber-800">{hSpacing} + {holeSize} = <span className="text-amber-600">{pitchH}mm</span></span>
+                        </div>
+                      )}
+                      {vSpacing > 0 && (
+                        <div className="bg-white/80 border border-amber-100 rounded-lg px-3 py-1.5 text-center">
+                          <span className="text-[9px] font-black uppercase text-amber-400 block">V Pitch</span>
+                          <span className="text-xs font-black text-amber-800">{vSpacing} + {holeSize} = <span className="text-amber-600">{pitchV}mm</span></span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Hole count cards */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-white rounded-lg p-2.5 border border-amber-100 text-center">
+                      <span className="text-[9px] font-black uppercase text-amber-500 block">Horizontal</span>
+                      <span className="text-xl font-black text-amber-900">
+                        {holesH !== null ? holesH : <span className="text-zinc-400 text-sm">—</span>}
+                      </span>
+                      <span className="text-[9px] text-amber-400 font-medium">
+                        {L > 0 && pitchH > 0 ? `⌊${L}÷${pitchH}⌋+1` : 'fill HHD'}
+                      </span>
+                    </div>
+                    <div className="bg-white rounded-lg p-2.5 border border-amber-100 text-center">
+                      <span className="text-[9px] font-black uppercase text-amber-500 block">Vertical</span>
+                      <span className="text-xl font-black text-amber-900">
+                        {holesV !== null ? holesV : <span className="text-zinc-400 text-sm">—</span>}
+                      </span>
+                      <span className="text-[9px] text-amber-400 font-medium">
+                        {W > 0 && pitchV > 0 ? `⌊${W}÷${pitchV}⌋+1` : 'fill VHD'}
+                      </span>
+                    </div>
+                    <div className="bg-amber-500 rounded-lg p-2.5 text-center">
+                      <span className="text-[9px] font-black uppercase text-amber-100 block">Total</span>
+                      <span className="text-xl font-black text-white">
+                        {totalHoles !== null ? totalHoles.toLocaleString() : <span className="text-amber-200 text-sm">—</span>}
+                      </span>
+                      <span className="text-[9px] text-amber-100 font-medium">{totalHoles !== null ? 'eyelets' : 'H × V'}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="flex gap-2 pt-1">
               <Button
@@ -1900,12 +2328,21 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
               <Button
                 type="button"
                 className="flex-1 bg-amber-500 hover:bg-amber-600 text-white h-10 font-black"
-                disabled={!holeData.holeLength || !holeData.holeWidth || !holeData.holeSize}
+                disabled={(() => {
+                  const req = getRequiredFields();
+                  return req.some(f => {
+                    if (f === 'holeSize') return !holeData.holeSize;
+                    if (f === 'holeDistHorizontal') return !holeData.holeDistHorizontal;
+                    if (f === 'holeDistVertical') return !holeData.holeDistVertical;
+                    if (f === 'pricePerHole') return !holeData.pricePerHole;
+                    return false;
+                  }) || !holeData.holeLength || !holeData.holeWidth;
+                })()}
                 onClick={() => {
                   setHolePopupOpen(false);
                 }}
               >
-                Save Hole Data ✓
+                Confirm & Save ✓
               </Button>
             </div>
           </div>
@@ -1980,7 +2417,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                           <span className="font-bold text-zinc-700">{item.name}</span>
                           {selectedOptIndices.length === 0 && (
                             <span className="text-[10px] text-zinc-400 italic">
-                              {hasOptions ? `Default (₹${item.options[0]?.rate ?? item.rate}/${item.options[0]?.unit ?? item.unit})` : 'Default'}
+                              {hasOptions && user?.role === 'admin' ? `Default (₹${item.options[0]?.rate ?? item.rate}/${item.options[0]?.unit ?? item.unit})` : 'Default'}
                             </span>
                           )}
                         </div>
@@ -1997,9 +2434,11 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                                   <span className="text-zinc-400">↳</span>
                                   <span className="font-semibold">{opt.name}</span>
                                 </span>
-                                <span className="text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md shrink-0">
-                                  ₹{opt.rate}/{opt.unit || item.unit}
-                                </span>
+                                {user?.role === 'admin' && (
+                                  <span className="text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md shrink-0">
+                                    ₹{opt.rate}/{opt.unit || item.unit}
+                                  </span>
+                                )}
                               </div>
                               {optRemark && (
                                 <div className="text-[10px] text-indigo-700 italic bg-indigo-50/60 px-1.5 py-0.5 rounded border border-indigo-100 ml-3">

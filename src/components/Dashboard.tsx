@@ -36,6 +36,7 @@ export const Dashboard = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [pendingMarginRequestsCount, setPendingMarginRequestsCount] = useState(0);
 
   const handleModuleChange = (mod: 'master' | 'pricing' | 'production' | 'presence') => {
     setActiveModule(mod);
@@ -92,9 +93,14 @@ export const Dashboard = () => {
 
   const fetchConfigAndClients = async () => {
     try {
-      const [configRes, clientsRes] = await Promise.all([
+      const fetchRequestsPromise = user?.role === 'admin' 
+        ? fetch('/api/margin-requests') 
+        : Promise.resolve(null);
+
+      const [configRes, clientsRes, requestsRes] = await Promise.all([
         fetch('/api/settings/config'),
-        fetch('/api/clients')
+        fetch('/api/clients'),
+        fetchRequestsPromise
       ]);
 
       if (configRes.ok) {
@@ -106,8 +112,14 @@ export const Dashboard = () => {
         const clientsData = await clientsRes.json();
         setClients(clientsData);
       }
+
+      if (requestsRes && requestsRes.ok) {
+        const requestsData = await requestsRes.json();
+        const pendingCount = requestsData.filter((r: any) => r.status === 'pending').length;
+        setPendingMarginRequestsCount(pendingCount);
+      }
     } catch (err) {
-      console.error('Failed to fetch config or clients', err);
+      console.error('Failed to fetch config, clients or requests', err);
     } finally {
       setIsLoading(false);
     }
@@ -159,7 +171,7 @@ export const Dashboard = () => {
 
   if (activeModule === 'master') {
     return (
-      <div className="min-h-screen bg-[#f8fafc] flex flex-col justify-between text-zinc-900 font-sans antialiased overflow-hidden relative">
+      <div className="min-h-screen bg-[#f1f5f9] flex flex-col justify-between text-zinc-900 font-sans antialiased overflow-hidden relative">
         {/* CSS Keyframes for 3D Mesh and Floating Glow Spheres */}
         <style>{`
           @keyframes float-sphere-1 {
@@ -404,7 +416,7 @@ export const Dashboard = () => {
 
   if (activeModule === 'production') {
     return (
-      <div className="min-h-screen bg-zinc-50 overflow-hidden">
+      <div className="min-h-screen bg-[#f1f5f9] overflow-hidden">
         <BeltcutPro onBackToMaster={() => handleModuleChange('master')} />
       </div>
     );
@@ -412,14 +424,14 @@ export const Dashboard = () => {
 
   if (activeModule === 'presence') {
     return (
-      <div className="min-h-screen bg-zinc-50 overflow-hidden">
+      <div className="min-h-screen bg-[#f1f5f9] overflow-hidden">
         <PresenceProPortal url="/presence" onClose={() => handleModuleChange('master')} />
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-zinc-50 overflow-hidden relative">
+    <div className="flex h-screen bg-[#f1f5f9] overflow-hidden relative">
       <Sidebar 
         activeTab={activeTab} 
         setActiveTab={handleTabChange} 
@@ -427,6 +439,7 @@ export const Dashboard = () => {
         onBackToMaster={() => handleModuleChange('master')}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        pendingMarginRequestsCount={pendingMarginRequestsCount}
       />
       <main className="flex-1 overflow-y-auto p-3 sm:p-5">
         <div className={cn("mx-auto", activeTab === 'reports' ? "w-full max-w-none" : "max-w-7xl")}>
