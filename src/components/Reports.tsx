@@ -910,65 +910,65 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
           {/* ── INFO CARD: Reporting Process Explanation ── */}
           <Card className="border-zinc-200 bg-zinc-50 shadow-sm rounded-2xl overflow-hidden">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-black text-zinc-900 flex items-center gap-2">
+              <CardTitle className="text-sm font-bold text-zinc-900 flex items-center gap-2">
                 <HelpCircle size={16} className="text-indigo-650" />
                 How does the Reporting Process work?
               </CardTitle>
-              <CardDescription className="text-xs text-zinc-500 font-semibold">We support two types of reports — see full details below</CardDescription>
+              <CardDescription className="text-xs text-zinc-500 font-medium">We support two types of reports — see full details below</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Type 1 */}
                 <div className="bg-white border border-zinc-200 rounded-xl p-4 space-y-2">
                   <div className="flex items-center gap-2">
-                    <div className="h-7 w-7 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-700 font-black text-sm">1</div>
-                    <span className="text-xs font-black text-zinc-800">Roll Details Per Product</span>
+                    <div className="h-7 w-7 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-700 font-bold text-sm">1</div>
+                    <span className="text-xs font-bold text-zinc-800">Roll Details Per Product</span>
                   </div>
-                  <p className="text-xs text-zinc-650 font-medium leading-relaxed">
+                  <p className="text-xs text-zinc-600 font-medium leading-relaxed">
                     Shows <strong>how many rolls</strong> exist in a product, and the <strong>remaining balance (sqm)</strong> of each roll individually.
                   </p>
-                  <div className="bg-indigo-50/50 border border-indigo-100/50 rounded-xl p-3 text-xs text-indigo-900 space-y-1.5 font-semibold">
-                    <div className="flex items-center gap-1.5 text-indigo-950 font-bold border-b border-indigo-200/50 pb-1">
+                  <div className="bg-indigo-50/50 border border-indigo-100/50 rounded-xl p-3 text-xs text-indigo-900 space-y-1.5 font-medium">
+                    <div className="flex items-center gap-1.5 text-indigo-950 font-semibold border-b border-indigo-200/50 pb-1">
                       <span>📦 PTFE</span>
-                      <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-black">3 ROLLS</span>
+                      <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-bold">3 ROLLS</span>
                     </div>
-                    <ul className="pl-1 space-y-1 text-indigo-850">
-                      <li className="flex items-center gap-1.5">• Roll #1 <span className="font-mono">→ 12.5 sqm</span></li>
-                      <li className="flex items-center gap-1.5">• Roll #2 <span className="font-mono">→ 8.2 sqm</span></li>
-                      <li className="flex items-center gap-1.5">• Roll #3 <span className="font-mono">→ 4.1 sqm</span></li>
+                    <ul className="pl-1 space-y-1 text-indigo-900">
+                      <li className="flex items-center gap-1.5">• Roll #1 <span className="font-medium text-indigo-950">→ 12.5 sqm</span></li>
+                      <li className="flex items-center gap-1.5">• Roll #2 <span className="font-medium text-indigo-950">→ 8.2 sqm</span></li>
+                      <li className="flex items-center gap-1.5">• Roll #3 <span className="font-medium text-indigo-950">→ 4.1 sqm</span></li>
                     </ul>
                   </div>
                 </div>
                 {/* Type 2 */}
                 <div className="bg-white border border-zinc-200 rounded-xl p-4 space-y-2">
                   <div className="flex items-center gap-2">
-                    <div className="h-7 w-7 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-700 font-black text-sm">2</div>
-                    <span className="text-xs font-black text-zinc-800">Total Product Balance</span>
+                    <div className="h-7 w-7 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-700 font-bold text-sm">2</div>
+                    <span className="text-xs font-bold text-zinc-800">Total Product Balance</span>
                   </div>
-                  <p className="text-xs text-zinc-650 font-medium leading-relaxed">
+                  <p className="text-xs text-zinc-600 font-medium leading-relaxed">
                     Shows the <strong>grand total balance</strong> of a product by adding the balance of all its active rolls.
                   </p>
-                  <div className="bg-emerald-50/50 border border-emerald-100/30 rounded-xl p-3 text-xs text-emerald-900 space-y-1.5 font-semibold">
+                  <div className="bg-emerald-50/50 border border-emerald-100/30 rounded-xl p-3 text-xs text-emerald-900 space-y-1.5 font-medium">
                     <div className="flex justify-between border-b border-emerald-100/50 pb-1">
                       <span className="flex items-center gap-1.5">📊 PTFE Total</span>
-                      <span className="font-mono">24.8 sqm</span>
+                      <span className="font-medium text-emerald-950">24.8 sqm</span>
                     </div>
                     <div className="flex justify-between border-b border-emerald-100/50 pb-1">
                       <span className="flex items-center gap-1.5">📊 PVC Total</span>
-                      <span className="font-mono">18.3 sqm</span>
+                      <span className="font-medium text-emerald-950">18.3 sqm</span>
                     </div>
                     <div className="flex justify-between border-b border-emerald-100/50 pb-1">
                       <span className="flex items-center gap-1.5">📊 PU Total</span>
-                      <span className="font-mono">9.6 sqm</span>
+                      <span className="font-medium text-emerald-950">9.6 sqm</span>
                     </div>
-                    <div className="flex justify-between font-black text-emerald-950 pt-1">
+                    <div className="flex justify-between font-bold text-emerald-950 pt-1 border-t border-emerald-200/50">
                       <span className="flex items-center gap-1.5">Grand Total</span>
-                      <span className="font-mono">52.7 sqm</span>
+                      <span className="font-semibold text-emerald-950">52.7 sqm</span>
                     </div>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 text-xs text-zinc-700 font-bold bg-zinc-100 rounded-xl px-4 py-2.5">
+              <div className="flex items-center gap-2 text-xs text-zinc-700 font-medium bg-zinc-100/80 rounded-xl px-4 py-2.5">
                 <Package size={14} className="text-zinc-500" />
                 <span>Click the <strong>"Roll Balance" Report</strong> (Report #4) to see all these details!</span>
               </div>
