@@ -24,21 +24,28 @@ const evaluateFormula = (
       else if (v.mappedField === 'rate') val = activeRate;
       else if (v.mappedField === 'holesH') {
         const hDist = parseFloat(costingData.holeDistHorizontal) || 0;
+        const hSize = parseFloat(costingData.holeSize) || 0;
+        const pitch = hDist + hSize;
         const lMm = L * 1000;
-        val = hDist > 0 ? Math.floor(lMm / hDist) : 0;
+        val = pitch > 0 ? (Math.floor(lMm / pitch) + 1) : (hDist > 0 ? Math.floor(lMm / hDist) : 0);
       }
       else if (v.mappedField === 'holesV') {
         const vDist = parseFloat(costingData.holeDistVertical) || 0;
+        const hSize = parseFloat(costingData.holeSize) || 0;
+        const pitch = vDist + hSize;
         const wMm = W * 1000;
-        val = vDist > 0 ? Math.floor(wMm / vDist) : 0;
+        val = pitch > 0 ? (Math.floor(wMm / pitch) + 1) : (vDist > 0 ? Math.floor(wMm / vDist) : 0);
       }
       else if (v.mappedField === 'totalHoles') {
         const hDist = parseFloat(costingData.holeDistHorizontal) || 0;
         const vDist = parseFloat(costingData.holeDistVertical) || 0;
+        const hSize = parseFloat(costingData.holeSize) || 0;
+        const pitchH = hDist + hSize;
+        const pitchV = vDist + hSize;
         const lMm = L * 1000;
         const wMm = W * 1000;
-        const holesH = hDist > 0 ? Math.floor(lMm / hDist) : 0;
-        const holesV = vDist > 0 ? Math.floor(wMm / vDist) : 0;
+        const holesH = pitchH > 0 ? (Math.floor(lMm / pitchH) + 1) : (hDist > 0 ? Math.floor(lMm / hDist) : 0);
+        const holesV = pitchV > 0 ? (Math.floor(wMm / pitchV) + 1) : (vDist > 0 ? Math.floor(wMm / vDist) : 0);
         val = holesH * holesV;
       }
       else {
@@ -105,26 +112,36 @@ export const calculateCosting = (data: any, config: any, clientProfitRanges: Pro
     // Custom Formula Calculation
     customBOM.forEach(item => {
       const activeRate = selectedRates[item.id] !== undefined ? selectedRates[item.id] : (item.rate || 0);
+      const parentId = (item as any)._originalParentId || item.id;
       
       // Get the name of the currently selected options for this item to filter variables
       const activeOptionNames: string[] = [];
-      if (item.options && item.options.length > 0 && data.selectedBOMOptions) {
-        const rawSel = data.selectedBOMOptions[item.id];
+      if (item.name) {
+        const cleanName = (item as any)._formationName || item.name.split(' › ')[0].trim();
+        activeOptionNames.push(cleanName);
+        activeOptionNames.push(item.name.trim());
+      }
+      if (data.selectedBOMOptions) {
+        const rawSel = data.selectedBOMOptions[parentId] !== undefined 
+          ? data.selectedBOMOptions[parentId] 
+          : data.selectedBOMOptions[item.id];
         const selectedOptIndices: number[] = Array.isArray(rawSel)
           ? rawSel
           : rawSel !== undefined ? [rawSel] : [];
-        selectedOptIndices.forEach((optIdx) => {
-          const opt = item.options[optIdx];
-          if (opt && opt.name) {
-            activeOptionNames.push(opt.name);
-          }
-        });
+        if (item.options && item.options.length > 0) {
+          selectedOptIndices.forEach((optIdx) => {
+            const opt = item.options[optIdx];
+            if (opt && opt.name) {
+              activeOptionNames.push(opt.name.trim());
+            }
+          });
+        }
       }
 
       // Filter variables: they must either have no forOptionName, or their forOptionName must match one of the active options
       const filteredVariables = (item.variables || []).filter((v: any) => {
         if (!v.forOptionName) return true;
-        return activeOptionNames.includes(v.forOptionName);
+        return activeOptionNames.includes(v.forOptionName.trim());
       });
 
       // Determine if formula contains rate symbol (default 'R' or custom variable mapped to 'rate')
@@ -141,17 +158,21 @@ export const calculateCosting = (data: any, config: any, clientProfitRanges: Pro
       let itemRequiresHole = false;
       if (filteredVariables.length > 0) {
         let activeFormula = item.formula || '';
-        if (item.options && item.options.length > 0 && data.selectedBOMOptions) {
-          const rawSel = data.selectedBOMOptions[item.id];
+        if (data.selectedBOMOptions) {
+          const rawSel = data.selectedBOMOptions[parentId] !== undefined 
+            ? data.selectedBOMOptions[parentId] 
+            : data.selectedBOMOptions[item.id];
           const selectedOptIndices: number[] = Array.isArray(rawSel)
             ? rawSel
             : rawSel !== undefined ? [rawSel] : [];
-          selectedOptIndices.forEach((optIdx) => {
-            const opt = item.options[optIdx];
-            if (opt && opt.formula) {
-              activeFormula += ' ' + opt.formula;
-            }
-          });
+          if (item.options && item.options.length > 0) {
+            selectedOptIndices.forEach((optIdx) => {
+              const opt = item.options[optIdx];
+              if (opt && opt.formula) {
+                activeFormula += ' ' + opt.formula;
+              }
+            });
+          }
         }
         const holeFields = ['holeSize', 'holeDistHorizontal', 'holeDistVertical', 'pricePerHole', 'totalHoles', 'holesH', 'holesV'];
         itemRequiresHole = filteredVariables.some((v: any) => {

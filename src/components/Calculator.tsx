@@ -587,6 +587,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                     name: fi.name ? `${opt.name} › ${fi.name}` : opt.name,
                     formula: fi.formula || opt.formula || item.formula,
                     id: `${item.id}_opt${optIdx}_fi${fiIdx}`,
+                    _originalParentId: item.id,
                     // Mark as formation child so we can group in display
                     _formationName: opt.name,
                     _isFormationItem: true,
@@ -602,7 +603,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ config, clients }) => {
                 if (customRates[item.id] !== undefined && selectedOptIndices[0] === optIdx) {
                   rate = customRates[item.id];
                 }
-                return [{ ...item, rate, unit, name, formula, id: `${item.id}_opt${optIdx}` }];
+                return [{ ...item, rate, unit, name, formula, id: `${item.id}_opt${optIdx}`, _originalParentId: item.id }];
               })
               .filter(Boolean);
           }

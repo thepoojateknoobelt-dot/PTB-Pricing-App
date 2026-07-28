@@ -24,30 +24,16 @@
             {
               "id": "1779105327208",
               "unit": "mtr",
-              "rate": 19,
+              "rate": 28,
               "formula": "L*4",
-              "name": "RED Bodar"
+              "name": "Side Edges (RED Border + FEP)"
             },
             {
-              "name": "FEP Film",
-              "formula": "L*4",
-              "rate": 9,
-              "unit": "mtr",
-              "id": "1779105334445"
-            },
-            {
-              "name": "Thread",
-              "rate": 1,
-              "formula": "W*10*4*2",
+              "name": "Thread & PIN",
+              "rate": 115,
+              "formula": "(W*1.05*2) + (W*10*4*2)",
               "unit": "mtr",
               "id": "1779105368682"
-            },
-            {
-              "formula": "W*1.05*2",
-              "rate": 115,
-              "name": "PIN",
-              "id": "1779105378190",
-              "unit": "mtr"
             },
             {
               "formula": "W*2",

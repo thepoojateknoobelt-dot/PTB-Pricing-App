@@ -5,7 +5,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { UserPlus, Trash2, Upload, Download, Search, Edit2, Save, X, IndianRupee, Percent, ListPlus, Settings2, Lock, Unlock, Plus, Link2, Building2, ChevronDown, ChevronLeft, Info, Clock, Loader2 } from 'lucide-react';
+import { UserPlus, Trash2, Upload, Download, Search, Edit2, Save, X, IndianRupee, Percent, ListPlus, Settings2, Lock, Unlock, Plus, Link2, Building2, ChevronDown, ChevronLeft, Info, Clock, Loader2, GitMerge } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { useAuth } from '../contexts/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
@@ -24,6 +24,8 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
   const [editingCompany, setEditingCompany] = useState<{ id: string; name: string } | null>(null);
   const [isLoadingCompanies, setIsLoadingCompanies] = useState(false);
   const [materialStocks, setMaterialStocks] = useState<MaterialStock[]>([]);
+
+  const [selectedBOMIndices, setSelectedBOMIndices] = useState<number[]>([]);
 
   const fetchCompanies = async () => {
     setIsLoadingCompanies(true);
@@ -323,6 +325,170 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
     { label: '12%', value: '12' },
     { label: '18%', value: '18' },
   ];
+
+  const handleMergeThreadAndPin = (catIdx: number, styleIdx: number) => {
+    const updated = [...localConfig.beltTypes];
+    const style = updated[catIdx]?.styles?.[styleIdx];
+    if (!style || !Array.isArray(style.bom)) return;
+
+    const threadIdx = style.bom.findIndex((b: any) => b.name && (b.name.toLowerCase().includes('thread') || b.name.toLowerCase().includes('thraed')));
+    const pinIdx = style.bom.findIndex((b: any) => b.name && b.name.toLowerCase().includes('pin'));
+
+    if (threadIdx === -1 && pinIdx === -1) {
+      toast.error('Neither Thread nor PIN found in this style BOM.');
+      return;
+    }
+
+    const threadItem = threadIdx !== -1 ? style.bom[threadIdx] : null;
+    const pinItem = pinIdx !== -1 ? style.bom[pinIdx] : null;
+
+    const pinFormula = pinItem?.formula || 'W*1.05*2';
+    const threadFormula = threadItem?.formula || 'W*10*4*2';
+
+    const mergedItem = {
+      id: Date.now().toString(),
+      name: 'Thread & PIN',
+      rate: pinItem?.rate || threadItem?.rate || 115,
+      unit: pinItem?.unit || 'mtr',
+      formula: `(${pinFormula}) + (${threadFormula})`,
+      variables: [...(pinItem?.variables || []), ...(threadItem?.variables || [])]
+    };
+
+    const indicesToRemove = [threadIdx, pinIdx].filter(i => i !== -1).sort((a, b) => b - a);
+    indicesToRemove.forEach(i => style.bom.splice(i, 1));
+    style.bom.push(mergedItem);
+
+    setLocalConfig({ ...localConfig, beltTypes: updated });
+    setSelectedBOMIdx(null);
+    setSelectedBOMIndices([]);
+    saveConfig(updated);
+    toast.success('Thread and PIN merged into "Thread & PIN" successfully!');
+  };
+
+  const handleSplitThreadAndPin = (catIdx: number, styleIdx: number) => {
+    const updated = [...localConfig.beltTypes];
+    const style = updated[catIdx]?.styles?.[styleIdx];
+    if (!style || !Array.isArray(style.bom)) return;
+
+    const mergedIdx = style.bom.findIndex((b: any) => b.name && (b.name.toLowerCase().includes('thread & pin') || b.name.toLowerCase().includes('thread & pin joint')));
+    if (mergedIdx === -1) {
+      toast.error('Merged "Thread & PIN" component not found in this style.');
+      return;
+    }
+
+    style.bom.splice(mergedIdx, 1);
+    style.bom.push(
+      { id: Date.now().toString(), name: 'Thread', rate: 1, formula: 'W*10*4*2', unit: 'mtr' },
+      { id: (Date.now() + 1).toString(), name: 'PIN', rate: 115, formula: 'W*1.05*2', unit: 'mtr' }
+    );
+
+    setLocalConfig({ ...localConfig, beltTypes: updated });
+    setSelectedBOMIdx(null);
+    setSelectedBOMIndices([]);
+    saveConfig(updated);
+    toast.success('Split "Thread & PIN" back into individual Thread and PIN items!');
+  };
+
+  const handleMergeSelectedBOMItems = (catIdx: number, styleIdx: number) => {
+    if (selectedBOMIndices.length < 2) {
+      toast.error('Select at least 2 BOM items to merge.');
+      return;
+    }
+
+    const updated = [...localConfig.beltTypes];
+    const style = updated[catIdx]?.styles?.[styleIdx];
+    if (!style || !Array.isArray(style.bom)) return;
+
+    const selectedItems = selectedBOMIndices.map(i => style.bom[i]).filter(Boolean);
+    const defaultMergedName = selectedItems.map(i => i.name).join(' & ');
+    const mergedName = prompt('Enter name for the merged component:', defaultMergedName);
+    if (!mergedName || !mergedName.trim()) return;
+
+    const combinedFormula = selectedItems.map(i => `(${i.formula || '0'})`).join(' + ');
+    const firstRate = selectedItems[0]?.rate || 0;
+    const firstUnit = selectedItems[0]?.unit || 'sqm';
+
+    const mergedItem = {
+      id: Date.now().toString(),
+      name: mergedName.trim(),
+      rate: firstRate,
+      unit: firstUnit,
+      formula: combinedFormula,
+      variables: selectedItems.flatMap(i => i.variables || [])
+    };
+
+    const sortedIndices = [...selectedBOMIndices].sort((a, b) => b - a);
+    sortedIndices.forEach(i => style.bom.splice(i, 1));
+    style.bom.push(mergedItem);
+
+    setLocalConfig({ ...localConfig, beltTypes: updated });
+    setSelectedBOMIdx(null);
+    setSelectedBOMIndices([]);
+    saveConfig(updated);
+    toast.success(`Merged ${selectedItems.length} components into "${mergedName.trim()}"!`);
+  };
+
+  const handleMergeSideEdgesAndFEP = (catIdx: number, styleIdx: number) => {
+    const updated = [...localConfig.beltTypes];
+    const style = updated[catIdx]?.styles?.[styleIdx];
+    if (!style || !Array.isArray(style.bom)) return;
+
+    const redBorderIdx = style.bom.findIndex((b: any) => b.name && (b.name.toLowerCase().includes('red bodar') || b.name.toLowerCase().includes('red border') || b.name.toLowerCase().includes('side edges')));
+    const fepIdx = style.bom.findIndex((b: any) => b.name && b.name.toLowerCase().includes('fep'));
+
+    if (redBorderIdx === -1 && fepIdx === -1) {
+      toast.error('Neither RED Border nor FEP Film found in this style BOM.');
+      return;
+    }
+
+    const borderItem = redBorderIdx !== -1 ? style.bom[redBorderIdx] : null;
+    const fepItem = fepIdx !== -1 ? style.bom[fepIdx] : null;
+
+    const combinedRate = (parseFloat(String(borderItem?.rate || 0)) || 0) + (parseFloat(String(fepItem?.rate || 0)) || 0);
+
+    const mergedItem = {
+      id: Date.now().toString(),
+      name: 'Side Edges (RED Border + FEP)',
+      rate: combinedRate || 28,
+      unit: borderItem?.unit || fepItem?.unit || 'mtr',
+      formula: borderItem?.formula || fepItem?.formula || 'L*4',
+      variables: [...(borderItem?.variables || []), ...(fepItem?.variables || [])]
+    };
+
+    const indicesToRemove = [redBorderIdx, fepIdx].filter(i => i !== -1).sort((a, b) => b - a);
+    indicesToRemove.forEach(i => style.bom.splice(i, 1));
+    style.bom.push(mergedItem);
+
+    setLocalConfig({ ...localConfig, beltTypes: updated });
+    setSelectedBOMIdx(null);
+    setSelectedBOMIndices([]);
+    saveConfig(updated);
+    toast.success('Merged RED Border and FEP Film into "Side Edges (RED Border + FEP)"!');
+  };
+
+  const handleSplitSideEdgesAndFEP = (catIdx: number, styleIdx: number) => {
+    const updated = [...localConfig.beltTypes];
+    const style = updated[catIdx]?.styles?.[styleIdx];
+    if (!style || !Array.isArray(style.bom)) return;
+
+    const mergedIdx = style.bom.findIndex((b: any) => b.name && (b.name.toLowerCase().includes('side edges') || b.name.toLowerCase().includes('border + fep')));
+    if (mergedIdx === -1) {
+      toast.error('Merged "Side Edges" component not found in this style.');
+      return;
+    }
+
+    style.bom.splice(mergedIdx, 1);
+    style.bom.push(
+      { id: Date.now().toString(), name: 'RED Bodar', rate: 19, formula: 'L*4', unit: 'mtr' },
+      { id: (Date.now() + 1).toString(), name: 'FEP Film', rate: 9, formula: 'L*4', unit: 'mtr' }
+    );
+
+    setLocalConfig({ ...localConfig, beltTypes: updated });
+    setSelectedBOMIdx(null);
+    setSelectedBOMIndices([]);
+    saveConfig(updated);
+    toast.success('Split "Side Edges" back into RED Bodar and FEP Film!');
+  };
 
   const saveConfig = async (updatedBeltTypes?: Config['beltTypes'], configOverride?: Config) => {
     setIsSaving(true);
@@ -1025,26 +1191,100 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                   </div>
                 ) : (
                   <>
-                    <div className="p-3 bg-zinc-50/80 border-b flex items-center justify-between">
-                       <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">3. BILL OF MATERIAL</span>
-                       <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-6 w-6 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-110 transition-transform disabled:opacity-30" 
-                        disabled={selectedStyleIdx === null}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const name = prompt('New Component Name:');
-                          if (name && selectedCatIdx !== null && selectedStyleIdx !== null) {
-                            const updated = [...localConfig.beltTypes];
-                            const style = updated[selectedCatIdx].styles[selectedStyleIdx];
-                            style.bom = [...(style.bom || []), { id: Date.now().toString(), name: name.trim(), rate: 0, formula: 'L * W', unit: 'sqm' }];
-                            setLocalConfig({ ...localConfig, beltTypes: updated });
-                          }
-                        }}
-                      >
-                        <ListPlus className="h-3 w-3" />
-                      </Button>
+                    <div className="p-3 bg-zinc-50/80 border-b flex flex-col gap-2">
+                       <div className="flex items-center justify-between">
+                         <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">3. BILL OF MATERIAL</span>
+                         <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-6 w-6 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-110 transition-transform disabled:opacity-30" 
+                          disabled={selectedStyleIdx === null}
+                          title="Add New Component"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const name = prompt('New Component Name:');
+                            if (name && selectedCatIdx !== null && selectedStyleIdx !== null) {
+                              const updated = [...localConfig.beltTypes];
+                              const style = updated[selectedCatIdx].styles[selectedStyleIdx];
+                              style.bom = [...(style.bom || []), { id: Date.now().toString(), name: name.trim(), rate: 0, formula: 'L * W', unit: 'sqm' }];
+                              setLocalConfig({ ...localConfig, beltTypes: updated });
+                            }
+                          }}
+                        >
+                          <ListPlus className="h-3 w-3" />
+                        </Button>
+                       </div>
+
+                       {selectedStyleIdx !== null && selectedCatIdx !== null && (() => {
+                         const currentBom = localConfig.beltTypes[selectedCatIdx]?.styles?.[selectedStyleIdx]?.bom || [];
+                         const hasThreadOrPin = currentBom.some((b: any) => b.name && (b.name.toLowerCase().includes('thread') || b.name.toLowerCase().includes('thraed') || b.name.toLowerCase().includes('pin')));
+                         const hasMergedThreadPin = currentBom.some((b: any) => b.name && b.name.toLowerCase().includes('thread & pin'));
+
+                         const hasSideEdgesOrFEP = currentBom.some((b: any) => b.name && (b.name.toLowerCase().includes('red bodar') || b.name.toLowerCase().includes('red border') || b.name.toLowerCase().includes('fep')));
+                         const hasMergedSideEdges = currentBom.some((b: any) => b.name && (b.name.toLowerCase().includes('side edges') || b.name.toLowerCase().includes('border + fep')));
+
+                         return (
+                           <div className="flex items-center gap-1.5 flex-wrap">
+                             {hasMergedSideEdges ? (
+                               <Button
+                                 variant="outline"
+                                 size="sm"
+                                 className="h-6 text-[10px] px-2 py-0 border-amber-200 bg-amber-50/50 text-amber-700 hover:bg-amber-100 font-bold"
+                                 onClick={() => handleSplitSideEdgesAndFEP(selectedCatIdx, selectedStyleIdx)}
+                                 title="Split Side Edges back into RED Border and FEP Film"
+                               >
+                                 ↩️ Split Side Edges & FEP
+                               </Button>
+                             ) : hasSideEdgesOrFEP ? (
+                               <Button
+                                 variant="outline"
+                                 size="sm"
+                                 className="h-6 text-[10px] px-2 py-0 border-purple-200 bg-purple-50/50 text-purple-700 hover:bg-purple-100 font-bold"
+                                 onClick={() => handleMergeSideEdgesAndFEP(selectedCatIdx, selectedStyleIdx)}
+                                 title="Merge RED Border and FEP Film into Side Edges"
+                               >
+                                 <GitMerge className="h-3 w-3 mr-1" />
+                                 Merge Side Edges & FEP
+                               </Button>
+                             ) : null}
+
+                             {hasMergedThreadPin ? (
+                               <Button
+                                 variant="outline"
+                                 size="sm"
+                                 className="h-6 text-[10px] px-2 py-0 border-amber-200 bg-amber-50/50 text-amber-700 hover:bg-amber-100 font-bold"
+                                 onClick={() => handleSplitThreadAndPin(selectedCatIdx, selectedStyleIdx)}
+                                 title="Split Thread & PIN back into separate items"
+                               >
+                                 ↩️ Split Thread & PIN
+                               </Button>
+                             ) : hasThreadOrPin ? (
+                               <Button
+                                 variant="outline"
+                                 size="sm"
+                                 className="h-6 text-[10px] px-2 py-0 border-blue-200 bg-blue-50/50 text-blue-700 hover:bg-blue-100 font-bold"
+                                 onClick={() => handleMergeThreadAndPin(selectedCatIdx, selectedStyleIdx)}
+                                 title="Merge Thread and PIN into one component"
+                               >
+                                 <GitMerge className="h-3 w-3 mr-1" />
+                                 Merge Thread & PIN
+                               </Button>
+                             ) : null}
+
+                             {selectedBOMIndices.length >= 2 && (
+                               <Button
+                                 variant="outline"
+                                 size="sm"
+                                 className="h-6 text-[10px] px-2 py-0 border-emerald-200 bg-emerald-50/50 text-emerald-700 hover:bg-emerald-100 font-bold"
+                                 onClick={() => handleMergeSelectedBOMItems(selectedCatIdx, selectedStyleIdx)}
+                               >
+                                 <GitMerge className="h-3 w-3 mr-1" />
+                                 Merge Selected ({selectedBOMIndices.length})
+                               </Button>
+                             )}
+                           </div>
+                         );
+                       })()}
                     </div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-1">
                       {selectedStyleIdx !== null && localConfig.beltTypes[selectedCatIdx!]?.styles?.[selectedStyleIdx] ? (
@@ -1059,6 +1299,21 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                 : "border-transparent hover:bg-zinc-50 hover:border-zinc-100"
                             )}
                           >
+                            <input 
+                              type="checkbox" 
+                              checked={selectedBOMIndices.includes(idx)} 
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                if (e.target.checked) {
+                                  setSelectedBOMIndices([...selectedBOMIndices, idx]);
+                                } else {
+                                  setSelectedBOMIndices(selectedBOMIndices.filter(i => i !== idx));
+                                }
+                              }}
+                              className="h-3.5 w-3.5 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 mr-2 cursor-pointer shrink-0"
+                              title="Select to merge"
+                            />
                             <div className="flex flex-col min-w-0 flex-1 mr-1">
                               <span className={cn("text-xs font-bold truncate", selectedBOMIdx === idx ? "text-blue-700" : "text-zinc-700")}>
                                 {item.name.toUpperCase()}
