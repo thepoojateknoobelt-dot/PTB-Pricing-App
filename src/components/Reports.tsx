@@ -163,20 +163,6 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
     setShowDateRangeDialog(false);
   };
 
-  // Inventory: group rolls by materialType
-  const inventoryByProduct = useMemo((): Record<string, { rolls: any[]; totalRemaining: number; totalSqm: number }> => {
-    const active = rolls.filter(r => !r.isArchived && r.status !== 'refused');
-    const map: Record<string, { rolls: any[]; totalRemaining: number; totalSqm: number }> = {};
-    active.forEach(r => {
-      const key = r.materialType || 'Unknown';
-      if (!map[key]) map[key] = { rolls: [], totalRemaining: 0, totalSqm: 0 };
-      map[key].rolls.push(r);
-      map[key].totalRemaining += r.remainingSqm || 0;
-      map[key].totalSqm += r.totalSqm || 0;
-    });
-    return map;
-  }, [rolls]);
-
   // Filter orders and calculate costs on-the-fly
   const filteredOrders = useMemo(() => {
     const orders = quotations.filter(q => q.status === 'order' || q.status === 'executed');
@@ -222,11 +208,9 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
         const typeData = client?.profitMargins?.[q.beltType];
         const clientProfitRanges: import('../types').ProfitRange[] = (() => {
           if (!typeData) return [];
-          // New nested format: { styleName: ProfitRange[] }
           if (!Array.isArray(typeData) && typeof typeData === 'object') {
             return Array.isArray(typeData[q.beltStyle]) ? typeData[q.beltStyle] : [];
           }
-          // Legacy flat format
           return Array.isArray(typeData) ? typeData : [];
         })();
         const category = config?.beltTypes?.find(t => t.name === q.beltType) || null;
@@ -285,7 +269,74 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
         };
       })
       .sort((a, b) => convertToDate(b.updatedAt || b.createdAt).getTime() - convertToDate(a.updatedAt || a.createdAt).getTime());
-  }, [quotations, startDate, endDate, config, clients]);
+  }, [quotations, startDate, endDate, config, clients, selectedPreset]);
+
+const getCutDate = (cut: any): Date | null => {
+  if (cut.createdAt) {
+    const d = new Date(cut.createdAt);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (cut.date) {
+    const d = new Date(cut.date);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (cut.id && typeof cut.id === 'string' && cut.id.includes('-')) {
+    const parts = cut.id.split('-');
+    if (parts.length >= 2) {
+      const ts = parseInt(parts[1], 10);
+      if (!isNaN(ts) && ts > 1000000000000) {
+        return new Date(ts);
+      }
+    }
+  }
+  return null;
+};
+
+  // Inventory: group rolls by materialType with date range cut statistics
+  const inventoryByProduct = useMemo(() => {
+    const active = rolls.filter(r => !r.isArchived && r.status !== 'refused');
+    const filteredOrderIds = new Set(filteredOrders.map(o => o.id));
+    const filteredOrderNumbers = new Set(filteredOrders.map(o => `#${o.orderNumber || ''}`));
+
+    const start = selectedPreset === 'all' ? new Date(0) : (startDate ? new Date(startDate) : new Date(0));
+    start.setHours(0, 0, 0, 0);
+    const end = selectedPreset === 'all' ? new Date() : (endDate ? new Date(endDate) : new Date());
+    end.setHours(23, 59, 59, 999);
+
+    const map: Record<string, { rolls: any[]; totalRemaining: number; totalSqm: number; totalSqmCutInRange: number; totalCutsInRange: number }> = {};
+    active.forEach(r => {
+      const key = r.materialType || 'Unknown';
+      if (!map[key]) map[key] = { rolls: [], totalRemaining: 0, totalSqm: 0, totalSqmCutInRange: 0, totalCutsInRange: 0 };
+      
+      const cutsInRange = (r.cuts || []).filter((cut: any) => {
+        if (selectedPreset === 'all') return true;
+        const cDate = getCutDate(cut);
+        if (cDate) {
+          return cDate >= start && cDate <= end;
+        }
+        if (cut.orderId && (filteredOrderIds.has(cut.orderId) || filteredOrderNumbers.has(cut.orderId))) {
+          return true;
+        }
+        return false;
+      });
+
+      const sqmCutInRange = cutsInRange.reduce((sum: number, c: any) => sum + ((c.width || 0) * (c.length || 0)), 0);
+
+      const rollWithStats = {
+        ...r,
+        cutsInRange,
+        sqmCutInRange,
+        cutsCountInRange: cutsInRange.length
+      };
+
+      map[key].rolls.push(rollWithStats);
+      map[key].totalRemaining += r.remainingSqm || 0;
+      map[key].totalSqm += r.totalSqm || 0;
+      map[key].totalSqmCutInRange += sqmCutInRange;
+      map[key].totalCutsInRange += cutsInRange.length;
+    });
+    return map;
+  }, [rolls, filteredOrders, selectedPreset, startDate, endDate]);
 
   // Aggregated calculations for Reports
   const totalMaterialSubtotal = useMemo(() => {
@@ -331,7 +382,6 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
       if (activeCompaniesList.includes(compName)) {
         map[compName] = (map[compName] || 0) + o.totalCost;
       } else {
-        // Add to default/first company if not matching
         const defaultComp = activeCompaniesList[0] || 'Pooja Tekno Belt';
         map[defaultComp] = (map[defaultComp] || 0) + o.totalCost;
       }
@@ -352,6 +402,20 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
         return;
       }
     }
+
+    const reportTitle = activeReportCard === 'purchase' ? 'PURCHASE COST REPORT'
+      : activeReportCard === 'profitability' ? 'PROFITABILITY REPORT'
+      : activeReportCard === 'company' ? 'COMPANY SALES REPORT'
+      : 'ROLL BALANCE REPORT';
+
+    const dateRangeLabel = selectedPreset === 'all' ? 'All Time' : `${startDate || 'Start'} to ${endDate || 'Today'}`;
+
+    const metadataRows: string[][] = [
+      ['REPORT NAME', reportTitle],
+      ['DATE RANGE', dateRangeLabel],
+      ['EXPORTED AT', new Date().toLocaleString('en-IN')],
+      []
+    ];
 
     let headers: string[] = [];
     let rows: string[][] = [];
@@ -388,7 +452,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
       const grandTotalFinal = displayOrders.reduce((sum, o) => sum + o.totalCost, 0);
       rows.push(['GRAND TOTAL', '', '', '', Math.round(grandTotalFinal).toString()]);
     } else if (activeReportCard === 'inventory') {
-      headers = ['S.No', 'Product Name / Roll Details', 'Status', 'Active Rolls', 'Total Remaining (sqm)', 'Total Original (sqm)', 'Remaining %', 'Used %'];
+      headers = ['S.No', 'Product Name / Roll Details', 'Status', 'Active Rolls', 'Sqm Cut In Date Range', 'Cuts Count In Range', 'Total Remaining (sqm)', 'Total Original (sqm)', 'Remaining %', 'Used %'];
       rows = [];
       
       inventoryEntries.forEach(([product, data], index) => {
@@ -401,6 +465,8 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
           product,
           'PRODUCT TOTAL',
           data.rolls.length.toString(),
+          (data.totalSqmCutInRange || 0).toFixed(2),
+          (data.totalCutsInRange || 0).toString(),
           data.totalRemaining.toFixed(2),
           data.totalSqm.toFixed(2),
           `${remainingPct.toFixed(1)}%`,
@@ -417,6 +483,8 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
             `  └ Roll #${idx + 1} (${roll.id ? roll.id.substring(0, 6) : ''}) [${dims}]`,
             roll.isReuse ? 'Reuse' : 'Active',
             '1',
+            (roll.sqmCutInRange || 0).toFixed(2),
+            (roll.cutsCountInRange || 0).toString(),
             (roll.remainingSqm || 0).toFixed(2),
             (roll.totalSqm || 0).toFixed(2),
             `${rRemainingPct.toFixed(1)}%`,
@@ -427,6 +495,8 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
 
       const grandTotalRemaining = inventoryValues.reduce((s, d) => s + d.totalRemaining, 0);
       const grandTotalOriginal = inventoryValues.reduce((s, d) => s + d.totalSqm, 0);
+      const grandTotalSqmCut = inventoryValues.reduce((s, d) => s + (d.totalSqmCutInRange || 0), 0);
+      const grandTotalCuts = inventoryValues.reduce((s, d) => s + (d.totalCutsInRange || 0), 0);
       const totalRollsCount = rolls.filter(r => !r.isArchived && r.status !== 'refused').length;
       const grandRemainingPct = grandTotalOriginal > 0 ? (grandTotalRemaining / grandTotalOriginal) * 100 : 0;
       
@@ -435,6 +505,8 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
         'All Active Inventory Products',
         '-',
         totalRollsCount.toString(),
+        grandTotalSqmCut.toFixed(2),
+        grandTotalCuts.toString(),
         grandTotalRemaining.toFixed(2),
         grandTotalOriginal.toFixed(2),
         `${grandRemainingPct.toFixed(1)}%`,
@@ -442,15 +514,17 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
       ]);
     }
 
-    const csvContent = [headers, ...rows]
-      .map(e => e.map(val => `"${val.replace(/"/g, '""')}"`).join(","))
+    const csvContent = [...metadataRows, headers, ...rows]
+      .map(e => e.map(val => `"${(val || '').toString().replace(/"/g, '""')}"`).join(","))
       .join("\n");
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
     const fileNameCard = activeReportCard === 'inventory' ? 'roll_balance' : activeReportCard;
-    link.download = `${fileNameCard}_report_${startDate}_to_${endDate}.csv`;
+    const safeStart = startDate || 'all';
+    const safeEnd = endDate || 'time';
+    link.download = `${fileNameCard}_report_${safeStart}_to_${safeEnd}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -619,8 +693,8 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
     printWindow.document.close();
   };
 
-  const inventoryEntries = Object.entries(inventoryByProduct) as [string, { rolls: any[]; totalRemaining: number; totalSqm: number }][];
-  const inventoryValues = Object.values(inventoryByProduct) as { rolls: any[]; totalRemaining: number; totalSqm: number }[];
+  const inventoryEntries = Object.entries(inventoryByProduct) as [string, { rolls: any[]; totalRemaining: number; totalSqm: number; totalSqmCutInRange?: number; totalCutsInRange?: number }][];
+  const inventoryValues = Object.values(inventoryByProduct) as { rolls: any[]; totalRemaining: number; totalSqm: number; totalSqmCutInRange?: number; totalCutsInRange?: number }[];
 
   return (
     <div className="space-y-6 w-full pb-8">
@@ -1137,6 +1211,42 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
             </div>
           </div>
 
+          {/* KPI Summary Banner for Roll Usage in Selected Date Range */}
+          {(() => {
+            const grandTotalSqmCut = inventoryValues.reduce((s, d) => s + (d.totalSqmCutInRange || 0), 0);
+            const grandTotalCuts = inventoryValues.reduce((s, d) => s + (d.totalCutsInRange || 0), 0);
+            const formattedStart = startDate ? convertToDate(startDate).toLocaleDateString('en-IN') : 'Start';
+            const formattedEnd = endDate ? convertToDate(endDate).toLocaleDateString('en-IN') : 'Today';
+            return (
+              <div className="p-4 bg-gradient-to-r from-amber-500/10 via-amber-50/80 to-orange-50/60 border border-amber-200/80 rounded-2xl shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 my-3 animate-in fade-in slide-in-from-top-1">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-md bg-amber-600 text-white text-[10px] font-black uppercase tracking-wider">
+                      Roll Usage Period Summary
+                    </span>
+                    <span className="text-xs font-bold text-zinc-700 font-mono">
+                      📅 {selectedPreset === 'all' ? 'All Time' : `${formattedStart} to ${formattedEnd}`}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-600 font-medium">
+                    Total roll material cut and cuts executed during the selected date range.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="px-4 py-2 bg-white/95 border border-amber-300 rounded-xl shadow-xs text-center">
+                    <span className="block text-[9px] font-black text-amber-700 uppercase tracking-widest">Total SqM Material Cut</span>
+                    <span className="text-lg font-black text-amber-800 font-mono">{grandTotalSqmCut.toFixed(2)} SqM</span>
+                  </div>
+                  <div className="px-4 py-2 bg-white/95 border border-orange-200 rounded-xl shadow-xs text-center">
+                    <span className="block text-[9px] font-black text-orange-600 uppercase tracking-widest">Cuts Executed</span>
+                    <span className="text-lg font-black text-orange-700 font-mono">{grandTotalCuts} Cuts</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {inventoryEntries.length === 0 ? (
             <Card className="border-zinc-200 shadow-sm">
               <CardContent className="py-12 flex flex-col items-center text-zinc-400">
@@ -1352,6 +1462,7 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
                                             <TableHead className="text-[10px] font-black uppercase text-zinc-500 pl-4">Roll ID</TableHead>
                                             <TableHead className="text-[10px] font-black uppercase text-zinc-500">Width × Length</TableHead>
                                             <TableHead className="text-[10px] font-black uppercase text-zinc-500 text-right">Total Sqm</TableHead>
+                                            <TableHead className="text-[10px] font-black uppercase text-amber-600 text-right">Cut In Date Range</TableHead>
                                             <TableHead className="text-[10px] font-black uppercase text-zinc-500 text-right">Remaining Sqm</TableHead>
                                             <TableHead className="text-[10px] font-black uppercase text-zinc-500 text-right">Used %</TableHead>
                                             <TableHead className="text-[10px] font-black uppercase text-zinc-500 pr-4">Status</TableHead>
@@ -1372,6 +1483,9 @@ export const Reports: React.FC<ReportsProps> = ({ config, clients }) => {
                                                   {(roll.totalSqm || 0).toFixed(2)}
                                                 </TableCell>
                                                 <TableCell className="text-right font-mono font-black text-amber-600">
+                                                  {(roll.sqmCutInRange || 0).toFixed(2)} sqm
+                                                </TableCell>
+                                                <TableCell className="text-right font-mono font-bold text-zinc-700">
                                                   {(roll.remainingSqm || 0).toFixed(2)}
                                                 </TableCell>
                                                 <TableCell className="text-right">

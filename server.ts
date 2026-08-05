@@ -341,12 +341,13 @@ async function initializeDatabase() {
       )
     `);
 
-    // Schema alterations for reuse roll tracking
+    // Schema alterations for reuse roll tracking and timestamps
     try {
       await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS is_reuse BOOLEAN DEFAULT FALSE`);
       await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS parent_roll_id VARCHAR(255)`);
       await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active'`);
       await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS reorder_level NUMERIC DEFAULT 0 NOT NULL`);
+      await pool.query(`ALTER TABLE rolls ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`);
       await pool.query(`UPDATE rolls SET is_reuse = TRUE WHERE id LIKE 'REUSE-%' AND is_reuse = FALSE`);
     } catch (alterErr) {
       console.warn('Failed to add columns to rolls table:', alterErr);
@@ -355,8 +356,9 @@ async function initializeDatabase() {
     // Schema alterations for cuts table
     try {
       await pool.query(`ALTER TABLE cuts ADD COLUMN IF NOT EXISTS so_number VARCHAR(255)`);
+      await pool.query(`ALTER TABLE cuts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`);
     } catch (alterErr) {
-      console.warn('Failed to add so_number column to cuts table:', alterErr);
+      console.warn('Failed to add columns to cuts table:', alterErr);
     }
 
     // Schema alterations for material type reorder levels
@@ -3049,6 +3051,7 @@ app.get('/api/rolls', async (req, res) => {
       parentRollId: r.parent_roll_id || null,
       status: r.status || 'active',
       reorderLevel: parseFloat(r.reorder_level || 0),
+      createdAt: r.created_at || null,
       cuts: cutsRes.rows
         .filter(c => c.roll_id === r.id)
         .map(c => ({
@@ -3062,7 +3065,8 @@ app.get('/api/rolls', async (req, res) => {
           status: c.status,
           color: c.color,
           isInventoryCut: c.is_inventory_cut,
-          soNumber: c.so_number || null
+          soNumber: c.so_number || null,
+          createdAt: c.created_at || null
         }))
     }));
     res.json(rolls);

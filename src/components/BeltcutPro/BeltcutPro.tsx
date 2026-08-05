@@ -73,21 +73,26 @@ const parseLocaleDateString = (dateStr: string): Date | null => {
   }
 };
 
-const getStockStatusForDate = (item: ReadyBeltStock, targetDateStr: string) => {
-  if (!targetDateStr) {
+const getStockStatusForDateRange = (item: ReadyBeltStock, fromDateStr?: string, toDateStr?: string) => {
+  if (!fromDateStr && !toDateStr) {
     return {
       received: 0,
       issued: 0,
-      closing: item.openingPisc
+      closing: item.closingPisc !== undefined ? item.closingPisc : item.openingPisc
     };
   }
 
-  const dateParts = targetDateStr.split('-');
-  const targetYear = parseInt(dateParts[0], 10);
-  const targetMonth = parseInt(dateParts[1], 10) - 1;
-  const targetDay = parseInt(dateParts[2], 10);
-  
-  const targetDateEnd = new Date(targetYear, targetMonth, targetDay, 23, 59, 59, 999);
+  let fromDateStart: Date | null = null;
+  if (fromDateStr) {
+    const parts = fromDateStr.split('-');
+    fromDateStart = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 0, 0, 0, 0);
+  }
+
+  let toDateEnd: Date | null = null;
+  if (toDateStr) {
+    const parts = toDateStr.split('-');
+    toDateEnd = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 23, 59, 59, 999);
+  }
 
   let receivedOnDate = 0;
   let issuedOnDate = 0;
@@ -98,16 +103,15 @@ const getStockStatusForDate = (item: ReadyBeltStock, targetDateStr: string) => {
     const logDate = parseLocaleDateString(log.dateTime);
     if (!logDate) return;
 
-    const isSameDay = logDate.getFullYear() === targetYear &&
-                      logDate.getMonth() === targetMonth &&
-                      logDate.getDate() === targetDay;
+    const afterFrom = !fromDateStart || logDate >= fromDateStart;
+    const beforeTo = !toDateEnd || logDate <= toDateEnd;
 
-    if (isSameDay) {
+    if (afterFrom && beforeTo) {
       if (log.recvQty) receivedOnDate += log.recvQty;
       if (log.issuesQty) issuedOnDate += log.issuesQty;
     }
 
-    if (logDate > targetDateEnd) {
+    if (toDateEnd && logDate > toDateEnd) {
       if (log.recvQty) recvAfter += log.recvQty;
       if (log.issuesQty) issueAfter += log.issuesQty;
     }
@@ -120,6 +124,10 @@ const getStockStatusForDate = (item: ReadyBeltStock, targetDateStr: string) => {
     issued: issuedOnDate,
     closing: closingAtDate
   };
+};
+
+const getStockStatusForDate = (item: ReadyBeltStock, targetDateStr: string) => {
+  return getStockStatusForDateRange(item, targetDateStr, targetDateStr);
 };
 
 const isInventoryCutName = (name?: string) => {
@@ -363,6 +371,9 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   const [readyBeltStocks, setReadyBeltStocks] = useState<ReadyBeltStock[]>([]);
   const [readyBeltSearchQuery, setReadyBeltSearchQuery] = useState('');
   const [readyBeltDateFilter, setReadyBeltDateFilter] = useState('');
+  const [readyBeltFromDate, setReadyBeltFromDate] = useState('');
+  const [readyBeltToDate, setReadyBeltToDate] = useState('');
+  const [readyBeltStockFilter, setReadyBeltStockFilter] = useState('');
   const [showAddReadyBeltForm, setShowAddReadyBeltForm] = useState(false);
   const [newReadyBeltStock, setNewReadyBeltStock] = useState({
     category: 'BROWN BELT',
@@ -3072,17 +3083,57 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     );
   }, [materialStocks, materialSearchQuery]);
 
+  const readyBeltStockNames = useMemo(() => {
+    const names = new Set<string>();
+    readyBeltStocks.forEach(item => {
+      if (item.beltStock && item.beltStock.trim()) {
+        names.add(item.beltStock.trim());
+      }
+    });
+    return Array.from(names).sort();
+  }, [readyBeltStocks]);
+
   const filteredReadyBeltStocksList = useMemo(() => {
-    if (!readyBeltSearchQuery) return readyBeltStocks;
-    const query = readyBeltSearchQuery.toLowerCase().trim();
-    return readyBeltStocks.filter(item =>
-      (item.category || '').toLowerCase().includes(query) ||
-      (item.beltStock || '').toLowerCase().includes(query) ||
-      (item.size || '').toLowerCase().includes(query) ||
-      (item.soNo || '').toLowerCase().includes(query) ||
-      (item.receiverName || '').toLowerCase().includes(query)
-    );
-  }, [readyBeltStocks, readyBeltSearchQuery]);
+    return readyBeltStocks.filter(item => {
+      if (readyBeltStockFilter && readyBeltStockFilter !== 'ALL' && item.beltStock !== readyBeltStockFilter) {
+        return false;
+      }
+      if (readyBeltSearchQuery) {
+        const query = readyBeltSearchQuery.toLowerCase().trim();
+        const matches = (item.category || '').toLowerCase().includes(query) ||
+          (item.beltStock || '').toLowerCase().includes(query) ||
+          (item.size || '').toLowerCase().includes(query) ||
+          (item.soNo || '').toLowerCase().includes(query) ||
+          (item.receiverName || '').toLowerCase().includes(query);
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [readyBeltStocks, readyBeltSearchQuery, readyBeltStockFilter]);
+
+  const readyBeltDateRangeSummary = useMemo(() => {
+    const effectiveFrom = readyBeltFromDate || readyBeltDateFilter;
+    const effectiveTo = readyBeltToDate || readyBeltDateFilter;
+    const isDateActive = Boolean(effectiveFrom || effectiveTo);
+
+    let totalReceived = 0;
+    let totalIssued = 0;
+
+    filteredReadyBeltStocksList.forEach(item => {
+      const stats = getStockStatusForDateRange(item, effectiveFrom, effectiveTo);
+      totalReceived += stats.received;
+      totalIssued += stats.issued;
+    });
+
+    return {
+      effectiveFrom,
+      effectiveTo,
+      totalReceived,
+      totalIssued,
+      isDateActive,
+      hasFilter: isDateActive || Boolean(readyBeltStockFilter && readyBeltStockFilter !== 'ALL')
+    };
+  }, [filteredReadyBeltStocksList, readyBeltFromDate, readyBeltToDate, readyBeltDateFilter, readyBeltStockFilter]);
 
   const readyBeltGroups = useMemo(() => {
     const groups: Record<string, ReadyBeltStock[]> = {};
@@ -5492,8 +5543,9 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                       </div>
                     )}
 
-                    {/* Searcher & Date Picker */}
-                    <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                    {/* Searcher, Belt Stock Filter & Date Range Picker */}
+                    <div className="flex flex-col lg:flex-row gap-3 mb-4">
+                      {/* Search Input */}
                       <div className="relative flex-1">
                         <Search className="absolute left-3.5 top-3 h-4 w-4 text-zinc-400" />
                         <input
@@ -5504,25 +5556,99 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                           className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-950 focus:outline-none focus:ring-2 focus:ring-zinc-950 placeholder-zinc-400 shadow-sm text-left"
                         />
                       </div>
-                      <div className="flex items-center gap-2 bg-slate-50 border border-zinc-200 rounded-xl px-3 py-1.5 shadow-sm">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">Filter by Date</label>
-                        <input
-                          type="date"
-                          value={readyBeltDateFilter}
-                          onChange={(e) => setReadyBeltDateFilter(e.target.value)}
-                          className="border-none bg-transparent text-xs font-bold text-zinc-950 focus:outline-none cursor-pointer"
-                        />
-                        {readyBeltDateFilter && (
+
+                      {/* Belt Stock Wise Filter Dropdown */}
+                      <div className="flex items-center gap-2 bg-slate-50 border border-zinc-200 rounded-xl px-3 py-1.5 shadow-sm min-w-[200px]">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">Belt Stock:</label>
+                        <select
+                          value={readyBeltStockFilter}
+                          onChange={(e) => setReadyBeltStockFilter(e.target.value)}
+                          className="w-full bg-transparent text-xs font-bold text-zinc-950 focus:outline-none cursor-pointer"
+                        >
+                          <option value="ALL">ALL BELT STOCKS</option>
+                          {readyBeltStockNames.map(name => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
+                        {readyBeltStockFilter && readyBeltStockFilter !== 'ALL' && (
                           <button
-                            onClick={() => setReadyBeltDateFilter('')}
+                            onClick={() => setReadyBeltStockFilter('ALL')}
                             className="text-xs font-bold text-slate-400 hover:text-slate-650 px-1 cursor-pointer"
-                            title="Clear Date Filter"
+                            title="Clear Belt Stock Filter"
                           >
                             ✕
                           </button>
                         )}
                       </div>
+
+                      {/* Date Range Picker (From Date & To Date) */}
+                      <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-zinc-200 rounded-xl px-3 py-1.5 shadow-sm">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">From:</span>
+                          <input
+                            type="date"
+                            value={readyBeltFromDate}
+                            onChange={(e) => setReadyBeltFromDate(e.target.value)}
+                            className="border-none bg-transparent text-xs font-bold text-zinc-950 focus:outline-none cursor-pointer"
+                          />
+                        </div>
+                        <span className="text-zinc-400 text-xs font-bold">➔</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">To:</span>
+                          <input
+                            type="date"
+                            value={readyBeltToDate}
+                            onChange={(e) => setReadyBeltToDate(e.target.value)}
+                            className="border-none bg-transparent text-xs font-bold text-zinc-950 focus:outline-none cursor-pointer"
+                          />
+                        </div>
+                        {(readyBeltFromDate || readyBeltToDate || readyBeltDateFilter) && (
+                          <button
+                            onClick={() => {
+                              setReadyBeltFromDate('');
+                              setReadyBeltToDate('');
+                              setReadyBeltDateFilter('');
+                            }}
+                            className="text-xs font-bold text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 px-2 py-0.5 rounded-lg cursor-pointer ml-1 transition"
+                            title="Clear Date Range Filter"
+                          >
+                            Clear Dates ✕
+                          </button>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Summary Banner Card when filtering by Date or Belt Stock */}
+                    {readyBeltDateRangeSummary.hasFilter && (
+                      <div className="mb-5 p-4 bg-gradient-to-r from-amber-50/80 via-cyan-50/50 to-emerald-50/80 border border-amber-200/70 rounded-2xl shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-[10px] font-black text-amber-900 uppercase tracking-wider">
+                              Filtered Summary Report
+                            </span>
+                            {readyBeltDateRangeSummary.isDateActive && (
+                              <span className="text-xs font-bold text-slate-700 font-mono">
+                                📅 {readyBeltDateRangeSummary.effectiveFrom || 'Start'} to {readyBeltDateRangeSummary.effectiveTo || 'Today'}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-600 font-medium">
+                            Belt Stock: <strong className="text-slate-900 font-black">{readyBeltStockFilter && readyBeltStockFilter !== 'ALL' ? readyBeltStockFilter : 'All Belt Stocks'}</strong>
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="px-3.5 py-2 bg-white/90 border border-amber-200 rounded-xl shadow-xs text-center">
+                            <span className="block text-[9px] font-black text-amber-600 uppercase tracking-widest">Total Issued (Diya)</span>
+                            <span className="text-base font-black text-amber-700 font-mono">-{readyBeltDateRangeSummary.totalIssued} Pcs</span>
+                          </div>
+                          <div className="px-3.5 py-2 bg-white/90 border border-emerald-200 rounded-xl shadow-xs text-center">
+                            <span className="block text-[9px] font-black text-emerald-600 uppercase tracking-widest">Total Received</span>
+                            <span className="text-base font-black text-emerald-700 font-mono">+{readyBeltDateRangeSummary.totalReceived} Pcs</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Grouped Table */}
                     <div className="space-y-6">
@@ -5543,11 +5669,11 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                   <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest w-12">Sr.No</th>
                                   <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">Belt Stock</th>
                                   <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">Size</th>
-                                  {readyBeltDateFilter ? (
+                                  {readyBeltDateRangeSummary.isDateActive ? (
                                     <>
                                       <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Received</th>
-                                      <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Issued</th>
-                                      <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Closing Pcs</th>
+                                      <th className="px-4 py-3 text-[9px] font-black text-amber-600 uppercase tracking-widest text-center">Issued (Diya)</th>
+                                      <th className="px-4 py-3 text-[9px] font-black text-cyan-600 uppercase tracking-widest text-center">Closing Pcs</th>
                                     </>
                                   ) : (
                                     <th className="px-4 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Opening Pcs</th>
@@ -5614,15 +5740,15 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                             <td className="px-4 py-3 font-bold text-slate-400">{idx + 1}</td>
                                             <td className="px-4 py-3 font-black text-sm text-slate-800">{item.beltStock}</td>
                                             <td className="px-4 py-3 font-mono font-bold text-slate-650">{item.size}</td>
-                                            {readyBeltDateFilter ? (
+                                            {readyBeltDateRangeSummary.isDateActive ? (
                                               (() => {
-                                                const stats = getStockStatusForDate(item, readyBeltDateFilter);
+                                                const stats = getStockStatusForDateRange(item, readyBeltDateRangeSummary.effectiveFrom, readyBeltDateRangeSummary.effectiveTo);
                                                 return (
                                                   <>
                                                     <td className="px-4 py-3 text-center font-bold text-slate-600">
                                                       {stats.received > 0 ? `+${stats.received}` : '-'}
                                                     </td>
-                                                    <td className="px-4 py-3 text-center font-bold text-amber-600">
+                                                    <td className="px-4 py-3 text-center font-black text-amber-600 bg-amber-50/30">
                                                       {stats.issued > 0 ? `-${stats.issued}` : '-'}
                                                     </td>
                                                     <td className="px-4 py-3 text-center font-black text-cyan-600 bg-cyan-50/50">
@@ -5643,7 +5769,7 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                                                 >
                                                   <Info size={11} /> Details
                                                 </button>
-                                                {!readyBeltDateFilter && (
+                                                {!readyBeltDateRangeSummary.isDateActive && (
                                                   <>
                                                     <button
                                                       onClick={() => {
