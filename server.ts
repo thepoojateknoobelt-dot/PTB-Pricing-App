@@ -1088,9 +1088,8 @@ const calculateCosting = (data: any, config: any, clientProfitRanges: any[] = []
     };
   });
 
-  const packingCost = Math.round(manualPackingCost !== undefined ? parseFloat(manualPackingCost) : rates.packing);
-  subtotal += packingCost;
-  breakdown['packing'] = { consumption: 1, rate: manualPackingCost || rates.packing, cost: packingCost };
+  const packingCost = Math.round(manualPackingCost !== undefined ? parseFloat(manualPackingCost) : (rates?.packing || 200));
+  breakdown['packing'] = { consumption: 1, rate: manualPackingCost || rates?.packing || 200, cost: packingCost };
 
   const selectedCategory = config?.beltTypes?.find?.((t: any) => t.name === data.beltType) || null;
   
@@ -1099,18 +1098,18 @@ const calculateCosting = (data: any, config: any, clientProfitRanges: any[] = []
     ? Number(selectedCategory.gst)
     : null;
 
-  const applicablePurchaseGst = categoryGst !== null ? categoryGst : constants.purchaseGst;
-  const applicableSaleGst     = categoryGst !== null ? categoryGst : constants.saleGst;
+  const applicableSaleGst = categoryGst !== null ? categoryGst : (constants?.saleGst ?? 18);
 
   const applicableFixCost = selectedCategory?.fixCost !== undefined && selectedCategory.fixCost !== null
     ? Number(selectedCategory.fixCost)
     : constants.fixCost;
 
-  const purchaseGstAmount = Math.round(subtotal * (applicablePurchaseGst / 100));
-  const totalWithPurchaseGst = Math.round(subtotal + purchaseGstAmount);
+  // Purchase GST removed completely: Subtotal directly used for Fix Cost
+  const purchaseGstAmount = 0;
+  const totalWithPurchaseGst = subtotal;
   
-  const fixCostAmount = Math.round(totalWithPurchaseGst * (applicableFixCost / 100));
-  const totalWithFixCost = Math.round(totalWithPurchaseGst + fixCostAmount);
+  const fixCostAmount = Math.round(subtotal * (applicableFixCost / 100));
+  const totalWithFixCost = Math.round(subtotal + fixCostAmount);
   
   // Resolve profit margin based on length ranges
   let resolvedClientMargin = constants.defaultProfit;
@@ -1127,22 +1126,26 @@ const calculateCosting = (data: any, config: any, clientProfitRanges: any[] = []
   const profitAmount = Math.round(totalWithFixCost * (profitMargin / 100));
   const totalWithProfit = Math.round(totalWithFixCost + profitAmount);
 
-  const saleGstAmount = Math.round(totalWithProfit * (applicableSaleGst / 100));
-  const finalTotal = Math.round(totalWithProfit + saleGstAmount);
+  // Packing cost added before GST
+  const taxableSubtotal = Math.round(totalWithProfit + packingCost);
+  const saleGstAmount = Math.round(taxableSubtotal * (applicableSaleGst / 100));
+  const finalTotal = Math.round(taxableSubtotal + saleGstAmount);
 
   return {
     breakdown,
     summary: {
       subtotal,
-      purchaseGst: purchaseGstAmount,
-      purchaseGstPercent: applicablePurchaseGst,
-      totalWithPurchaseGst,
+      purchaseGst: 0,
+      purchaseGstPercent: 0,
+      totalWithPurchaseGst: subtotal,
       fixCost: fixCostAmount,
       fixCostPercentage: applicableFixCost,
       totalWithFixCost,
       profit: profitAmount,
       profitMarginUsed: profitMargin,
       totalWithProfit,
+      packingCost,
+      taxableSubtotal,
       saleGst: saleGstAmount,
       saleGstPercent: applicableSaleGst,
       gstPercent: categoryGst,
