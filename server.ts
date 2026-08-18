@@ -3264,11 +3264,11 @@ app.post('/api/rolls/:rollId/cuts', async (req, res) => {
   const rollId = req.params.rollId;
   try {
     await pool.query(
-      `INSERT INTO cuts (id, roll_id, order_id, customer_name, width, length, x, y, status, color, is_inventory_cut, so_number) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      `INSERT INTO cuts (id, roll_id, order_id, customer_name, width, length, x, y, status, color, is_inventory_cut, so_number, created_at) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())`,
       [id, rollId, orderId, customerName, width, length, x, y, status, color, isInventoryCut || false, soNumber || null]
     );
-    res.json({ id, orderId, customerName, width, length, x, y, status, color, isInventoryCut, soNumber });
+    res.json({ id, orderId, customerName, width, length, x, y, status, color, isInventoryCut, soNumber, createdAt: new Date().toISOString() });
   } catch (err) {
     console.error('Failed to save cut', err);
     res.status(500).json({ error: 'Failed to save cut' });

@@ -8,12 +8,9 @@ const pool = new Pool({
 async function main() {
   try {
     const res = await pool.query(`
-      SELECT column_name, data_type, is_nullable
-      FROM information_schema.columns
-      WHERE table_name = 'employees'
+      UPDATE cuts SET created_at = NOW() WHERE created_at IS NULL;
     `);
-    console.log('Columns of employees table:');
-    console.log(JSON.stringify(res.rows, null, 2));
+    console.log('Updated null created_at in cuts table. Row count:', res.rowCount);
   } catch (err) {
     console.error('Error querying DB:', err);
   } finally {

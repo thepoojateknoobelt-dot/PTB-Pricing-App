@@ -297,6 +297,8 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
   // Search states for individual Inventory Tables
   const [overviewSearchQuery, setOverviewSearchQuery] = useState('');
   const [materialSearchQuery, setMaterialSearchQuery] = useState('');
+  const [materialFromDate, setMaterialFromDate] = useState('');
+  const [materialToDate, setMaterialToDate] = useState('');
   const [remnantSearchQuery, setRemnantSearchQuery] = useState('');
   const [freshRollSearchQuery, setFreshRollSearchQuery] = useState('');
   const [reorderSearchQuery, setReorderSearchQuery] = useState('');
@@ -432,6 +434,325 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
     } catch (err) {
       console.error("Failed to fetch material types:", err);
     }
+  };
+
+  // Stock Registry CSV Export Handlers
+  const handleExportReadyBeltStockCSV = () => {
+    if (!readyBeltStocks || readyBeltStocks.length === 0) {
+      toast.error('No ready belt stocks available to export.');
+      return;
+    }
+
+    const fromLabel = readyBeltFromDate || 'Start';
+    const toLabel = readyBeltToDate || 'Today';
+    const beltFilterLabel = readyBeltStockFilter && readyBeltStockFilter !== 'ALL' ? readyBeltStockFilter : 'All Belt Stocks';
+
+    const metadata = [
+      ['READY BELT STOCK REPORT'],
+      ['DATE RANGE', `${fromLabel} to ${toLabel}`],
+      ['BELT STOCK FILTER', beltFilterLabel],
+      ['SEARCH QUERY', readyBeltSearchQuery || 'None'],
+      ['EXPORTED AT', new Date().toLocaleString('en-IN')],
+      []
+    ];
+
+    const isDateActive = readyBeltDateRangeSummary.isDateActive;
+    const headers = isDateActive ? [
+      'Sr.No', 'Category', 'Belt Stock Name', 'Size', 'Opening (Pcs)', 'Received (Pcs)', 'Issued (Pcs)', 'Closing Pcs', 'SO No', 'Receiver Name'
+    ] : [
+      'Sr.No', 'Category', 'Belt Stock Name', 'Size', 'Opening Pcs', 'SO No', 'Receiver Name'
+    ];
+
+    const rows: string[][] = [];
+    let srNo = 1;
+    let grandOpening = 0;
+    let grandReceived = 0;
+    let grandIssued = 0;
+    let grandClosing = 0;
+
+    filteredReadyBeltStocksList.forEach((item: any) => {
+      if (isDateActive) {
+        const stats = getStockStatusForDateRange(item, readyBeltDateRangeSummary.effectiveFrom, readyBeltDateRangeSummary.effectiveTo);
+        grandOpening += item.openingPisc || 0;
+        grandReceived += stats.received;
+        grandIssued += stats.issued;
+        grandClosing += stats.closing;
+
+        rows.push([
+          (srNo++).toString(),
+          item.category || '',
+          item.beltStock || '',
+          item.size || '',
+          (item.openingPisc || 0).toString(),
+          stats.received.toString(),
+          stats.issued.toString(),
+          stats.closing.toString(),
+          item.soNo || '-',
+          item.receiverName || '-'
+        ]);
+      } else {
+        grandOpening += item.openingPisc || 0;
+        rows.push([
+          (srNo++).toString(),
+          item.category || '',
+          item.beltStock || '',
+          item.size || '',
+          (item.openingPisc || 0).toString(),
+          item.soNo || '-',
+          item.receiverName || '-'
+        ]);
+      }
+    });
+
+    if (isDateActive) {
+      rows.push([
+        'GRAND TOTAL', '', '', '',
+        grandOpening.toString(),
+        grandReceived.toString(),
+        grandIssued.toString(),
+        grandClosing.toString(),
+        '', ''
+      ]);
+    } else {
+      rows.push([
+        'GRAND TOTAL', '', '', '',
+        grandOpening.toString(),
+        '', ''
+      ]);
+    }
+
+    const csvContent = [...metadata, headers, ...rows]
+      .map(r => r.map(cell => `"${(cell || '').toString().replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ready_belt_stock_report_${readyBeltFromDate || 'all'}_to_${readyBeltToDate || 'today'}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Ready Belt Stock CSV report exported successfully!');
+  };
+
+  const handleExportMaterialStockCSV = () => {
+    if (!materialStocks || materialStocks.length === 0) {
+      toast.error('No material stocks available to export.');
+      return;
+    }
+
+    const fromLabel = materialFromDate || 'Start';
+    const toLabel = materialToDate || 'Today';
+    const isDateActive = Boolean(materialFromDate || materialToDate);
+
+    const metadata = [
+      ['MATERIAL STOCKS PERIOD & INVENTORY REPORT'],
+      ['DATE RANGE', `${fromLabel} to ${toLabel}`],
+      ['SEARCH QUERY', materialSearchQuery || 'None'],
+      ['EXPORTED AT', new Date().toLocaleString('en-IN')],
+      []
+    ];
+
+    const start = materialFromDate ? new Date(materialFromDate) : new Date(0);
+    start.setHours(0, 0, 0, 0);
+    const end = materialToDate ? new Date(materialToDate) : new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const headers = isDateActive ? [
+      'Sr.No', 'Material Name', 'Issued In Range', 'Current Available Stock', 'Unit', 'Lots Count', 'Lot Breakdown Details', 'Reorder Level', 'Status'
+    ] : [
+      'Sr.No', 'Material Name', 'Current Available Stock', 'Unit', 'Lots Count', 'Lot Breakdown Details', 'Reorder Level', 'Status'
+    ];
+
+    const rows: string[][] = [];
+    let srNo = 1;
+    let grandTotalQty = 0;
+    let grandTotalIssued = 0;
+
+    filteredMaterialStocksList.forEach((item: any) => {
+      grandTotalQty += item.quantity || 0;
+
+      // Calculate material issues in date range
+      const issuesInRange = (materialIssues || []).filter((issue: any) => {
+        const matchId = issue.materialId === item.id || issue.materialName?.toLowerCase() === item.name?.toLowerCase();
+        if (!matchId) return false;
+        if (!isDateActive) return true;
+        const iDate = issue.issuedAt ? new Date(issue.issuedAt) : null;
+        if (iDate && !isNaN(iDate.getTime())) {
+          return iDate >= start && iDate <= end;
+        }
+        return true;
+      });
+
+      const totalIssuedInRange = issuesInRange.reduce((sum: number, i: any) => sum + (parseFloat(i.quantity) || 0), 0);
+      grandTotalIssued += totalIssuedInRange;
+
+      const lotCount = item.lots ? item.lots.length : 0;
+      let pieceDetails = '';
+      if (item.lots && item.lots.length > 0) {
+        pieceDetails = item.lots.map((l: any, i: number) => {
+          const pieceW = (l.pieces || []).map((p: any) => `${p.weight || 0}${item.unit || 'kg'}`).join('+');
+          return `Lot #${l.lotNo || i + 1}: ${pieceW}`;
+        }).join(' | ');
+      }
+      const isLow = item.reorderLevel > 0 && item.quantity <= item.reorderLevel;
+
+      if (isDateActive) {
+        rows.push([
+          (srNo++).toString(),
+          item.name || '',
+          totalIssuedInRange.toFixed(2),
+          (item.quantity || 0).toString(),
+          item.unit || 'pcs',
+          lotCount.toString(),
+          pieceDetails || '-',
+          (item.reorderLevel || 0).toString(),
+          isLow ? 'LOW STOCK ALERT' : 'NORMAL'
+        ]);
+      } else {
+        rows.push([
+          (srNo++).toString(),
+          item.name || '',
+          (item.quantity || 0).toString(),
+          item.unit || 'pcs',
+          lotCount.toString(),
+          pieceDetails || '-',
+          (item.reorderLevel || 0).toString(),
+          isLow ? 'LOW STOCK ALERT' : 'NORMAL'
+        ]);
+      }
+    });
+
+    if (isDateActive) {
+      rows.push([
+        'GRAND TOTAL', '', grandTotalIssued.toFixed(2), grandTotalQty.toFixed(2), '', '', '', '', ''
+      ]);
+    } else {
+      rows.push([
+        'GRAND TOTAL', '', grandTotalQty.toFixed(2), '', '', '', '', ''
+      ]);
+    }
+
+    const csvContent = [...metadata, headers, ...rows]
+      .map(r => r.map(cell => `"${(cell || '').toString().replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `material_stocks_report_${materialFromDate || 'all'}_to_${materialToDate || 'today'}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Material Stock CSV report exported successfully!');
+  };
+
+  const handleExportCuttingBeltCSV = () => {
+    const remnants = rolls.filter(r => r.status !== 'refused' && isRollReuse(r));
+    if (remnants.length === 0) {
+      toast.error('No cutting belt remnants available to export.');
+      return;
+    }
+
+    const metadata = [
+      ['CUTTING BELT REMNANTS REPORT'],
+      ['TOTAL REMNANTS', remnants.length.toString()],
+      ['EXPORTED AT', new Date().toLocaleString('en-IN')],
+      []
+    ];
+
+    const headers = ['Sr.No', 'Roll ID', 'Material Type', 'Width (mm)', 'Length (mm)', 'Remaining SqM', 'Total SqM', 'Cuts Count', 'Status'];
+    const rows: string[][] = [];
+    let srNo = 1;
+    let totalRemSqm = 0;
+
+    remnants.forEach((r: any) => {
+      totalRemSqm += r.remainingSqm || 0;
+      rows.push([
+        (srNo++).toString(),
+        r.id || '',
+        r.materialType || '',
+        ((r.fullWidth || 0) * 1000).toFixed(0),
+        ((r.fullLength || 0) * 1000).toFixed(0),
+        (r.remainingSqm || 0).toFixed(2),
+        (r.totalSqm || 0).toFixed(2),
+        (r.cuts ? r.cuts.length : 0).toString(),
+        'REUSE REMNANT'
+      ]);
+    });
+
+    rows.push(['GRAND TOTAL', '', '', '', '', totalRemSqm.toFixed(2), '', '', '']);
+
+    const csvContent = [...metadata, headers, ...rows]
+      .map(row => row.map(cell => `"${(cell || '').toString().replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `cutting_belt_remnants_report.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Cutting Belt Remnants CSV report exported!');
+  };
+
+  const handleExportFreshRollsCSV = () => {
+    const fresh = rolls.filter(r => r.status !== 'refused' && !isRollReuse(r));
+    if (fresh.length === 0) {
+      toast.error('No fresh master rolls available to export.');
+      return;
+    }
+
+    const metadata = [
+      ['FRESH MASTER ROLLS REPORT'],
+      ['TOTAL MASTER ROLLS', fresh.length.toString()],
+      ['EXPORTED AT', new Date().toLocaleString('en-IN')],
+      []
+    ];
+
+    const headers = ['Sr.No', 'Roll ID', 'Material Type', 'Width (mm)', 'Length (mm)', 'Remaining SqM', 'Total Original SqM', 'Cuts Count', 'Used %'];
+    const rows: string[][] = [];
+    let srNo = 1;
+    let totalRemSqm = 0;
+    let totalOriginalSqm = 0;
+
+    fresh.forEach((r: any) => {
+      totalRemSqm += r.remainingSqm || 0;
+      totalOriginalSqm += r.totalSqm || 0;
+      const usedPct = r.totalSqm > 0 ? (((r.totalSqm - r.remainingSqm) / r.totalSqm) * 100).toFixed(1) : '0';
+
+      rows.push([
+        (srNo++).toString(),
+        r.id || '',
+        r.materialType || '',
+        ((r.fullWidth || 0) * 1000).toFixed(0),
+        ((r.fullLength || 0) * 1000).toFixed(0),
+        (r.remainingSqm || 0).toFixed(2),
+        (r.totalSqm || 0).toFixed(2),
+        (r.cuts ? r.cuts.length : 0).toString(),
+        `${usedPct}%`
+      ]);
+    });
+
+    rows.push(['GRAND TOTAL', '', '', '', '', totalRemSqm.toFixed(2), totalOriginalSqm.toFixed(2), '', '']);
+
+    const csvContent = [...metadata, headers, ...rows]
+      .map(row => row.map(cell => `"${(cell || '').toString().replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `fresh_master_rolls_report.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Fresh Master Rolls CSV report exported!');
   };
 
   const handleAddCustomMaterialType = async () => {
@@ -5049,16 +5370,63 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                       </div>
                     )}
 
-                    {/* Searcher */}
-                    <div className="relative mb-4">
-                      <Search className="absolute left-3.5 top-3 h-4 w-4 text-zinc-400" />
-                      <input
-                        type="text"
-                        placeholder="Search Material Stocks..."
-                        value={materialSearchQuery}
-                        onChange={(e) => setMaterialSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-950 focus:outline-none focus:ring-2 focus:ring-zinc-950 placeholder-zinc-400 shadow-sm text-left"
-                      />
+                    {/* Searcher & Date Filter & Export Bar */}
+                    <div className="flex flex-col sm:flex-row items-center gap-3 mb-4">
+                      <div className="relative flex-1 w-full">
+                        <Search className="absolute left-3.5 top-3 h-4 w-4 text-zinc-400" />
+                        <input
+                          type="text"
+                          placeholder="Search Material Stocks..."
+                          value={materialSearchQuery}
+                          onChange={(e) => setMaterialSearchQuery(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-950 focus:outline-none focus:ring-2 focus:ring-zinc-950 placeholder-zinc-400 shadow-sm text-left"
+                        />
+                      </div>
+
+                      {/* Date Range Filter (From Date & To Date) */}
+                      <div className="flex items-center gap-2 bg-slate-50 border border-zinc-200 rounded-xl px-3 py-1.5 shadow-sm w-full sm:w-auto">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">From:</span>
+                          <input
+                            type="date"
+                            value={materialFromDate}
+                            onChange={(e) => setMaterialFromDate(e.target.value)}
+                            className="border-none bg-transparent text-xs font-bold text-zinc-950 focus:outline-none cursor-pointer"
+                          />
+                        </div>
+                        <span className="text-zinc-400 text-xs font-bold">➔</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">To:</span>
+                          <input
+                            type="date"
+                            value={materialToDate}
+                            onChange={(e) => setMaterialToDate(e.target.value)}
+                            className="border-none bg-transparent text-xs font-bold text-zinc-950 focus:outline-none cursor-pointer"
+                          />
+                        </div>
+                        {(materialFromDate || materialToDate) && (
+                          <button
+                            onClick={() => {
+                              setMaterialFromDate('');
+                              setMaterialToDate('');
+                            }}
+                            className="text-xs font-bold text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 px-2 py-0.5 rounded-lg cursor-pointer ml-1 transition"
+                            title="Clear Dates"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Export CSV Button */}
+                      <button
+                        type="button"
+                        onClick={handleExportMaterialStockCSV}
+                        className="bg-[#1e40af] hover:bg-[#1d4ed8] text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0 transition w-full sm:w-auto justify-center"
+                        title="Export Material Stocks to CSV/Excel"
+                      >
+                        <Download size={14} /> Export CSV
+                      </button>
                     </div>
 
                     {/* Table */}
@@ -5616,6 +5984,16 @@ export const BeltcutPro: React.FC<BeltcutProProps> = ({ onBackToMaster }) => {
                           </button>
                         )}
                       </div>
+
+                      {/* Export CSV / Excel Button */}
+                      <button
+                        type="button"
+                        onClick={handleExportReadyBeltStockCSV}
+                        className="bg-[#1e40af] hover:bg-[#1d4ed8] text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0 transition"
+                        title="Export Ready Belt Stock to CSV/Excel"
+                      >
+                        <Download size={14} /> Export CSV
+                      </button>
                     </div>
 
                     {/* Summary Banner Card when filtering by Date or Belt Stock */}

@@ -1638,12 +1638,14 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                                <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-bold">₹</div>
                                                <Input 
                                                  type="number"
+                                                 readOnly={opt.isFormation}
                                                  className={cn(
-                                                   "h-8 pl-5 pr-1 text-xs border-zinc-200 font-bold text-zinc-700 focus:bg-white focus:border-blue-400 transition-all",
-                                                   opt.isFormation ? "bg-violet-50/50 text-violet-800" : "bg-zinc-50/50"
+                                                   "h-8 pl-5 pr-1 text-xs border-zinc-200 font-bold transition-all",
+                                                   opt.isFormation ? "bg-violet-50/70 text-violet-900 font-black cursor-not-allowed border-violet-200 shadow-inner" : "bg-zinc-50/50 text-zinc-700"
                                                  )}
-                                                 value={opt.rate}
+                                                 value={opt.isFormation ? (opt.formationItems || []).reduce((sum: number, fi: any) => sum + (parseFloat(fi.rate) || 0), 0) : opt.rate}
                                                  onChange={(e) => {
+                                                   if (opt.isFormation) return;
                                                    const updated = [...localConfig.beltTypes];
                                                    updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].rate = parseFloat(e.target.value) || 0;
                                                    setLocalConfig({ ...localConfig, beltTypes: updated });
@@ -1733,6 +1735,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                                  } else if (!option.formationItems || option.formationItems.length === 0) {
                                                    option.formationItems = [{ name: '', rate: 0, formula: item.formula || 'L * W', unit: opt.unit || item.unit || 'mtr' }];
                                                  }
+                                                 option.rate = (option.formationItems || []).reduce((sum: number, fi: any) => sum + (parseFloat(fi.rate) || 0), 0);
                                                  setLocalConfig({ ...localConfig, beltTypes: updated });
                                                }}
                                                className={cn(
@@ -1765,6 +1768,7 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                                      const updated = [...localConfig.beltTypes];
                                                      const option = updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx];
                                                      option.formationItems = [...(option.formationItems || []), { name: '', rate: 0, formula: item.formula || 'L * W', unit: opt.unit || item.unit || 'mtr' }];
+                                                     option.rate = (option.formationItems || []).reduce((sum: number, fi: any) => sum + (parseFloat(fi.rate) || 0), 0);
                                                      setLocalConfig({ ...localConfig, beltTypes: updated });
                                                    }}
                                                    className="flex items-center gap-1 text-[9px] font-black text-violet-600 hover:text-violet-700 bg-violet-100 hover:bg-violet-200 px-2 py-1 rounded-md transition-colors"
@@ -1796,7 +1800,9 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                                          value={fi.rate}
                                                          onChange={(e) => {
                                                            const updated = [...localConfig.beltTypes];
-                                                           updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formationItems[fiIdx].rate = parseFloat(e.target.value) || 0;
+                                                           const targetOpt = updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx];
+                                                           targetOpt.formationItems[fiIdx].rate = parseFloat(e.target.value) || 0;
+                                                           targetOpt.rate = (targetOpt.formationItems || []).reduce((sum: number, item: any) => sum + (parseFloat(item.rate) || 0), 0);
                                                            setLocalConfig({ ...localConfig, beltTypes: updated });
                                                          }}
                                                        />
@@ -1837,7 +1843,9 @@ export const AdminConfig: React.FC<AdminConfigProps> = ({ config, onRefresh }) =
                                                        type="button"
                                                        onClick={() => {
                                                          const updated = [...localConfig.beltTypes];
-                                                         updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx].formationItems.splice(fiIdx, 1);
+                                                         const targetOpt = updated[selectedCatIdx!].styles[selectedStyleIdx!].bom[selectedBOMIdx].options[optIdx];
+                                                         targetOpt.formationItems.splice(fiIdx, 1);
+                                                         targetOpt.rate = (targetOpt.formationItems || []).reduce((sum: number, item: any) => sum + (parseFloat(item.rate) || 0), 0);
                                                          setLocalConfig({ ...localConfig, beltTypes: updated });
                                                        }}
                                                        className="text-zinc-300 hover:text-rose-500 transition-colors shrink-0"
